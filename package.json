@@ -1,0 +1,17 @@
+{
+  "name": "zoid-mercenaries",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "three": "./vendor/three.module.js"
+  },
+  "scripts": {
+    "test": "node tests/damage.test.mjs && node tests/models_check.mjs && node tests/headless.mjs"
+  },
+  "dependencies": {
+    "three": "file:./vendor"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.15.0"
+  }
+}

@@ -1,0 +1,17 @@
+Syntax checks already passed. I'll add the damage and headless tests, then run them and fix whatever breaks.`Object3D.getWorldDirection` is local +Z, while these Zoids face −Z. Movement was using the tail direction, so I'll derive facing from that one vector and point the chassis, camera, and shots along the nose.The game runs in the browser, and the headless pass is clean. Serve it with `python3 -m http.server 8080` and open http://localhost:8080.
+
+**What works**
+
+- Hangar for all 8 mock Zoids, with C-bills, weapons, per-part armor, mods, tonnage limits, and contracts. Money and loadout stay in `localStorage`.
+- Third-person and first-person (V). WASD follows the chassis nose. The mouse aims the torso. There is no overall health bar. The HUD shows a color-coded part diagram for you and for the target.
+- Part damage degrades the Zoid: legs slow you, the head scrambles sensors, a dead mount kills its weapons, the back mount kills boosters, and a dead core destroys the Zoid. The Shield Liger reduces frontal hits while its left foreleg stands.
+- Enemies move, aim, and shoot. Contracts pay out, then you repair and return to the hangar. Three biomes: desert, plains, and arctic.
+- Screenshots: `screenshots/hangar.png` and `screenshots/mission.png`. `npm test` passed (damage logic, all 8 models, and headless Chrome).
+
+One real bug turned up in that run. `Object3D.getWorldDirection` is the tail (+Z), and these Zoids face −Z. Throttle, the camera, and shots now use the nose.
+
+**Gaps**
+
+- Mock boxes and cylinders, not official models. No cockpit interior.
+- Simple AI, four contract types, heat instead of ammo, and salvage as money only.
+- Beep sound effects, no music, no joystick, no melee, and no active shield toggle.

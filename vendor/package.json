@@ -1,0 +1,9 @@
+{
+  "name": "three",
+  "version": "0.170.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./three.module.js"
+  }
+}
