@@ -16,10 +16,11 @@ RUN
     npm install
     npm test
 
-  That runs tests/damage.test.mjs, tests/models_check.mjs, and
-  tests/headless.mjs. The browser test serves this directory on port 8080,
-  so stop any other server on that port first. Screenshots land in
-  screenshots/hangar.png and screenshots/mission.png.
+  That runs tests/damage.test.mjs, tests/aim.test.mjs, tests/input.test.mjs,
+  tests/reset.test.mjs, tests/models_check.mjs, and tests/headless.mjs.
+  The browser test serves this directory on port 8080, so stop any other
+  server on that port first. Screenshots land in screenshots/hangar.png
+  and screenshots/mission.png.
 
 CONTROLS
   Hangar: click a Zoid, buy and equip gear, then Launch a contract.
@@ -30,8 +31,14 @@ CONTROLS
     Mouse                      look (pointer lock)
     Arrow left / right         look without the mouse
     Left mouse or 1            weapon group 1
-    Right mouse or 2           weapon group 2
+    Right mouse or 2           weapon group 2 (the browser menu is cancelled)
     3 / 4                      weapon groups 3 and 4
+
+  The crosshair is the center of the screen in both camera modes. Each
+  weapon fires from its own mount toward the world point under that
+  crosshair. If the center ray hits nothing, the mounts aim 1000 m out
+  along it. The player's own Zoid is ignored by that ray. The weapon dock
+  shows groups 1-4 as ready, cooling, disabled, or empty.
     Shift                      boost, if back boosters are fitted and the back mount stands
     V                          first person / third person
     Tab                        cycle target
@@ -49,7 +56,9 @@ FEATURES
   Hangar loadout: weapons, per-part armor plating, speed gyros, maneuver
   gyros, and back boosters. Weight and hardpoint size are enforced.
   Money is in C-bills and is stored in localStorage under zoidMercs.save.v1,
-  with the owned Zoids and their loadouts.
+  with the owned Zoids and their loadouts. Reset company asks for
+  confirmation, then deletes that save and any other zoidMercs.* key and
+  rebuilds the starting hangar.
   Damage is per part (head, core, legs, tail, weapon mounts, back mount).
   Armor is lost first, then structure. A destroyed leg slows speed and turn.
   A damaged head scrambles the HUD and shortens sensor range. A destroyed

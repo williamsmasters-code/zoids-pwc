@@ -169,14 +169,20 @@ export function createHUD(root) {
         root.querySelector("#target-range").textContent = `${Math.round(target.distance)} m`;
         root.querySelector("#target-diagram").innerHTML = diagramSVG(target.layout, target.parts);
       }
-      root.querySelector("#weapon-dock").innerHTML = data.weapons.map((weapon) => {
-        const pct = weapon.windup
-          ? Math.round((weapon.charge / weapon.windup) * 100)
-          : Math.round((1 - weapon.cooldown * weapon.rate) * 100);
-        return `<div class="wep ${weapon.destroyed ? "dead" : ""} ${weapon.firing ? "hot" : ""}">
+      root.querySelector("#weapon-dock").innerHTML = (data.weapons || []).map((weapon) => {
+        const state = weapon.state || (weapon.destroyed ? "disabled" : "ready");
+        const pct = Number.isFinite(weapon.pct)
+          ? weapon.pct
+          : weapon.windup
+            ? Math.round((weapon.charge / weapon.windup) * 100)
+            : Math.round((1 - weapon.cooldown * weapon.rate) * 100);
+        const klass = state === "disabled" ? "dead" : state;
+        const color = (weapon.color ?? 0x334048).toString(16).padStart(6, "0");
+        return `<div class="wep ${klass}" data-group="${weapon.group}" data-state="${state}">
           <b>${weapon.group}</b>
           <span>${weapon.name}</span>
-          <i style="width:${Math.max(0, Math.min(100, pct))}%; background:#${weapon.color.toString(16).padStart(6, "0")}"></i>
+          <small>${state}</small>
+          <i style="width:${Math.max(0, Math.min(100, pct))}%; background:#${color}"></i>
         </div>`;
       }).join("");
       root.querySelector("#log").innerHTML = data.messages.map((line) => `<div>${line}</div>`).join("");

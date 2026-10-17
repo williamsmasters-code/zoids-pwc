@@ -24,6 +24,7 @@ import {
   SRGBColorSpace,
   ACESFilmicToneMapping,
   Box3,
+  Vector2,
 } from "three";
 import {
   ZOIDS,
@@ -52,6 +53,12 @@ import { createBrain, updateBrain } from "./ai.js";
 import { addHeat, coolUnit, weaponWantsShot, stepProjectile, canOperateWeapon } from "./combat.js";
 import { sfx } from "./audio.js";
 import { wrapAngle, stepYaw, yawToFace, forwardFromYaw, clamp, approach } from "./frame.js";
+import {
+  AIM_FAR,
+  aimPointAlongRay,
+  directionToPoint,
+  selectAimHit,
+} from "./aim.js";
 
 const UP = new Vector3(0, 1, 0);
 const NEG_Z = new Vector3(0, 0, -1);
@@ -74,6 +81,7 @@ export function startMission(state, contract, hooks) {
   const camera = new PerspectiveCamera(60, 1, 0.15, 2500);
   const clock = new Clock();
   const map = createMap(contract.biome, contract.mapSeed);
+  if (map.ground) map.ground.userData.ground = true;
   scene.add(map.group);
   scene.background = new Color(map.palette.sky);
   scene.fog = new FogExp2(map.palette.fog, map.palette.density);
@@ -96,6 +104,7 @@ export function startMission(state, contract, hooks) {
   let paused = false;
   let manual = false;
   let isolate = false;
+  let pacify = false;
   let helpOn = false;
   let cameraMode = "tps";
   let endTimer = 0;
@@ -109,7 +118,9 @@ export function startMission(state, contract, hooks) {
   const yawRig = new Vector3();
   const raycaster = new Raycaster();
   const inputDevice = createInput();
-  inputDevice.mount();
+  inputDevice.mount(renderer.domElement);
+  let lastGroups = [false, false, false, false];
+  const screenCenterNdc = new Vector2(0, 0);
   const hud = createHUD(host.querySelector("#hud"));
 
   const zoidId = state.selected;
@@ -490,25 +501,57 @@ export function startMission(state, contract, hooks) {
   }
 
   function raycast(origin, dir, ignoreId, maxDist) {
-    raycaster.set(origin, dir.clone().normalize());
+    const direction = dir.clone();
+    if (direction.lengthSq() < 1e-10) return null;
+    direction.normalize();
+    raycaster.set(origin, direction);
     raycaster.near = 0.15;
     raycaster.far = maxDist;
-    const hits = raycaster.intersectObjects(hitMeshes, false);
-    for (const hit of hits) {
+    const list = map.ground ? hitMeshes.concat([map.ground]) : hitMeshes;
+    const raw = raycaster.intersectObjects(list, false);
+    const tagged = raw.map((hit) => {
       const data = hit.object.userData || {};
-      if (data.ownerId && data.ownerId === ignoreId) continue;
-      if (data.block || data.partId) return hit;
-    }
-    return null;
+      return {
+        ownerId: data.ownerId || null,
+        partId: data.partId || null,
+        block: !!data.block,
+        ground: !!(data.ground || hit.object === map.ground),
+        hit,
+      };
+    });
+    const chosen = selectAimHit(tagged, ignoreId);
+    return chosen ? chosen.hit : null;
   }
 
+  // Screen-center ray. The player's own Zoid is ignored so a third-person
+  // camera behind the hull still aims at the point the crosshair covers.
   function cameraAimPoint() {
-    const camDir = new Vector3();
-    // Camera.getWorldDirection is already the view direction (local -Z).
-    camera.getWorldDirection(camDir);
-    const hit = raycast(camera.position.clone(), camDir, player.id, 500);
-    if (hit) return hit.point.clone();
-    return camera.position.clone().addScaledVector(camDir, 400);
+    camera.updateMatrixWorld(true);
+    raycaster.setFromCamera(screenCenterNdc, camera);
+    const origin = raycaster.ray.origin.clone();
+    const direction = raycaster.ray.direction.clone();
+    const hit = raycast(origin, direction, player.id, AIM_FAR);
+    const point = aimPointAlongRay(origin, direction, hit ? hit.point : null, AIM_FAR);
+    return new Vector3(point.x, point.y, point.z);
+  }
+
+  // Barrel local -Z passes through `aimPoint`. The muzzle sits on that axis,
+  // so a shot from the muzzle along the returned direction hits the point.
+  // Only AI fire is clamped to the chassis. Player shots follow the crosshair.
+  function mountAimDirection(unit, mount, aimPoint) {
+    const anchor = unit.model.anchors[mount];
+    const from = new Vector3();
+    if (anchor) anchor.getWorldPosition(from);
+    else unit.model.muzzles[mount].getWorldPosition(from);
+    const plain = directionToPoint(from, aimPoint);
+    let dir = new Vector3(plain.x, plain.y, plain.z);
+    if (dir.lengthSq() < 1e-8) facingDirection(unit.model.root, dir);
+    if (unit !== player) {
+      const chassisFwd = facingDirection(unit.model.root, new Vector3());
+      dir = clampAim(chassisFwd, dir, 0.6);
+    }
+    if (anchor) aimNegZ(anchor, dir);
+    return dir;
   }
 
   function trackWeapons(unit, dir) {
@@ -518,25 +561,28 @@ export function startMission(state, contract, hooks) {
     }
   }
 
-  function shoot(unit, weapon) {
+  function trackPlayerWeapons(aimPoint) {
+    for (const mount of Object.keys(player.model.muzzles)) {
+      if (!player.model.muzzles[mount]) continue;
+      mountAimDirection(player, mount, aimPoint);
+    }
+  }
+
+  function shoot(unit, weapon, aimPoint) {
     const muzzleObj = unit.model.muzzles[weapon.mount];
     if (!muzzleObj) return;
-    const muzzle = new Vector3();
-    muzzleObj.getWorldPosition(muzzle);
-    let aimPoint;
-    if (unit === player) aimPoint = cameraAimPoint();
-    else if (unit.cmd && unit.cmd.aim) aimPoint = new Vector3(unit.cmd.aim.x, unit.cmd.aim.y, unit.cmd.aim.z);
-    else {
-      const fwd = facingDirection(unit.model.root, new Vector3());
-      aimPoint = muzzle.clone().addScaledVector(fwd, 50);
+    let point = aimPoint;
+    if (!point) {
+      if (unit.cmd && unit.cmd.aim) point = new Vector3(unit.cmd.aim.x, unit.cmd.aim.y, unit.cmd.aim.z);
+      else {
+        const fwd = facingDirection(unit.model.root, new Vector3());
+        const origin = new Vector3();
+        muzzleObj.getWorldPosition(origin);
+        point = origin.clone().addScaledVector(fwd, 80);
+      }
     }
-    let dir = aimPoint.clone().sub(muzzle);
-    if (dir.lengthSq() < 1e-4) facingDirection(unit.model.root, dir);
-    dir.normalize();
-    const chassisFwd = facingDirection(unit.model.root, new Vector3());
-    dir = clampAim(chassisFwd, dir, unit === player ? 0.95 : 0.6);
-    const anchor = unit.model.anchors[weapon.mount];
-    if (anchor) aimNegZ(anchor, dir);
+    const dir = mountAimDirection(unit, weapon.mount, point);
+    const muzzle = new Vector3();
     muzzleObj.getWorldPosition(muzzle);
     const volley = weapon.volley || 1;
     for (let i = 0; i < volley; i++) {
@@ -572,7 +618,8 @@ export function startMission(state, contract, hooks) {
     const end = hit ? hit.point.clone() : origin.clone().addScaledVector(dir, weapon.range);
     beam(origin, end, weapon.color);
     if (!hit) return;
-    if (hit.object.userData.block) {
+    const hitData = hit.object.userData || {};
+    if (hitData.block || hitData.ground || hit.object === map.ground) {
       flash(hit.point, 0xffcc88, 0.45);
       return;
     }
@@ -590,7 +637,9 @@ export function startMission(state, contract, hooks) {
     );
     mesh.position.copy(origin);
     scene.add(mesh);
-    const target = unit === player ? currentTarget() : unit.aiTarget;
+    // Player rounds fly at the crosshair point. Homing would pull them off it.
+    const homing = unit !== player && !!weapon.homing;
+    const target = homing ? unit.aiTarget : null;
     projectiles.push({
       x: origin.x,
       y: origin.y,
@@ -605,8 +654,8 @@ export function startMission(state, contract, hooks) {
       life: weapon.range / speed + 0.35,
       traveled: 0,
       range: weapon.range,
-      homing: !!weapon.homing,
-      turn: weapon.homing ? 2.6 : 0,
+      homing,
+      turn: homing ? 2.6 : 0,
       targetId: target && target.alive ? target.id : null,
       mesh,
     });
@@ -634,7 +683,8 @@ export function startMission(state, contract, hooks) {
         const hit = raycast(new Vector3(prev.x, prev.y, prev.z), stepDir, shot.ownerId, dist + 0.2);
         if (hit) {
           shot.life = 0;
-          if (hit.object.userData.block) flash(hit.point, shot.color, 0.5);
+          const hitData = hit.object.userData || {};
+          if (hitData.block || hitData.ground || hit.object === map.ground) flash(hit.point, shot.color, 0.5);
           else {
             const victim = units.find((u) => u.id === hit.object.userData.ownerId);
             const attacker = units.find((u) => u.id === shot.ownerId);
@@ -925,11 +975,10 @@ export function startMission(state, contract, hooks) {
     if (unit === player) {
       const aim = cameraAimPoint();
       const origin = new Vector3();
-      player.model.anchors.eye.getWorldPosition(origin);
-      const dir = aim.sub(origin);
-      if (dir.lengthSq() < 1e-6) return facingDirection(player.model.root, new Vector3());
-      const chassisFwd = facingDirection(player.model.root, new Vector3());
-      return clampAim(chassisFwd, dir, 0.95);
+      const anchor = player.model.anchors.headWeapon || player.model.anchors.eye;
+      anchor.getWorldPosition(origin);
+      const plain = directionToPoint(origin, aim);
+      return new Vector3(plain.x, plain.y, plain.z);
     }
     if (unit.cmd && unit.cmd.aim) {
       const origin = unit.model.root.position.clone();
@@ -948,6 +997,7 @@ export function startMission(state, contract, hooks) {
       forward: 0, strafe: 0, turn: 0, boost: false, groups: [false, false, false, false],
       dx: 0, dy: 0, tab: false, nearest: false, camera: false, help: false,
     } : inputDevice.read();
+    lastGroups = input.groups.slice();
     if (input.help) helpOn = !helpOn;
     if (input.camera) cameraMode = cameraMode === "fps" ? "tps" : "fps";
     if (input.tab) cycleTarget(1);
@@ -961,7 +1011,8 @@ export function startMission(state, contract, hooks) {
     }
 
     drivePlayer(dt, input);
-    if (!isolate) {
+    const liveBattle = !isolate && !pacify;
+    if (liveBattle) {
       for (const unit of units) {
         if (unit === player || !unit.alive) continue;
         if (unit.script) unit.script(unit, dt);
@@ -978,33 +1029,65 @@ export function startMission(state, contract, hooks) {
       plant(unit);
     }
 
-    if (!isolate) {
-      for (const unit of units) {
-        if (!unit.alive) continue;
-        const aim = desiredAim(unit);
-        trackWeapons(unit, aim);
-        coolUnit(unit, dt);
-        for (const weapon of unit.weapons) {
-          const trigger = unit === player
-            ? !!input.groups[(weapon.group || 1) - 1]
-            : !!(unit.cmd && unit.cmd.fire);
-          if (weaponWantsShot(weapon, dt, trigger, canOperateWeapon(unit, weapon))) shoot(unit, weapon);
-        }
-      }
-      updateProjectiles(dt);
-      updateObjectives(dt);
-    }
-
     for (const unit of units) {
       if (!unit.model.root.visible) continue;
       const speedNorm = Math.min(1, Math.abs(unit.speed) / Math.max(1, unit.def.speed || 1));
       unit.model.animate(missionTime, speedNorm, unit.parts);
       if (unit.alive) refreshPartColors(unit.model, unit.parts);
     }
+    // Camera first, then fire, so the shot uses the view that is drawn.
     placeCamera();
+
+    const playerAim = cameraAimPoint();
+    trackPlayerWeapons(playerAim);
+    for (const unit of units) {
+      if (!unit.alive) continue;
+      if (!liveBattle && unit !== player) continue;
+      if (unit !== player) trackWeapons(unit, desiredAim(unit));
+      coolUnit(unit, dt);
+      for (const weapon of unit.weapons) {
+        const trigger = unit === player
+          ? !!input.groups[(weapon.group || 1) - 1]
+          : !!(unit.cmd && unit.cmd.fire);
+        if (weaponWantsShot(weapon, dt, trigger, canOperateWeapon(unit, weapon))) {
+          shoot(unit, weapon, unit === player ? playerAim : null);
+        }
+      }
+    }
+    if (liveBattle) {
+      updateProjectiles(dt);
+      updateObjectives(dt);
+    }
     updateEffects(dt);
     pushHud(input);
     renderer.render(scene, camera);
+  }
+
+  function groupRows() {
+    const rows = [];
+    for (let group = 1; group <= 4; group++) {
+      const list = player.weapons.filter((weapon) => (weapon.group || 1) === group);
+      if (!list.length) {
+        rows.push({ group, name: "Empty", state: "empty", pct: 0, color: 0x334048 });
+        continue;
+      }
+      const operable = list.filter((weapon) => canOperateWeapon(player, weapon));
+      let state = "ready";
+      if (!operable.length) state = "disabled";
+      else if (operable.every((weapon) => weapon.cooldown > 0.03 || weapon.charging)) state = "cooling";
+      const lead = operable[0] || list[0];
+      const pct = lead.windup
+        ? Math.round((lead.charge / Math.max(0.001, lead.windup)) * 100)
+        : Math.round((1 - Math.min(1, lead.cooldown * (lead.rate || 1))) * 100);
+      rows.push({
+        group,
+        name: list.map((weapon) => weapon.name).join(" + "),
+        state,
+        pct,
+        color: lead.color,
+      });
+    }
+    return rows;
   }
 
   function pushHud() {
@@ -1055,17 +1138,7 @@ export function startMission(state, contract, hooks) {
       boosting: player.boosting,
       boostReady: perf.boosterReady,
       target: targetData,
-      weapons: player.weapons.map((weapon) => ({
-        name: weapon.name,
-        group: weapon.group,
-        cooldown: weapon.cooldown,
-        rate: weapon.rate,
-        charge: weapon.charge,
-        windup: weapon.windup || 0,
-        color: weapon.color,
-        destroyed: !canOperateWeapon(player, weapon) && !!player.parts[weapon.mount] && player.parts[weapon.mount].destroyed,
-        firing: weapon.charging,
-      })),
+      weapons: groupRows(),
       messages,
       help: helpOn,
       locked: document.pointerLockElement === renderer.domElement,
@@ -1332,12 +1405,18 @@ export function startMission(state, contract, hooks) {
       ? !canOperateWeapon(player, player.weapons[0])
       : true;
     refreshPartColors(player.model, player.parts);
+    pushHud();
+    const dock = [...document.querySelectorAll("#weapon-dock .wep")].map((el) => ({
+      group: el.dataset.group,
+      state: el.dataset.state,
+    }));
     const result = {
       ok: after < before * 0.6 && sensors.scramble >= 0.99 && sensors.rangeMul <= 0.3 && sensors.radar === false && disabled,
       before,
       after,
       sensors,
       disabled,
+      dock,
     };
     // Put the live Zoid back so the contract can still finish.
     applyCondition(player.parts, serializeParts(snapshotParts));
@@ -1368,6 +1447,62 @@ export function startMission(state, contract, hooks) {
     }
   }
 
+  function weaponCooldowns() {
+    return player.weapons.map((weapon) => ({
+      mount: weapon.mount,
+      group: weapon.group,
+      cooldown: weapon.cooldown,
+      name: weapon.name,
+    }));
+  }
+
+  function setGroup(mount, group) {
+    const weapon = player.weapons.find((item) => item.mount === mount);
+    if (!weapon) return null;
+    weapon.group = group;
+    return weaponCooldowns();
+  }
+
+  function aimCheck() {
+    placeCamera();
+    const point = cameraAimPoint();
+    const camDir = new Vector3();
+    camera.getWorldDirection(camDir);
+    const to = point.clone().sub(camera.position);
+    const far = to.length();
+    if (far > 1e-8) to.multiplyScalar(1 / far);
+    const errors = [];
+    for (const mount of Object.keys(player.model.muzzles)) {
+      const muzzleObj = player.model.muzzles[mount];
+      if (!muzzleObj) continue;
+      const dir = mountAimDirection(player, mount, point);
+      const muzzle = new Vector3();
+      muzzleObj.getWorldPosition(muzzle);
+      const toPoint = point.clone().sub(muzzle);
+      const along = toPoint.dot(dir);
+      const closest = muzzle.clone().addScaledVector(dir, along);
+      const error = closest.distanceTo(point);
+      errors.push({ mount, error, along, passes: error < 0.05 && along > 0 });
+    }
+    const hit = raycast(camera.position.clone(), camDir, player.id, AIM_FAR);
+    let hitKind = "far";
+    if (hit) {
+      const data = hit.object.userData || {};
+      if (data.ownerId === player.id) hitKind = "self";
+      else if (data.ground || hit.object === map.ground) hitKind = "ground";
+      else if (data.block) hitKind = "block";
+      else hitKind = "part";
+    }
+    return {
+      mode: cameraMode,
+      align: to.dot(camDir),
+      far,
+      hitKind,
+      errors,
+      point: { x: point.x, y: point.y, z: point.z },
+    };
+  }
+
   function enemySnapshot() {
     return units
       .filter((unit) => unit.team === "enemy" && !unit.def.immobile)
@@ -1394,6 +1529,14 @@ export function startMission(state, contract, hooks) {
   window.__ZOIDS__.damageTest = damageTest;
   window.__ZOIDS__.debugForceWin = debugForceWin;
   window.__ZOIDS__.enemySnapshot = enemySnapshot;
+  window.__ZOIDS__.aimCheck = aimCheck;
+  window.__ZOIDS__.weaponCooldowns = weaponCooldowns;
+  window.__ZOIDS__.lastGroups = () => lastGroups.slice();
+  window.__ZOIDS__.setGroup = setGroup;
+  window.__ZOIDS__.setPacified = (value) => {
+    pacify = !!value;
+    return pacify;
+  };
   window.__ZOIDS__.contract = contract.name;
   window.__ZOIDS__.contractType = contract.type;
 

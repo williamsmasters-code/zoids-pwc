@@ -56,7 +56,7 @@ export function freshState() {
     nextUid: 3,
     inventory: [
       { uid: "w1", type: "pulseLaser", group: 1 },
-      { uid: "w2", type: "pulseLaser", group: 1 },
+      { uid: "w2", type: "pulseLaser", group: 2 },
     ],
     hangar,
   };
@@ -131,7 +131,13 @@ export function saveState(state) {
 }
 
 export function resetState() {
-  localStorage.removeItem(SAVE_KEY);
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key === SAVE_KEY || key.startsWith("zoidMercs."))) keys.push(key);
+  }
+  if (!keys.includes(SAVE_KEY)) keys.push(SAVE_KEY);
+  for (const key of keys) localStorage.removeItem(key);
   return freshState();
 }
 

@@ -2,11 +2,8 @@
   "name": "zoid-mercenaries",
   "private": true,
   "type": "module",
-  "imports": {
-    "three": "./vendor/three.module.js"
-  },
   "scripts": {
-    "test": "node tests/damage.test.mjs && node tests/models_check.mjs && node tests/headless.mjs"
+    "test": "node tests/damage.test.mjs && node tests/aim.test.mjs && node tests/input.test.mjs && node tests/reset.test.mjs && node tests/models_check.mjs && node tests/headless.mjs"
   },
   "dependencies": {
     "three": "file:./vendor"

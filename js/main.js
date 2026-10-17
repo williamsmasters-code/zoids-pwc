@@ -13,7 +13,15 @@ function showBootError(err) {
   document.body.appendChild(pre);
 }
 
+function closeCurrentHangar() {
+  if (!closeHangar) return;
+  const close = closeHangar;
+  closeHangar = null;
+  close();
+}
+
 function toHangar() {
+  closeCurrentHangar();
   const debrief = document.getElementById("debrief-root");
   if (debrief) {
     debrief.classList.add("hidden");
@@ -24,8 +32,7 @@ function toHangar() {
   closeHangar = showHangar(state, {
     onLaunch(contract) {
       unlockAudio();
-      if (closeHangar) closeHangar();
-      closeHangar = null;
+      closeCurrentHangar();
       startMission(state, contract, {
         onExit(result) {
           showDebrief(state, result, () => toHangar());

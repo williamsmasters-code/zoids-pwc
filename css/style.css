@@ -178,7 +178,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .reticle {
   position: absolute;
   left: 50%;
-  top: 46%;
+  top: 50%;
   width: 22px;
   height: 22px;
   transform: translate(-50%, -50%);
@@ -246,7 +246,10 @@ button:disabled { opacity: 0.45; cursor: default; }
 }
 .wep b { color: var(--amber); margin-right: 4px; }
 .wep i { display: block; height: 4px; margin-top: 4px; }
+.wep small { display: block; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .wep.dead { opacity: 0.4; text-decoration: line-through; }
+.wep.cooling { border-color: var(--amber); }
+.wep.empty { opacity: 0.55; }
 #minimap { position: absolute; right: 12px; top: 42px; border: 1px solid var(--line); background: rgba(0,0,0,0.35); }
 .log {
   position: absolute;

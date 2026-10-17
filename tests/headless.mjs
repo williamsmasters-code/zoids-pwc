@@ -80,6 +80,11 @@ try {
     defaultViewport: { width: 1280, height: 720 },
   });
   const page = await browser.newPage();
+  const dialogs = [];
+  page.on("dialog", (dialog) => {
+    dialogs.push(dialog.message());
+    return dialog.accept();
+  });
   page.on("pageerror", (err) => note("pageerror", err.stack || err.message));
   page.on("console", (msg) => {
     if (msg.type() !== "error") return;
@@ -117,6 +122,7 @@ try {
     );
   }
   await page.click('.zoid-card[data-id="shieldLiger"]');
+  const freshTitles = await page.$$eval(".contract-card h4", (els) => els.map((el) => el.textContent));
   const moneyBefore = await page.$eval("#money", (el) => el.textContent);
   console.log("hangar money", moneyBefore);
 
@@ -161,6 +167,109 @@ try {
   if (!moved) note("ai", `enemies did not move ${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
   else console.log("ai moved", after.map((unit) => `${unit.name} speed ${unit.speed.toFixed(1)}`).join("; "));
 
+  await page.evaluate(() => window.__ZOIDS__.setPacified(true));
+  const dock = await page.evaluate(() => [...document.querySelectorAll("#weapon-dock .wep")].map((el) => ({
+    group: el.dataset.group,
+    state: el.dataset.state,
+    text: el.innerText,
+  })));
+  console.log("weapon dock", dock.map((row) => `${row.group}:${row.state}`).join(" "));
+  if (dock.length !== 4) note("weapons", `expected 4 group rows, saw ${dock.length}`);
+  for (const row of dock) {
+    if (!["ready", "cooling", "disabled", "empty"].includes(row.state)) {
+      note("weapons", `group ${row.group} state ${row.state}`);
+    }
+  }
+  if (dock[0] && dock[0].state === "empty") note("weapons", "group 1 is empty");
+  if (dock[1] && dock[1].state === "empty") note("weapons", "group 2 is empty");
+  if (dock[2] && dock[2].state !== "empty") note("weapons", `group 3 is ${dock[2].state}`);
+  if (dock[3] && dock[3].state !== "empty") note("weapons", `group 4 is ${dock[3].state}`);
+
+  function checkAim(label, aim) {
+    console.log("aim", label, aim.mode, "align", aim.align.toFixed(4), "far", aim.far.toFixed(1), aim.hitKind);
+    if (aim.align < 0.999) note("aim", `${label} crosshair align ${aim.align}`);
+    if (aim.hitKind === "self") note("aim", `${label} ray hit the player's own Zoid`);
+    const minFar = label === "tps" ? 15 : 3;
+    if (aim.far < minFar) note("aim", `${label} aim point is only ${aim.far.toFixed(1)} m out`);
+    if (!aim.errors.length) note("aim", `${label} has no weapon mounts`);
+    for (const row of aim.errors) {
+      if (!row.passes) note("aim", `${label} ${row.mount} misses by ${row.error.toFixed(3)} along ${row.along.toFixed(2)}`);
+    }
+  }
+  checkAim("tps", await page.evaluate(() => window.__ZOIDS__.aimCheck()));
+  await page.keyboard.down("KeyV");
+  await sleep(90);
+  await page.keyboard.up("KeyV");
+  await sleep(50);
+  const fpsLabel = await page.$eval("#cam-mode", (el) => el.textContent);
+  if (fpsLabel !== "1ST") note("aim", `expected 1ST after V, saw ${fpsLabel}`);
+  checkAim("fps", await page.evaluate(() => window.__ZOIDS__.aimCheck()));
+  await page.keyboard.down("KeyV");
+  await sleep(90);
+  await page.keyboard.up("KeyV");
+  await sleep(50);
+  const tpsLabel = await page.$eval("#cam-mode", (el) => el.textContent);
+  if (tpsLabel !== "3RD") note("aim", `expected 3RD after second V, saw ${tpsLabel}`);
+
+  async function waitCool() {
+    const deadline = Date.now() + 900;
+    while (Date.now() < deadline) {
+      const hot = await page.evaluate(() => window.__ZOIDS__.weaponCooldowns().some((row) => row.cooldown > 0.02));
+      if (!hot) return;
+      await sleep(30);
+    }
+    note("weapons", "cooldown did not clear");
+  }
+
+  async function fireGroup(code, groupIndex) {
+    await waitCool();
+    if (code === "MouseRight") await page.mouse.move(640, 360);
+    if (code === "MouseRight") await page.mouse.down({ button: "right" });
+    else await page.keyboard.down(code);
+    const deadline = Date.now() + 600;
+    let sample = null;
+    while (Date.now() < deadline) {
+      sample = await page.evaluate((index) => {
+        const rows = window.__ZOIDS__.weaponCooldowns();
+        const groups = window.__ZOIDS__.lastGroups();
+        const mine = rows.filter((row) => row.group === index + 1);
+        const others = rows.filter((row) => row.group !== index + 1);
+        const state = document.querySelector(`#weapon-dock .wep[data-group="${index + 1}"]`)?.dataset.state || "";
+        return {
+          held: !!groups[index],
+          mine: mine.map((row) => row.cooldown),
+          otherMax: others.reduce((max, row) => Math.max(max, row.cooldown), 0),
+          state,
+        };
+      }, groupIndex);
+      if (sample.held && sample.mine.some((cd) => cd > 0.04) && sample.otherMax < 0.02 && sample.state === "cooling") break;
+      await sleep(20);
+    }
+    if (code === "MouseRight") await page.mouse.up({ button: "right" });
+    else await page.keyboard.up(code);
+    console.log("fired", code, JSON.stringify(sample));
+    if (!sample || !sample.held) note("weapons", `${code} did not hold group ${groupIndex + 1}`);
+    else if (!sample.mine.some((cd) => cd > 0.04)) note("weapons", `${code} did not fire group ${groupIndex + 1}`);
+    else if (sample.otherMax >= 0.02) note("weapons", `${code} also cooled another group (${sample.otherMax})`);
+    else if (sample.state !== "cooling") note("weapons", `${code} dock state ${sample.state}`);
+  }
+
+  await fireGroup("Digit1", 0);
+  await fireGroup("Digit2", 1);
+  const toGroup3 = await page.evaluate(() => window.__ZOIDS__.setGroup("leftWeapon", 3));
+  if (!toGroup3 || !toGroup3.some((row) => row.mount === "leftWeapon" && row.group === 3)) {
+    note("weapons", `setGroup 3 failed ${JSON.stringify(toGroup3)}`);
+  }
+  await fireGroup("Digit3", 2);
+  const toGroup4 = await page.evaluate(() => window.__ZOIDS__.setGroup("leftWeapon", 4));
+  if (!toGroup4 || !toGroup4.some((row) => row.mount === "leftWeapon" && row.group === 4)) {
+    note("weapons", `setGroup 4 failed ${JSON.stringify(toGroup4)}`);
+  }
+  await fireGroup("Digit4", 3);
+  await page.evaluate(() => window.__ZOIDS__.setGroup("leftWeapon", 2));
+  await fireGroup("MouseRight", 1);
+  await page.evaluate(() => window.__ZOIDS__.setPacified(false));
+
   const selfTest = await page.evaluate(() => window.__ZOIDS__.selfTest());
   if (!selfTest.ok) note("selfTest", selfTest.failures.join(" | "));
   else console.log("selfTest ok");
@@ -168,6 +277,12 @@ try {
   const damage = await page.evaluate(() => window.__ZOIDS__.damageTest());
   if (!damage.ok) note("damageTest", JSON.stringify(damage));
   else console.log("damageTest ok", damage.before.toFixed(1), "->", damage.after.toFixed(1));
+  if (!damage.dock || !damage.dock.some((row) => row.state === "disabled")) {
+    note("weapons", `destroyed mount did not show disabled ${JSON.stringify(damage.dock)}`);
+  }
+  if (!damage.dock || !damage.dock.some((row) => row.state === "empty")) {
+    note("weapons", `missing empty group while damaged ${JSON.stringify(damage.dock)}`);
+  }
 
   const cam = await page.evaluate(() => document.querySelector("#cam-mode")?.textContent);
   if (cam !== "3RD") note("camera", `expected to finish in 3RD, saw ${cam}`);
@@ -200,6 +315,59 @@ try {
   console.log("returned", record, moneyAfter);
   if (!record.startsWith("1 wins")) note("loop", `record is ${record}`);
   if (moneyAfter === moneyBefore) note("loop", "money did not change after payout");
+
+  await page.evaluate(() => {
+    const raw = JSON.parse(localStorage.getItem("zoidMercs.save.v1"));
+    raw.money = 1234;
+    raw.wins = 9;
+    raw.reputation = 9;
+    raw.missionsDone = 9;
+    raw.hangar.commandWolf.owned = true;
+    localStorage.setItem("zoidMercs.save.v1", JSON.stringify(raw));
+    localStorage.setItem("zoidMercs.other", "x");
+  });
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 20000 });
+  await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.ready, { timeout: 20000 });
+  const dirty = await page.evaluate(() => ({
+    money: document.querySelector("#money")?.textContent || "",
+    record: document.querySelector("#record")?.textContent || "",
+    wolf: document.querySelector('.zoid-card[data-id="commandWolf"] small')?.textContent || "",
+  }));
+  console.log("dirty company", dirty.money, dirty.record, dirty.wolf);
+  if (!dirty.money.includes("1,234")) note("reset", `dirty money is ${dirty.money}`);
+  if (!dirty.record.startsWith("9 wins")) note("reset", `dirty record is ${dirty.record}`);
+  if (!dirty.wolf.includes("owned")) note("reset", `wolf was not owned after reload (${dirty.wolf})`);
+
+  dialogs.length = 0;
+  await page.click("#reset-btn");
+  await page.waitForFunction(
+    () => document.querySelector("#money")?.textContent === "185,000 C",
+    { timeout: 8000 },
+  );
+  const reset = await page.evaluate(() => ({
+    money: document.querySelector("#money")?.textContent || "",
+    record: document.querySelector("#record")?.textContent || "",
+    wolf: document.querySelector('.zoid-card[data-id="commandWolf"] small')?.textContent || "",
+    groups: [...document.querySelectorAll('button[data-act="group"]')].map((el) => el.textContent),
+    titles: [...document.querySelectorAll(".contract-card h4")].map((el) => el.textContent),
+    save: localStorage.getItem("zoidMercs.save.v1"),
+    other: localStorage.getItem("zoidMercs.other"),
+    screen: window.__ZOIDS__ && window.__ZOIDS__.screen,
+  }));
+  console.log("reset company", reset.money, reset.record, reset.groups.join(","));
+  if (!dialogs.some((message) => /Reset the company/.test(message))) note("reset", `confirm text: ${dialogs.join(" | ")}`);
+  if (reset.money !== "185,000 C") note("reset", `money is ${reset.money}`);
+  if (!reset.record.startsWith("0 wins")) note("reset", `record is ${reset.record}`);
+  if (reset.wolf.includes("owned")) note("reset", `wolf still owned (${reset.wolf})`);
+  if (!reset.groups.includes("Group 1") || !reset.groups.includes("Group 2")) {
+    note("reset", `groups ${reset.groups.join(",")}`);
+  }
+  if (JSON.stringify(reset.titles) !== JSON.stringify(freshTitles)) {
+    note("reset", `contracts ${reset.titles.join(" | ")} vs ${freshTitles.join(" | ")}`);
+  }
+  if (reset.save !== null) note("reset", "save key still present");
+  if (reset.other !== null) note("reset", "zoidMercs.other still present");
+  if (reset.screen !== "hangar") note("reset", `screen is ${reset.screen}`);
 
   await page.screenshot({ path: path.join(shots, "debrief-return.png") });
 } finally {

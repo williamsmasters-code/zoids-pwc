@@ -92,13 +92,11 @@ export function showHangar(state, hooks) {
   let viewing = state.selected;
   let picker = null;
   let status = "";
-  let confirmReset = false;
   const preview = createPreview(root.querySelector("#preview-canvas"));
 
   function flash(result) {
     if (result && result.ok === false) status = result.reason;
     else status = "";
-    confirmReset = false;
   }
 
   function render() {
@@ -252,11 +250,11 @@ export function showHangar(state, hooks) {
       </div>
     `;
     root.querySelector("#status").textContent = status;
-    root.querySelector("#reset-btn").textContent = confirmReset ? "Confirm reset" : "Reset company";
+    root.querySelector("#reset-btn").textContent = "Reset company";
     preview.show(def, weapons);
   }
 
-  root.addEventListener("click", (event) => {
+  function onClick(event) {
     const target = event.target.closest("[data-act]");
     if (!target || !root.contains(target)) return;
     const act = target.dataset.act;
@@ -293,14 +291,11 @@ export function showHangar(state, hooks) {
     else if (act === "loan") flash(repairZoid(state, viewing, { allowDebt: true }));
     else if (act === "reroll") flash(rerollSeed(state));
     else if (act === "reset") {
-      if (!confirmReset) {
-        confirmReset = true;
-        status = "Reset wipes money, Zoids, and weapons saved in this browser.";
-        render();
-        return;
-      }
+      const ok = window.confirm(
+        "Reset the company? This wipes money, Zoids, weapons, and contract progress saved in this browser.",
+      );
+      if (!ok) return;
       const next = resetState();
-      preview.dispose();
       hooks.onReset(next);
       return;
     } else if (act === "launch") {
@@ -315,14 +310,21 @@ export function showHangar(state, hooks) {
       return;
     }
     render();
-  });
+  }
+  root.addEventListener("click", onClick);
 
   render();
   window.__ZOIDS__ = window.__ZOIDS__ || {};
   window.__ZOIDS__.screen = "hangar";
   window.__ZOIDS__.ready = true;
 
-  return () => preview.dispose();
+  let closed = false;
+  return () => {
+    if (closed) return;
+    closed = true;
+    root.removeEventListener("click", onClick);
+    preview.dispose();
+  };
 }
 
 function labelType(type) {

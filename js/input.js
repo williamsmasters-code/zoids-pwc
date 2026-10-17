@@ -1,4 +1,6 @@
-// Keyboard and mouse. Pointer-lock deltas drive look. Keys drive the chassis.
+// Keyboard and mouse. Pointer-lock deltas drive look. Keys and mouse buttons
+// drive the chassis and the weapon groups. Right click is group 2, so the
+// context menu is cancelled on the document and on the mission canvas.
 
 export function createInput() {
   const down = new Set();
@@ -8,6 +10,7 @@ export function createInput() {
   let lmb = false;
   let rmb = false;
   let mounted = false;
+  let target = null;
 
   function onKeyDown(e) {
     if (e.repeat) return;
@@ -21,7 +24,8 @@ export function createInput() {
     down.delete(e.code);
   }
   function onMouseDown(e) {
-    if (document.pointerLockElement == null) return;
+    // Button 2 must be taken even if pointer lock drops as the menu opens.
+    if (e.button === 2 && e.preventDefault) e.preventDefault();
     if (e.button === 0) lmb = true;
     if (e.button === 2) rmb = true;
   }
@@ -35,29 +39,35 @@ export function createInput() {
     dy += e.movementY || 0;
   }
   function onContext(e) {
-    e.preventDefault();
+    if (e.preventDefault) e.preventDefault();
   }
 
   return {
-    mount() {
+    mount(canvas) {
       if (mounted) return;
       mounted = true;
+      target = canvas || null;
       window.addEventListener("keydown", onKeyDown);
       window.addEventListener("keyup", onKeyUp);
-      window.addEventListener("mousedown", onMouseDown);
-      window.addEventListener("mouseup", onMouseUp);
+      document.addEventListener("mousedown", onMouseDown, true);
+      document.addEventListener("mouseup", onMouseUp, true);
       window.addEventListener("mousemove", onMove);
-      window.addEventListener("contextmenu", onContext);
+      document.addEventListener("contextmenu", onContext, true);
+      window.addEventListener("contextmenu", onContext, true);
+      if (target) target.addEventListener("contextmenu", onContext, true);
     },
     unmount() {
       if (!mounted) return;
       mounted = false;
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("mousedown", onMouseDown, true);
+      document.removeEventListener("mouseup", onMouseUp, true);
       window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("contextmenu", onContext);
+      document.removeEventListener("contextmenu", onContext, true);
+      window.removeEventListener("contextmenu", onContext, true);
+      if (target) target.removeEventListener("contextmenu", onContext, true);
+      target = null;
       down.clear();
       edges.clear();
       lmb = false;
