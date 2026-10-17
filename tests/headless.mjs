@@ -7,7 +7,8 @@
 
 import puppeteer from "puppeteer-core";
 import { spawn } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
+import { inflateSync } from "node:zlib";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,6 +35,77 @@ function stopServer() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function paeth(left, up, upLeft) {
+  const estimate = left + up - upLeft;
+  const pa = Math.abs(estimate - left);
+  const pb = Math.abs(estimate - up);
+  const pc = Math.abs(estimate - upLeft);
+  if (pa <= pb && pa <= pc) return left;
+  if (pb <= pc) return up;
+  return upLeft;
+}
+
+// Average luma of a center window. Puppeteer writes 8-bit RGB PNGs.
+async function centerLuma(file) {
+  const buf = await readFile(file);
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let colorType = 0;
+  const idat = [];
+  while (offset < buf.length) {
+    const len = buf.readUInt32BE(offset);
+    const type = buf.toString("ascii", offset + 4, offset + 8);
+    const data = buf.subarray(offset + 8, offset + 8 + len);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      colorType = data[9];
+    } else if (type === "IDAT") idat.push(data);
+    else if (type === "IEND") break;
+    offset += 12 + len;
+  }
+  const channels = colorType === 6 ? 4 : 3;
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = width * channels;
+  const pixels = Buffer.alloc(height * stride);
+  let src = 0;
+  for (let y = 0; y < height; y++) {
+    const filter = raw[src++];
+    const row = y * stride;
+    const prev = y === 0 ? -1 : row - stride;
+    for (let x = 0; x < stride; x++) {
+      const left = x >= channels ? pixels[row + x - channels] : 0;
+      const up = prev >= 0 ? pixels[prev + x] : 0;
+      const upLeft = prev >= 0 && x >= channels ? pixels[prev + x - channels] : 0;
+      const value = raw[src++];
+      let decoded = value;
+      if (filter === 1) decoded = (value + left) & 255;
+      else if (filter === 2) decoded = (value + up) & 255;
+      else if (filter === 3) decoded = (value + ((left + up) >> 1)) & 255;
+      else if (filter === 4) decoded = (value + paeth(left, up, upLeft)) & 255;
+      pixels[row + x] = decoded;
+    }
+  }
+  const x0 = Math.floor(width * 0.4);
+  const x1 = Math.floor(width * 0.6);
+  const y0 = Math.floor(height * 0.35);
+  const y1 = Math.floor(height * 0.65);
+  let sum = 0;
+  let dark = 0;
+  let count = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const index = (y * width + x) * channels;
+      const luma = 0.2126 * pixels[index] + 0.7152 * pixels[index + 1] + 0.0722 * pixels[index + 2];
+      sum += luma;
+      if (luma < 32) dark += 1;
+      count += 1;
+    }
+  }
+  return { avg: sum / count, darkFrac: dark / count };
 }
 
 async function waitForServer() {
@@ -204,12 +276,32 @@ try {
   const fpsLabel = await page.$eval("#cam-mode", (el) => el.textContent);
   if (fpsLabel !== "1ST") note("aim", `expected 1ST after V, saw ${fpsLabel}`);
   checkAim("fps", await page.evaluate(() => window.__ZOIDS__.aimCheck()));
+  const fpvShot = path.join(shots, "fpv-after.png");
+  await page.screenshot({ path: fpvShot });
+  console.log("screenshot screenshots/fpv-after.png");
+  const fpvBody = await page.evaluate(() => window.__ZOIDS__.bodyVisibility());
+  if (fpvBody.mode !== "fps") note("fpv", `mode is ${fpvBody.mode}`);
+  if (!fpvBody.body.length) note("fpv", "no body meshes");
+  const shownBody = fpvBody.body.filter((mesh) => mesh.visible).map((mesh) => mesh.id);
+  if (shownBody.length) note("fpv", `body still drawn: ${shownBody.join(",")}`);
+  if (!fpvBody.weapons.length) note("fpv", "weapon meshes missing");
+  const fpvCenter = await centerLuma(fpvShot);
+  console.log("fpv center", fpvCenter.avg.toFixed(1), "dark", fpvCenter.darkFrac.toFixed(3));
+  if (fpvCenter.avg < 80 || fpvCenter.darkFrac > 0.12) {
+    note("fpv", `center is near-black avg ${fpvCenter.avg.toFixed(1)} dark ${fpvCenter.darkFrac.toFixed(3)}`);
+  }
   await page.keyboard.down("KeyV");
   await sleep(90);
   await page.keyboard.up("KeyV");
   await sleep(50);
   const tpsLabel = await page.$eval("#cam-mode", (el) => el.textContent);
   if (tpsLabel !== "3RD") note("aim", `expected 3RD after second V, saw ${tpsLabel}`);
+  const tpsBody = await page.evaluate(() => window.__ZOIDS__.bodyVisibility());
+  if (tpsBody.mode !== "tps") note("fpv", `back in mode ${tpsBody.mode}`);
+  const hiddenBody = tpsBody.body.filter((mesh) => !mesh.visible).map((mesh) => mesh.id);
+  if (!tpsBody.body.length || hiddenBody.length) note("fpv", `third person hid body: ${hiddenBody.join(",")}`);
+  const hiddenGuns = tpsBody.weapons.filter((mesh) => !mesh.visible).map((mesh) => mesh.id);
+  if (hiddenGuns.length) note("fpv", `third person hid weapons: ${hiddenGuns.join(",")}`);
 
   async function waitCool() {
     const deadline = Date.now() + 900;

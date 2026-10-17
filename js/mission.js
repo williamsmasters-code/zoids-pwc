@@ -965,6 +965,59 @@ export function startMission(state, contract, hooks) {
       if (camera.position.y < minY) camera.position.y = minY;
       camera.lookAt(lookTarget);
     }
+    // The eye sits inside the head and the shield plate. Hide those body meshes
+    // while the view is first person. Raycasts ignore visibility, so hits still land.
+    const showBody = cameraMode !== "fps";
+    for (const meshes of Object.values(player.model.partMeshes)) {
+      for (const mesh of meshes) mesh.visible = showBody;
+    }
+  }
+
+  const fpvCenter = new Vector3();
+  const fpvScale = new Vector3();
+  const fpvTo = new Vector3();
+  const fpvDir = new Vector3();
+  let weaponMeshList = null;
+
+  function weaponMeshes() {
+    if (weaponMeshList) return weaponMeshList;
+    const body = new Set();
+    for (const meshes of Object.values(player.model.partMeshes)) {
+      for (const mesh of meshes) body.add(mesh);
+    }
+    weaponMeshList = [];
+    player.model.root.traverse((obj) => {
+      if (obj.isMesh && obj.userData && obj.userData.partId && !body.has(obj)) weaponMeshList.push(obj);
+    });
+    return weaponMeshList;
+  }
+
+  // A gun mounted on the jaw sits on the first-person center ray. Drawing it
+  // puts a dark plate on the crosshair. Leave guns the center ray misses.
+  function weaponBlocksCenter(mesh) {
+    const geometry = mesh.geometry;
+    if (!geometry) return false;
+    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+    const sphere = geometry.boundingSphere;
+    if (!sphere) return false;
+    mesh.updateWorldMatrix(true, false);
+    fpvCenter.copy(sphere.center).applyMatrix4(mesh.matrixWorld);
+    mesh.getWorldScale(fpvScale);
+    const radius = sphere.radius * Math.max(fpvScale.x, fpvScale.y, fpvScale.z);
+    camera.getWorldDirection(fpvDir);
+    fpvTo.copy(fpvCenter).sub(camera.position);
+    const along = fpvTo.dot(fpvDir);
+    if (along < 0.05 || along > 6) return false;
+    const lateralSq = Math.max(0, fpvTo.lengthSq() - along * along);
+    const limit = radius + 0.05;
+    return lateralSq < limit * limit;
+  }
+
+  function applyFpvWeapons() {
+    const fps = cameraMode === "fps";
+    for (const mesh of weaponMeshes()) {
+      mesh.visible = !fps || !weaponBlocksCenter(mesh);
+    }
   }
 
   const rig = new Mesh();
@@ -1058,6 +1111,7 @@ export function startMission(state, contract, hooks) {
       updateProjectiles(dt);
       updateObjectives(dt);
     }
+    applyFpvWeapons();
     updateEffects(dt);
     pushHud(input);
     renderer.render(scene, camera);
@@ -1447,6 +1501,23 @@ export function startMission(state, contract, hooks) {
     }
   }
 
+  function bodyVisibility() {
+    const body = [];
+    const bodySet = new Set();
+    for (const [id, meshes] of Object.entries(player.model.partMeshes)) {
+      for (const mesh of meshes) {
+        bodySet.add(mesh);
+        body.push({ id, visible: mesh.visible });
+      }
+    }
+    const weapons = [];
+    player.model.root.traverse((obj) => {
+      if (!obj.isMesh || !obj.userData || !obj.userData.partId || bodySet.has(obj)) return;
+      weapons.push({ id: obj.userData.partId, visible: obj.visible });
+    });
+    return { mode: cameraMode, body, weapons };
+  }
+
   function weaponCooldowns() {
     return player.weapons.map((weapon) => ({
       mount: weapon.mount,
@@ -1530,6 +1601,7 @@ export function startMission(state, contract, hooks) {
   window.__ZOIDS__.debugForceWin = debugForceWin;
   window.__ZOIDS__.enemySnapshot = enemySnapshot;
   window.__ZOIDS__.aimCheck = aimCheck;
+  window.__ZOIDS__.bodyVisibility = bodyVisibility;
   window.__ZOIDS__.weaponCooldowns = weaponCooldowns;
   window.__ZOIDS__.lastGroups = () => lastGroups.slice();
   window.__ZOIDS__.setGroup = setGroup;
