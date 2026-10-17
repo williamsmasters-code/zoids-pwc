@@ -19,7 +19,7 @@ RUN
   That runs tests/damage.test.mjs, tests/aim.test.mjs, tests/input.test.mjs,
   tests/reset.test.mjs, tests/models_check.mjs, tests/heat.test.mjs,
   tests/skills.test.mjs, tests/indicators.test.mjs, tests/weapons.test.mjs,
-  and tests/headless.mjs.
+  tests/glb.test.mjs, tests/headless.mjs, and tests/glb_browser.mjs.
   The browser test serves this directory on port 8080, so stop any other
   server on that port first. Screenshots land in screenshots/.
 
@@ -177,17 +177,44 @@ SKILLS
              heat, and incoming damage drops a further 15%.
     Cost     cooldown 10s
 
-MOCK MODELS
-  No licensed meshes and no image textures. Every Zoid is boxes, cylinders,
-  cones, and a few toruses, parented so local -Z is forward and left is -X.
+MODELS
+  Command Wolf, Shield Liger, Blade Liger, Iron Kong, and Geno Saurer load
+  Sketchfab meshes from assets/models (see CREDITS.txt). The files are
+  static, face local -Z, stand on y = 0, and are split into the same named
+  damage parts as the mocks. Zaber Fang, Gojulas, and Death Saurer stay
+  boxes, cylinders, and cones. Add ?mock=1 to the page address to force the
+  procedural model for every Zoid. If a GLB fails to load, that Zoid falls
+  back to its mock. The hangar footer opens the credit list.
   Lions, the wolf, and the saber-tooth are quadrupeds. Iron Kong is a gorilla.
-  Geno Saurer, Gojulas, and Death Saurer are bipedal theropods. Colors and
-  silhouettes stand in for the real machines: white-blue shield, blue blades,
-  grey wolf with a dish, red saber fangs, olive siege walker, purple super
-  heavy, and so on. Legs swing while moving. Parts are separate named meshes.
+  Geno Saurer, Gojulas, and Death Saurer are bipedal theropods. Mock-only
+  machines keep their colored silhouettes: red saber fangs, olive siege
+  walker, purple super heavy. Procedural legs swing while moving.
+
+MODEL CREDITS
+  License for all five meshes: CC-BY-4.0
+  http://creativecommons.org/licenses/by/4.0/
+  Changes: scaled/split/optimized/stripped helper nodes
+
+  Zoids Blade Liger
+    guntuy3 — https://sketchfab.com/guntuy3
+    https://sketchfab.com/3d-models/zoids-blade-liger-d4caf50b3c934b2ba29fd2f25d730f28
+  Shield Liger WIP
+    hdbanks1 — https://sketchfab.com/hdbanks1
+    https://sketchfab.com/3d-models/shield-liger-wip-c903bfa399194201a0cb649311ec308f
+  Genosaurer Zoids (free)
+    Anderson455 — https://sketchfab.com/pablo.gabriel87
+    https://sketchfab.com/3d-models/genosaurer-zoids-free-3b7075f3b14a4022ad3996e0eda8ca88
+  Command Wolf
+    Warner's Digital Art — https://sketchfab.com/warnerdraws
+    https://sketchfab.com/3d-models/command-wolf-a69dcd74f065467981aaf3d9dc913b59
+  Iron Kong - Zoids
+    Anderson123 — https://sketchfab.com/Mr_Anderson123
+    https://sketchfab.com/3d-models/iron-kong-zoids-74a45b6ead5f4f21bc6df68c9ca9bd9a
 
 KNOWN GAPS
-  These are not the official Zoid models, only recognizable mockups.
+  Five Zoids use CC-BY Sketchfab meshes that were scaled, split, and
+  compressed for the browser. They are not the official product models.
+  Zaber Fang, Gojulas, and Death Saurer are still recognizable mockups.
   No multiplayer. Melee is the Blade Liger's laser-blade dash only.
   Weapons have no ammo count. Heat is per weapon, and there is no magazine.
   Beams hit instantly. Cannons and the gatling drop. Missiles need a 1.5 s

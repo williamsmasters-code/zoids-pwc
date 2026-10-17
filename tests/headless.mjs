@@ -175,8 +175,8 @@ try {
     note("request", `${req.url()} ${req.failure()?.errorText || ""}`);
   });
 
-  await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded", timeout: 20000 });
-  await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.ready, { timeout: 20000 });
+  await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.ready, { timeout: 60000 });
   const boot = await page.$("#boot-error");
   if (boot) note("boot", await page.$eval("#boot-error", (el) => el.textContent));
 
@@ -219,7 +219,7 @@ try {
   await page.click(".contract-card .launch");
   await page.waitForFunction(
     () => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission" && typeof window.__ZOIDS__.selfTest === "function",
-    { timeout: 20000 },
+    { timeout: 60000 },
   );
   await sleep(1200);
   await page.screenshot({ path: path.join(shots, "mission.png") });
@@ -504,8 +504,8 @@ try {
     localStorage.setItem("zoidMercs.save.v1", JSON.stringify(raw));
     localStorage.setItem("zoidMercs.other", "x");
   });
-  await page.reload({ waitUntil: "domcontentloaded", timeout: 20000 });
-  await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.ready, { timeout: 20000 });
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.ready, { timeout: 60000 });
   const dirty = await page.evaluate(() => ({
     money: document.querySelector("#money")?.textContent || "",
     record: document.querySelector("#record")?.textContent || "",
@@ -585,7 +585,7 @@ try {
   await page.click('.contract-card[data-type="recon"] .launch');
   await page.waitForFunction(
     () => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission" && window.__ZOIDS__.contractType === "recon",
-    { timeout: 20000 },
+    { timeout: 60000 },
   );
   await page.evaluate(() => window.__ZOIDS__.setPacified(true));
   await sleep(400);

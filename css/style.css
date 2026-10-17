@@ -29,7 +29,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 #hangar-root {
   height: 100vh;
   display: grid;
-  grid-template-rows: 52px minmax(0, 1fr) 176px;
+  grid-template-rows: 52px minmax(0, 1fr) 168px 30px;
   background:
     radial-gradient(1000px 400px at 20% -10%, rgba(55, 214, 232, 0.08), transparent 50%),
     var(--bg);
@@ -127,7 +127,53 @@ button:disabled { opacity: 0.45; cursor: default; }
 .contract-card p { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
 .contract-card .pay { color: var(--amber); font-size: 16px; }
 .contract-card .launch { background: #1d4a3a; }
-#status { position: fixed; left: 12px; bottom: 184px; color: var(--amber); font-size: 13px; pointer-events: none; }
+#status { position: fixed; left: 12px; bottom: 204px; color: var(--amber); font-size: 13px; pointer-events: none; }
+.hangar-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  border-top: 1px solid var(--line);
+  background: #0b1016;
+  font-size: 12px;
+}
+.credits {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  overflow: auto;
+  background: rgba(5, 8, 12, 0.94);
+  padding: 24px 16px 48px;
+}
+.credits-sheet { max-width: 760px; margin: 0 auto; }
+.credits-sheet header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.credits-sheet a { color: var(--cyan); }
+.credits-sheet article {
+  border: 1px solid rgba(55, 214, 232, 0.3);
+  padding: 10px 12px;
+  margin-top: 10px;
+  background: #101820;
+}
+.credits-sheet h3 { margin: 0 0 6px; }
+.credits-sheet p { margin: 0 0 4px; font-size: 14px; }
+#load-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  background: rgba(5, 8, 12, 0.78);
+}
+.load-card { text-align: center; letter-spacing: 0.04em; }
+.load-card b { display: block; font-size: 18px; }
+.load-card span { color: var(--muted); }
+.load-card i {
+  display: block;
+  width: 180px;
+  height: 3px;
+  margin: 14px auto 0;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+}
 
 #debrief-root {
   position: fixed;

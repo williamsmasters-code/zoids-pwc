@@ -2,6 +2,7 @@ import { loadState } from "./state.js";
 import { showHangar, showDebrief } from "./hangar.js";
 import { startMission } from "./mission.js";
 import { unlockAudio } from "./audio.js";
+import { preloadModels, showLoading, hideLoading } from "./models.js";
 
 let state = loadState();
 let closeHangar = null;
@@ -33,10 +34,14 @@ function toHangar() {
     onLaunch(contract) {
       unlockAudio();
       closeCurrentHangar();
-      startMission(state, contract, {
-        onExit(result) {
-          showDebrief(state, result, () => toHangar());
-        },
+      showLoading("Dropping into the field…");
+      requestAnimationFrame(() => {
+        startMission(state, contract, {
+          onExit(result) {
+            showDebrief(state, result, () => toHangar());
+          },
+        });
+        requestAnimationFrame(() => hideLoading());
       });
     },
     onReset(next) {
@@ -51,9 +56,16 @@ window.addEventListener("error", (event) => {
   showBootError(event.error || event.message);
 });
 
-try {
+showLoading("Preparing the hangar…");
+preloadModels((frac, slug) => {
+  const pct = Math.round(frac * 100);
+  showLoading(slug ? `Loading ${slug} ${pct}%` : "Preparing the hangar…");
+}).then(() => {
+  hideLoading();
   toHangar();
-} catch (err) {
+}).catch((err) => {
   console.error(err);
+  hideLoading();
   showBootError(err);
-}
+  toHangar();
+});

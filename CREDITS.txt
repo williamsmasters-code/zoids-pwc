@@ -1,0 +1,43 @@
+ZOID MERCENARIES — 3D MODEL CREDITS
+License for every model below: CC-BY-4.0
+http://creativecommons.org/licenses/by/4.0/
+
+Changes on every model: scaled/split/optimized/stripped helper nodes
+
+Zoids Blade Liger
+  Author: guntuy3
+  Author page: https://sketchfab.com/guntuy3
+  Model: https://sketchfab.com/3d-models/zoids-blade-liger-d4caf50b3c934b2ba29fd2f25d730f28
+  License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
+  Changes: scaled/split/optimized/stripped helper nodes
+
+Shield Liger WIP
+  Author: hdbanks1
+  Author page: https://sketchfab.com/hdbanks1
+  Model: https://sketchfab.com/3d-models/shield-liger-wip-c903bfa399194201a0cb649311ec308f
+  License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
+  Changes: scaled/split/optimized/stripped helper nodes
+
+Genosaurer Zoids (free)
+  Author: Anderson455
+  Author page: https://sketchfab.com/pablo.gabriel87
+  Model: https://sketchfab.com/3d-models/genosaurer-zoids-free-3b7075f3b14a4022ad3996e0eda8ca88
+  License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
+  Changes: scaled/split/optimized/stripped helper nodes
+
+Command Wolf
+  Author: Warner's Digital Art
+  Author page: https://sketchfab.com/warnerdraws
+  Model: https://sketchfab.com/3d-models/command-wolf-a69dcd74f065467981aaf3d9dc913b59
+  License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
+  Changes: scaled/split/optimized/stripped helper nodes
+
+Iron Kong - Zoids
+  Author: Anderson123
+  Author page: https://sketchfab.com/Mr_Anderson123
+  Model: https://sketchfab.com/3d-models/iron-kong-zoids-74a45b6ead5f4f21bc6df68c9ca9bd9a
+  License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
+  Changes: scaled/split/optimized/stripped helper nodes
+
+Zaber Fang, Gojulas, and Death Saurer use the built-in procedural mocks.
+Open the game with ?mock=1 to force the mocks for every Zoid.

@@ -28,6 +28,7 @@ import {
 } from "./catalog.js";
 import { repairCost } from "./damage.js";
 import { skillBlock } from "./skills.js";
+import { creditsMarkup } from "./credits.js";
 
 function weaponFacts(spec) {
   return `${spec.delivery} · opt ${spec.optimal} m · max ${spec.range} m · ${spec.heat} heat/shot · cool ${spec.cooling}/s`;
@@ -91,6 +92,11 @@ export function showHangar(state, hooks) {
       <aside id="loadout"></aside>
     </div>
     <section id="contracts"></section>
+    <footer class="hangar-foot">
+      <button type="button" data-act="credits">Model credits</button>
+      <span class="muted">Sketchfab meshes under CC-BY-4.0. ?mock=1 uses the procedural models.</span>
+    </footer>
+    <div id="credits-panel" class="credits hidden"></div>
     <div id="status"></div>
   `;
 
@@ -281,6 +287,16 @@ export function showHangar(state, hooks) {
     if (!target || !root.contains(target)) return;
     const act = target.dataset.act;
     const id = target.dataset.id;
+    if (act === "credits") {
+      const panel = root.querySelector("#credits-panel");
+      panel.innerHTML = creditsMarkup();
+      panel.classList.remove("hidden");
+      return;
+    }
+    if (act === "close-credits") {
+      root.querySelector("#credits-panel").classList.add("hidden");
+      return;
+    }
     if (act === "view") {
       viewing = id;
       picker = null;
@@ -339,6 +355,7 @@ export function showHangar(state, hooks) {
   window.__ZOIDS__ = window.__ZOIDS__ || {};
   window.__ZOIDS__.screen = "hangar";
   window.__ZOIDS__.ready = true;
+  window.__ZOIDS__.previewParts = () => preview.parts();
 
   let closed = false;
   return () => {
@@ -436,6 +453,16 @@ function createPreview(canvas) {
 
   return {
     show,
+    parts() {
+      if (!model) return null;
+      const counts = {};
+      let glb = false;
+      for (const [id, meshes] of Object.entries(model.partMeshes)) {
+        counts[id] = meshes.length;
+        if (meshes.some((mesh) => mesh.userData && mesh.userData.glbPart)) glb = true;
+      }
+      return { id: model.def.id, counts, glb, real: glb };
+    },
     dispose() {
       running = false;
       if (model) disposeTree(model.root);

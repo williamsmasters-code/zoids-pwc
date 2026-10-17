@@ -16,6 +16,94 @@ import {
 } from "three";
 import { partListFor } from "./catalog.js";
 
+// Real meshes for five Zoids. The others stay procedural.
+// Files are normalized to the mock's unscaled size and face local -Z.
+const GLB_SLUG = {
+  commandWolf: "command-wolf",
+  shieldLiger: "shield-liger",
+  bladeLiger: "blade-liger",
+  ironKong: "iron-kong",
+  genoSaurer: "geno-saurer",
+};
+
+const glbTemplates = new Map();
+
+export function forceMockModels() {
+  if (globalThis.__ZOIDS_FORCE_MOCK) return true;
+  try {
+    if (typeof location !== "undefined" && /(?:^|[?&])mock=1(?:&|$)/.test(location.search || "")) return true;
+  } catch {
+    // Node has no location.
+  }
+  if (typeof window !== "undefined" && window.__ZOIDS__ && window.__ZOIDS__.forceMock) return true;
+  return false;
+}
+
+export function rememberGlbTemplate(id, scene) {
+  glbTemplates.set(id, scene || null);
+}
+
+export function clearGlbTemplates() {
+  glbTemplates.clear();
+}
+
+export function glbSlugFor(id) {
+  return GLB_SLUG[id] || null;
+}
+
+function modelUrl(slug) {
+  return new URL(`../assets/models/${slug}.glb`, import.meta.url).href;
+}
+
+// Warm the cache before the hangar or a mission builds a unit. A failed file
+// is stored as null so buildUnitModel falls back to the mock.
+export async function preloadModels(onProgress) {
+  const ids = Object.keys(GLB_SLUG);
+  if (forceMockModels()) {
+    for (const id of ids) glbTemplates.set(id, null);
+    if (onProgress) onProgress(1, "");
+    return;
+  }
+  const { GLTFLoader } = await import("../vendor/addons/loaders/GLTFLoader.js");
+  const { MeshoptDecoder } = await import("../vendor/addons/libs/meshopt_decoder.module.js");
+  const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  await MeshoptDecoder.ready;
+  let done = 0;
+  await Promise.all(ids.map(async (id) => {
+    const slug = GLB_SLUG[id];
+    try {
+      const gltf = await loader.loadAsync(modelUrl(slug));
+      glbTemplates.set(id, gltf.scene);
+    } catch (err) {
+      console.warn(`GLB fallback for ${slug}`, err);
+      glbTemplates.set(id, null);
+    }
+    done += 1;
+    if (onProgress) onProgress(done / ids.length, slug);
+  }));
+}
+
+export function showLoading(text) {
+  if (typeof document === "undefined") return;
+  let el = document.getElementById("load-overlay");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "load-overlay";
+    el.innerHTML = `<div class="load-card"><b>Loading Zoids</b><span id="load-text"></span><i></i></div>`;
+    document.body.appendChild(el);
+  }
+  el.classList.remove("hidden");
+  const span = el.querySelector("#load-text");
+  if (span) span.textContent = text || "Preparing the hangar…";
+}
+
+export function hideLoading() {
+  if (typeof document === "undefined") return;
+  const el = document.getElementById("load-overlay");
+  if (el) el.classList.add("hidden");
+}
+
 function mat(color, opts = {}) {
   return new MeshStandardMaterial({
     color,
@@ -560,15 +648,41 @@ function damagedTint(hex) {
   return new Color(hex);
 }
 
+function parkDestroyedGlb(mesh, destroyed) {
+  if (!mesh.userData.glbPart) return;
+  if (destroyed) {
+    if (!mesh.userData.parked) {
+      mesh.userData.parked = {
+        x: mesh.position.x,
+        y: mesh.position.y,
+        z: mesh.position.z,
+        rx: mesh.rotation.x,
+        ry: mesh.rotation.y,
+        rz: mesh.rotation.z,
+      };
+      mesh.position.y -= 0.22;
+      mesh.rotation.x += 0.45;
+    }
+    return;
+  }
+  if (!mesh.userData.parked) return;
+  const parked = mesh.userData.parked;
+  mesh.position.set(parked.x, parked.y, parked.z);
+  mesh.rotation.set(parked.rx, parked.ry, parked.rz);
+  delete mesh.userData.parked;
+}
+
 export function refreshPartColors(model, parts) {
   for (const [id, meshes] of Object.entries(model.partMeshes)) {
     const part = parts[id];
     if (!part) continue;
     const ratio = (part.armor + part.structure) / Math.max(1, part.maxArmor + part.maxStructure);
+    const destroyed = part.destroyed || part.structure <= 0;
     for (const mesh of meshes) {
+      parkDestroyedGlb(mesh, destroyed);
       const material = mesh.material;
       if (!material || !material.color) continue;
-      if (part.destroyed || part.structure <= 0) {
+      if (destroyed) {
         material.color.setHex(0x2c2626);
         if (material.emissive) {
           material.emissive.setHex(0x000000);
@@ -636,6 +750,78 @@ function animateModel(model, time, speedNorm, parts) {
   });
 }
 
+function unionBox(meshes) {
+  const box = new Box3();
+  for (const mesh of meshes) box.expandByObject(mesh);
+  return box;
+}
+
+function buildGlb(visual, def, store, anim, anchors, template) {
+  const savedScale = visual.scale.x;
+  visual.scale.setScalar(1);
+  const clone = template.clone(true);
+  visual.add(clone);
+  clone.traverse((obj) => {
+    if (!obj.isMesh) return;
+    const partId = partIdFromObject(def, obj);
+    obj.geometry = obj.geometry.clone();
+    const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+    const cloned = list.map((material) => (material && material.clone ? material.clone() : material));
+    obj.material = Array.isArray(obj.material) ? cloned : cloned[0];
+    const material = cloned[0];
+    const color = material && material.color ? material.color.getHex() : 0x888888;
+    const emissive = material && material.emissive ? material.emissive.getHex() : 0;
+    track(obj, partId, store, color, emissive, material ? material.emissiveIntensity || 0 : 0);
+    obj.userData.glbPart = true;
+  });
+  visual.updateMatrixWorld(true);
+  placeGlbAnchors(visual, store, anchors);
+  visual.scale.setScalar(savedScale || def.scale || 1);
+  anim.kind = "static";
+}
+
+function storeAllowed(def, name) {
+  return !!name && partListFor(def).includes(name);
+}
+
+// GLTFLoader renames duplicate nodes to "head_1", "head_2", and so on.
+function partIdFromObject(def, obj) {
+  const hinted = obj.userData && obj.userData.partId;
+  if (storeAllowed(def, hinted)) return hinted;
+  const raw = String(obj.name || "");
+  const base = raw.replace(/_\d+$/, "");
+  if (storeAllowed(def, base)) return base;
+  if (storeAllowed(def, raw)) return raw;
+  return "core";
+}
+
+function placeGlbAnchors(visual, store, anchors) {
+  const place = (id, pick) => {
+    if (!store[id] || !store[id].length) return;
+    const box = unionBox(store[id]);
+    const center = box.getCenter(new Vector3());
+    const point = pick(box, center);
+    addAnchor(visual, anchors, id, point.x, point.y, point.z);
+  };
+  place("headWeapon", (box, center) => new Vector3(center.x, center.y, box.min.z));
+  place("leftWeapon", (box, center) => new Vector3(box.min.x, center.y, Math.min(center.z, box.min.z + (box.max.z - box.min.z) * 0.35)));
+  place("rightWeapon", (box, center) => new Vector3(box.max.x, center.y, Math.min(center.z, box.min.z + (box.max.z - box.min.z) * 0.35)));
+  place("backMount", (box, center) => new Vector3(center.x, box.max.y, center.z));
+  if (store.head && store.head.length) {
+    const head = unionBox(store.head);
+    const size = head.getSize(new Vector3());
+    const eye = new Group();
+    eye.name = "eye";
+    eye.position.set(
+      (head.min.x + head.max.x) / 2,
+      head.max.y - size.y * 0.28,
+      head.min.z + Math.max(0.05, size.z * 0.22),
+    );
+    visual.add(eye);
+    anchors.eye = eye;
+  }
+}
+
 export function buildUnitModel(def, weapons, team = "player") {
   const root = new Group();
   root.name = def.id;
@@ -645,7 +831,10 @@ export function buildUnitModel(def, weapons, team = "player") {
   const store = {};
   const anim = emptyAnim();
   const anchors = {};
-  if (def.build === "wolf" || def.build === "lion" || def.build === "saber" || def.build === "blade") {
+  const glb = !forceMockModels() && glbTemplates.get(def.id);
+  if (glb) {
+    buildGlb(visual, def, store, anim, anchors, glb);
+  } else if (def.build === "wolf" || def.build === "lion" || def.build === "saber" || def.build === "blade") {
     anim.kind = "quad";
     buildQuad(visual, def, store, anim, anchors);
   } else if (def.build === "gorilla") {
