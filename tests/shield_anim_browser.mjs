@@ -269,9 +269,20 @@ try {
   console.log("screenshot", path.relative(root, tps));
   await page.keyboard.up("KeyW");
 
+  // Freeze the render loop first so a live frame cannot eat the Q edge, then
+  // advance simulation time directly. ShieldActivate is 0.75 s and each live
+  // frame contributes at most 0.05 s, so a 1.2 s sleep can still be mid-clip.
+  await page.evaluate(() => window.__ZOIDS__.holdSim(true));
   await page.keyboard.press("KeyQ");
-  await sleep(1200);
-  const shielded = await page.evaluate(() => window.__ZOIDS__.animState());
+  const shielded = await page.evaluate(() => {
+    const dt = 1 / 30;
+    let state = null;
+    for (let i = 0; i < 90; i++) {
+      state = window.__ZOIDS__.stepSim(dt);
+      if (state && state.shieldPhase === "maintain") break;
+    }
+    return state;
+  });
   console.log("shield", JSON.stringify(shielded));
   if (!shielded || shielded.shieldPhase !== "maintain") {
     note("shield", `expected ShieldMaintain, got ${JSON.stringify(shielded)}`);
@@ -282,16 +293,29 @@ try {
   console.log("screenshot", path.relative(root, shieldShot));
 
   await page.keyboard.press("KeyQ");
-  await sleep(1200);
-  const lowered = await page.evaluate(() => window.__ZOIDS__.animState());
+  const lowered = await page.evaluate(() => {
+    const dt = 1 / 30;
+    let state = null;
+    for (let i = 0; i < 90; i++) {
+      state = window.__ZOIDS__.stepSim(dt);
+      if (state && state.shieldPhase === "off") break;
+    }
+    return state;
+  });
   console.log("lowered", JSON.stringify(lowered));
   if (!lowered || lowered.shieldPhase !== "off") {
     note("shield", `shield did not lower (${JSON.stringify(lowered)})`);
   }
 
   await page.keyboard.down("Digit1");
-  await sleep(250);
-  const firing = await page.evaluate(() => window.__ZOIDS__.animState());
+  const firing = await page.evaluate(() => {
+    let state = null;
+    for (let i = 0; i < 20; i++) {
+      state = window.__ZOIDS__.stepSim(1 / 30);
+      if (state && state.firePlaying) break;
+    }
+    return state;
+  });
   console.log("firing", JSON.stringify(firing));
   if (!firing || !firing.firePlaying) note("fire", `Fire is not playing (${JSON.stringify(firing)})`);
   const fireShot = path.join(shots, "firing.png");

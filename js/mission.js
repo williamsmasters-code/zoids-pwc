@@ -2234,13 +2234,31 @@ export function startMission(state, contract, hooks) {
     const anim = player.model && player.model.anim;
     if (!anim) return null;
     const fire = anim.actions && anim.actions.Fire;
+    const deploy = anim.actions && anim.actions.ShieldActivate;
     return {
       kind: anim.kind,
       loco: anim.loco || null,
       shieldPhase: anim.shieldPhase || "off",
+      shieldTime: deploy ? deploy.time : null,
+      shieldDuration: deploy ? deploy.getClip().duration : null,
       firePlaying: !!(fire && fire.isRunning()),
       clips: anim.actions ? Object.keys(anim.actions) : [],
     };
+  };
+  // Headless frames are slow, and the mission caps each step at 50 ms, so a
+  // wall-clock sleep does not advance a 0.75 s clip. Tests freeze the render
+  // loop and step simulate() themselves.
+  window.__ZOIDS__.holdSim = (held) => {
+    manual = !!held;
+    if (manual) paused = false;
+    return manual;
+  };
+  window.__ZOIDS__.stepSim = (dt) => {
+    manual = true;
+    paused = false;
+    const stepDt = Math.min(0.05, Math.max(1 / 240, Number(dt) || 1 / 60));
+    simulate(stepDt);
+    return window.__ZOIDS__.animState();
   };
   window.__ZOIDS__.skillState = () => {
     const hudSkill = skillHud(player);
