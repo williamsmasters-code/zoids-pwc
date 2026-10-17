@@ -72,6 +72,11 @@ export function createHUD(root) {
     <div class="hit left"></div>
     <div class="hit right"></div>
     <div class="reticle"><span></span></div>
+    <svg id="lock-ring" class="lock-ring hidden" viewBox="0 0 100 100" data-lock="0">
+      <circle cx="50" cy="50" r="42" pathLength="100"></circle>
+    </svg>
+    <div id="aim-markers"></div>
+    <div id="charge-bar" class="charge-bar hidden" data-charge="0"><i></i><span>CHARGE</span></div>
     <div class="compass"><span id="heading">000</span></div>
     <div class="objective" id="objective"></div>
     <div id="objective-indicators"></div>
@@ -101,6 +106,11 @@ export function createHUD(root) {
         <li>Mouse, or arrow left / right — look. The chassis turns to follow, slower as legs take damage.</li>
         <li>Shift — boost, if back boosters are fitted and the back mount still stands.</li>
         <li>Left mouse or 1 — weapon group 1. Right mouse or 2 — group 2. 3 and 4 — the other groups.</li>
+        <li>Beams (pulse laser, beam cannon) hit instantly along the crosshair. A short tracer shows the shot.</li>
+        <li>Cannons, autocannons, and shell guns are ballistic. The shell travels and drops. The barrel lifts so the arc meets the crosshair point when the gun can reach it. The HUD marks that impact, the drop of an uncompensated shot, and a lead bracket on the target.</li>
+        <li>Missiles need a 1.5 s lock on the enemy under the crosshair, or on the targeted enemy if it sits within a few degrees of the crosshair. The ring around the crosshair fills as the lock builds. A still target locks in 1.5 s. Faster targets lock slower, and anything at 30 m/s or more breaks the lock. Missiles cannot fire until the lock completes. They launch upward, then arc down onto the target. Lock strength sets how hard they can turn.</li>
+        <li>The Charged Particle Cannon fires only after you hold its button for 3 seconds while stationary (under 0.75 m/s). Moving or releasing early clears the charge bar and does not fire. A full charge fires on its own at full damage. Geno Saurer's Q skill is a separate instant bolt.</li>
+        <li>Each weapon has its own max range, listed in the hangar and on the dock. Damage is full inside the optimal range, fades to 30% at the max, and stops past it. The dock and the crosshair mark a target that is out of range. That is separate from OUT OF SENSOR RANGE.</li>
         <li>Q — active skill. The skill panel shows the name, the key, and heat or cooldown. The Shield Liger's energy shield blocks weapons while it is up.</li>
         <li>V — first person / third person. Tab — cycle target. R — nearest hostile.</li>
         <li>H — this list. Esc — pause and release the mouse.</li>
@@ -152,6 +162,26 @@ export function createHUD(root) {
       root.querySelector("#speed").textContent = String(Math.round(data.speed));
       root.querySelector("#speed-bar").style.width = `${Math.max(0, Math.min(100, data.speedPct))}%`;
       root.querySelector("#heat-bar").style.width = `${Math.max(0, Math.min(100, data.heat))}%`;
+      root.querySelector(".reticle").classList.toggle("oor", !!data.outOfRange);
+      const ring = root.querySelector("#lock-ring");
+      const lock = data.lock;
+      const showLock = !!(lock && (lock.tracking || lock.value > 0.01));
+      ring.classList.toggle("hidden", !showLock);
+      ring.classList.toggle("locked", !!(lock && lock.value >= 1));
+      const lockValue = lock ? lock.value : 0;
+      ring.style.setProperty("--lock", String(lockValue));
+      ring.dataset.lock = lockValue.toFixed(3);
+      const charge = data.charge;
+      const chargeBar = root.querySelector("#charge-bar");
+      chargeBar.classList.toggle("hidden", !charge);
+      chargeBar.dataset.charge = charge ? charge.pct.toFixed(3) : "0";
+      chargeBar.querySelector("i").style.width = `${charge ? Math.max(0, Math.min(100, charge.pct * 100)) : 0}%`;
+      const marks = data.markers || {};
+      root.querySelector("#aim-markers").innerHTML = ["impact", "lead", "drop"].map((key) => {
+        const mark = marks[key];
+        if (!mark) return "";
+        return `<div class="aim-mark ${key}" style="left:${mark.x}px;top:${mark.y}px"><b></b><span>${mark.label}</span></div>`;
+      }).join("");
       root.querySelector("#boost-flag").textContent = data.boosting ? "BOOST" : data.boostReady ? "BOOST READY" : "";
       const skill = data.skill;
       const skillRoot = root.querySelector("#skill-hud");
@@ -181,27 +211,33 @@ export function createHUD(root) {
         root.querySelector("#target-diagram").innerHTML = "";
       } else {
         root.querySelector("#target-name").textContent = data.scramble > 0.85 ? "UNKNOWN" : target.name;
-        root.querySelector("#target-range").textContent = `${Math.round(target.distance)} m`;
+        const far = data.outOfRange ? " · OUT OF RANGE" : "";
+        root.querySelector("#target-range").textContent = `${Math.round(target.distance)} m${far}`;
         root.querySelector("#target-diagram").innerHTML = diagramSVG(target.layout, target.parts);
       }
       root.querySelector("#weapon-dock").innerHTML = (data.weapons || []).map((weapon) => {
         const state = weapon.state || (weapon.destroyed ? "disabled" : "ready");
         const pct = Number.isFinite(weapon.pct)
           ? weapon.pct
-          : weapon.windup
-            ? Math.round((weapon.charge / weapon.windup) * 100)
+          : weapon.chargeTime
+            ? Math.round((weapon.charge / weapon.chargeTime) * 100)
             : Math.round((1 - weapon.cooldown * weapon.rate) * 100);
         const klass = state === "disabled" ? "dead" : state;
+        const far = weapon.far ? "far" : "";
         const color = (weapon.color ?? 0x334048).toString(16).padStart(6, "0");
         const heats = (weapon.heats || []).filter((row) => !row.dead);
         const pips = heats.map((row) => {
           const hot = row.overheated ? "hot" : "";
           return `<span title="${row.name}"><em class="${hot}" style="width:${Math.max(0, Math.min(100, row.heat))}%"></em></span>`;
         }).join("");
-        return `<div class="wep ${klass}" data-group="${weapon.group}" data-state="${state}" data-heat="${Math.round(weapon.heat || 0)}">
+        const rangeLabel = weapon.maxRange
+          ? (weapon.far ? "OUT OF RANGE" : `${weapon.maxRange} m`)
+          : "";
+        return `<div class="wep ${klass} ${far}" data-group="${weapon.group}" data-state="${state}" data-heat="${Math.round(weapon.heat || 0)}" data-range="${weapon.maxRange || ""}" data-delivery="${weapon.delivery || ""}">
           <b>${weapon.group}</b>
           <span>${weapon.name}</span>
           <small>${state}</small>
+          ${rangeLabel ? `<em class="rng">${rangeLabel}</em>` : ""}
           <div class="heat-pips">${pips}</div>
           <i style="width:${Math.max(0, Math.min(100, pct))}%; background:#${color}"></i>
         </div>`;

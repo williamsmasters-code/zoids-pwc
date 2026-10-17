@@ -18,7 +18,8 @@ RUN
 
   That runs tests/damage.test.mjs, tests/aim.test.mjs, tests/input.test.mjs,
   tests/reset.test.mjs, tests/models_check.mjs, tests/heat.test.mjs,
-  tests/skills.test.mjs, tests/indicators.test.mjs, and tests/headless.mjs.
+  tests/skills.test.mjs, tests/indicators.test.mjs, tests/weapons.test.mjs,
+  and tests/headless.mjs.
   The browser test serves this directory on port 8080, so stop any other
   server on that port first. Screenshots land in screenshots/.
 
@@ -38,8 +39,11 @@ CONTROLS
   The crosshair is the center of the screen in both camera modes. Each
   weapon fires from its own mount toward the world point under that
   crosshair. If the center ray hits nothing, the mounts aim 1000 m out
-  along it. The player's own Zoid is ignored by that ray. The weapon dock
-  shows groups 1-4 as ready, cooling, overheated, disabled, or empty.
+  along it. The player's own Zoid is ignored by that ray. Beams use that
+  ray directly. Ballistic guns raise the barrel so the shell's arc passes
+  through the same point when a solution exists. The weapon dock shows
+  groups 1-4 as ready, cooling, charging, overheated, disabled, or empty,
+  plus that group's max range.
   Each weapon has its own heat gauge, heat per shot, and cooling rate.
   A weapon that reaches 100 heat locks until it cools below 55. The other
   weapons keep firing. The PEAK bar is the hottest weapon, not a shared pool.
@@ -47,11 +51,57 @@ CONTROLS
     V                          first person / third person
     Tab                        cycle target
     R                          nearest hostile
-    H                          control list, including every Zoid skill
+    H                          control list, weapon rules, and every Zoid skill
     Esc                        pause and release the mouse
 
   WASD follows the chassis. The torso and the camera follow the mouse, and
   the legs catch up at the Zoid's turn rate. There is no overall health bar.
+
+WEAPONS
+  Four deliveries. Keyboard and mouse only. Heat and crosshair aim stay.
+
+  Beam. Pulse Laser and Beam Cannon. The shot is hitscan: damage lands
+  along the aim ray in the same instant, with a brief tracer. No travel
+  time and no drop.
+
+  Ballistic. Gatling Gun and Shock Cannon. A real shell with speed and
+  gravity (12 m/s^2). The barrel is elevated by the low-arc solution so
+  the shell meets the crosshair point when the gun can reach it. The HUD
+  shows that impact, a drop marker for an uncompensated shot, and a lead
+  bracket from the target's velocity and the shell speed. Drop and travel
+  time make close, fast targets harder.
+
+  Rocket. Missile Pack. Homing, but it will not launch until a lock
+  finishes. The lock takes 1.5 s on a still target under the crosshair, or
+  on the targeted enemy when that enemy is within about 6 degrees of the
+  crosshair. Strength is 1 at 0 m/s and 0 at 30 m/s, and the lock builds at
+  strength / 1.5 s. A target at 30 m/s or more breaks a lock and cannot be
+  tracked. There is no dumb-fire. A locked missile pops upward for 0.52 s,
+  then arcs down. Turn rate is 0.6 + strength * 3.2, so a fast target is
+  easy to miss.
+
+  Charge. Charged Particle Cannon. Hold the fire button for 3 seconds
+  while stationary (planar speed under 0.75 m/s). The charge bar fills.
+  Releasing early or moving clears it and does not fire. At 3.0 s, still
+  held and still stopped, it fires a full-power hitscan bolt by itself.
+  Partial charge never fires. Geno Saurer's Particle Cannon skill is a
+  separate instant bolt on Q. Q is a tap, not a hold, so that skill does
+  not use this 3 second rule.
+
+  Range. Every weapon has its own optimal range and a hard max. Damage is
+  full up to optimal, falls linearly to 30% at the max, and is zero past
+  it. The hangar cards, the equipped readout, and the weapon dock list the
+  max. If the locked target is past a group's max, that dock row reads
+  OUT OF RANGE. If it is past every fitted weapon, the crosshair turns red
+  and the target line says OUT OF RANGE. Sensor range is a different line:
+  OUT OF SENSOR RANGE.
+
+  Pulse Laser              beam       opt 50 m    max 85 m    hitscan
+  Beam Cannon              beam       opt 90 m    max 150 m   hitscan
+  Gatling Gun              ballistic  opt 40 m    max 110 m   170 m/s
+  Shock Cannon             ballistic  opt 60 m    max 130 m   82 m/s
+  Missile Pack             rocket     opt 80 m    max 200 m   lock 1.5 s, 68 m/s, volley 4
+  Charged Particle Cannon  charge     opt 110 m   max 220 m   hold 3 s, then hitscan
 
 FEATURES
   Eight playable Zoids: Shield Liger, Blade Liger, Command Wolf, Gojulas,
@@ -113,7 +163,8 @@ SKILLS
     Cost     cooldown 11s
   Geno Saurer
     Passive  Particle Vent. Energy weapons cool 30% faster.
-    Active   Particle Cannon. A built-in bolt for 70 damage out to 160 m.
+    Active   Particle Cannon. An instant bolt for 70 damage out to 160 m.
+             Q is a tap, so this is not the mounted cannon's 3 second charge.
     Cost     70 skill heat, locked until heat falls below 40, cooldown 4s
   Gojulas
     Passive  Siege Brace. Below 6 m/s, incoming damage is cut by 15% and
@@ -139,6 +190,10 @@ KNOWN GAPS
   These are not the official Zoid models, only recognizable mockups.
   No multiplayer. Melee is the Blade Liger's laser-blade dash only.
   Weapons have no ammo count. Heat is per weapon, and there is no magazine.
+  Beams hit instantly. Cannons and the gatling drop. Missiles need a 1.5 s
+  lock and cannot launch without one. The charged particle cannon fires
+  only after a 3 s stationary hold. Enemy pilots carrying that cannon stop
+  to brace while the target is in range.
   Salvage is a C-bill bonus, not a recovered weapon.
   Enemy pilots are simple: close, circle, face the target, fire in range.
   Mission variety is four contract types on three heightfield maps.

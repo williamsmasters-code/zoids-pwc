@@ -2,6 +2,8 @@
 // Each weapon has its own gauge. Overheat locks that weapon until it cools
 // under HEAT_UNLOCK. Other weapons on the same Zoid keep firing.
 
+import { stepBallistic, stepCharge, stepRocket } from "./ballistics.js";
+
 export const HEAT_MAX = 100;
 export const HEAT_UNLOCK = 55;
 
@@ -23,24 +25,10 @@ export function coolWeapon(weapon, dt, speed = 0) {
   return !!weapon.overheated;
 }
 
-export function weaponWantsShot(weapon, dt, trigger, allowed) {
+export function weaponWantsShot(weapon, dt, trigger, allowed, moving = false) {
+  if (weapon.chargeTime) return stepCharge(weapon, dt, trigger, !!moving, allowed);
   weapon.cooldown = Math.max(0, weapon.cooldown - dt);
-  if (!trigger || !allowed) {
-    weapon.charge = 0;
-    weapon.charging = false;
-    return false;
-  }
-  if (weapon.windup) {
-    weapon.charging = true;
-    weapon.charge += dt;
-    if (weapon.charge >= weapon.windup && weapon.cooldown <= 0) {
-      weapon.charge = 0;
-      weapon.charging = false;
-      weapon.cooldown = 1 / weapon.rate;
-      return true;
-    }
-    return false;
-  }
+  if (!trigger || !allowed) return false;
   if (weapon.cooldown <= 0) {
     weapon.cooldown = 1 / weapon.rate;
     return true;
@@ -49,6 +37,14 @@ export function weaponWantsShot(weapon, dt, trigger, allowed) {
 }
 
 export function stepProjectile(p, dt, target) {
+  if (p.delivery === "rocket") {
+    stepRocket(p, dt, target);
+    return;
+  }
+  if (p.gravity) {
+    stepBallistic(p, dt);
+    return;
+  }
   if (p.homing && target && p.life > 0.15) {
     const dx = target.x - p.x;
     const dy = target.y - p.y;
@@ -105,6 +101,9 @@ export function groupHeatState(weapons, unit) {
   if (!living.length) return { state: "disabled", heat, heats };
   if (living.every((weapon) => weapon.overheated)) return { state: "overheated", heat, heats };
   const usable = living.filter((weapon) => !weapon.overheated);
+  if (usable.length && usable.every((weapon) => weapon.chargeTime && weapon.charging)) {
+    return { state: "charging", heat, heats };
+  }
   if (usable.every((weapon) => weapon.cooldown > 0.03 || weapon.charging)) {
     return { state: "cooling", heat, heats };
   }

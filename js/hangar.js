@@ -28,6 +28,10 @@ import {
 } from "./catalog.js";
 import { repairCost } from "./damage.js";
 import { skillBlock } from "./skills.js";
+
+function weaponFacts(spec) {
+  return `${spec.delivery} · opt ${spec.optimal} m · max ${spec.range} m · ${spec.heat} heat/shot · cool ${spec.cooling}/s`;
+}
 import { diagramSVG } from "./hud.js";
 import { buildUnitModel, disposeTree } from "./models.js";
 import { generateContracts } from "./contracts.js";
@@ -120,7 +124,11 @@ export function showHangar(state, hooks) {
     const tonnagePct = Math.min(140, (weight / def.maxTonnage) * 100);
     const heatLines = weapons.map((weapon) => {
       const spec = WEAPONS[weapon.type];
-      return `<span>${spec.name}: ${spec.heat} heat/shot · cool ${spec.cooling}/s</span>`;
+      return `<span>${spec.name}: ${weaponFacts(spec)}</span>`;
+    }).join("");
+    const rangeKey = WEAPON_ORDER.map((type) => {
+      const spec = WEAPONS[type];
+      return `<span data-weapon="${spec.id}" data-delivery="${spec.delivery}" data-range="${spec.range}">${spec.name} ${spec.delivery} ${spec.range}m</span>`;
     }).join("");
     root.querySelector("#stats").innerHTML = `
       <div class="stat"><b>${speedKph}</b><span>km/h</span></div>
@@ -132,6 +140,7 @@ export function showHangar(state, hooks) {
         <div class="bar"><i style="width:${tonnagePct}%"></i></div>
       </div>
       <div class="weapon-heat" id="weapon-heat">${heatLines || "<span>No weapons fitted.</span>"}</div>
+      <div class="weapon-heat" id="weapon-ranges">${rangeKey}</div>
     `;
     let skillHost = root.querySelector("#skill-slot");
     if (!skillHost) {
@@ -169,7 +178,7 @@ export function showHangar(state, hooks) {
           ${item ? `<button type="button" data-act="group" data-uid="${item.uid}">Group ${item.group}</button>` : ""}
         </div>
         <button type="button" class="slot-main" data-act="toggle-picker" data-mount="${hp.id}" ${hangar.owned ? "" : "disabled"}>
-          ${spec ? `${spec.name} · ${spec.heat} heat/shot · cool ${spec.cooling}/s` : "Empty"}
+          ${spec ? `${spec.name} · ${weaponFacts(spec)}` : "Empty"}
         </button>
         ${open ? `<div class="picker">
           <button type="button" data-act="equip" data-mount="${hp.id}" data-uid="">Empty</button>
@@ -204,7 +213,7 @@ export function showHangar(state, hooks) {
     const shop = WEAPON_ORDER.map((type) => {
       const spec = WEAPONS[type];
       return `<button type="button" class="shop-row" data-act="buy-weapon" data-type="${type}">
-        <span>${spec.name} <small>${spec.size} · ${spec.weight}t · ${spec.kind} · ${spec.heat} heat/shot · cool ${spec.cooling}/s</small></span>
+        <span>${spec.name} <small>${spec.size} · ${spec.weight}t · ${weaponFacts(spec)}</small></span>
         <b>${formatC(spec.price)}</b>
       </button>`;
     }).join("");

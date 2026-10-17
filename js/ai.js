@@ -97,6 +97,11 @@ export function updateBrain(unit, brain, ctx, dt) {
     brain.stuckT = 0;
   }
   const maxRange = unit.weapons.reduce((m, w) => Math.max(m, w.range || 0), 40);
+  const bracing = unit.weapons.some((weapon) => weapon.delivery === "charge" || weapon.chargeTime);
+  if (bracing && dist < maxRange * 0.98) {
+    throttle = 0;
+    strafe = 0;
+  }
   const face = yawToFace(tx - x, tz - z);
   const skill = unit.skill;
   const skillReady = !!(skill && skill.cooldown <= 0 && !skill.overheated && !skill.active);

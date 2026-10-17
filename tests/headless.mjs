@@ -410,7 +410,8 @@ try {
   if (!dock2 || dock2.state === "overheated" || dock2.state === "disabled") {
     note("heat", `dock group 2 ${dock2 && dock2.state}`);
   }
-  if (!heatSample || !heatSample.peak.startsWith("100")) note("heat", `peak bar ${heatSample && heatSample.peak}`);
+  const peakPct = heatSample ? parseFloat(heatSample.peak) : 0;
+  if (!heatSample || peakPct < 99) note("heat", `peak bar ${heatSample && heatSample.peak}`);
   await page.screenshot({ path: path.join(shots, "heat-dock.png") });
   console.log("screenshot screenshots/heat-dock.png");
 
@@ -549,6 +550,36 @@ try {
   await page.screenshot({ path: path.join(shots, "debrief-return.png") });
 
   await page.evaluate(() => {
+    const row = document.querySelector(".shop-row");
+    if (row) row.scrollIntoView({ block: "center" });
+  });
+  await sleep(150);
+  const hangarRanges = await page.evaluate(() => ({
+    key: [...document.querySelectorAll("#weapon-ranges span")].map((el) => ({
+      id: el.dataset.weapon,
+      delivery: el.dataset.delivery,
+      range: Number(el.dataset.range),
+      text: el.textContent || "",
+    })),
+    shop: [...document.querySelectorAll(".shop-row")].map((el) => el.innerText),
+    heat: document.querySelector("#weapon-heat")?.innerText || "",
+  }));
+  await page.screenshot({ path: path.join(shots, "hangar-ranges.png") });
+  console.log("screenshot screenshots/hangar-ranges.png");
+  console.log("ranges", hangarRanges.key.map((row) => `${row.id}:${row.delivery}:${row.range}`).join(" "));
+  if (hangarRanges.key.length !== 6) note("ranges", `catalog strip has ${hangarRanges.key.length}`);
+  const rangeSet = new Set(hangarRanges.key.map((row) => row.range));
+  if (rangeSet.size !== hangarRanges.key.length) note("ranges", `ranges collide ${[...rangeSet].join(",")}`);
+  for (const row of hangarRanges.key) {
+    if (!row.delivery || !row.range) note("ranges", `blank ${row.id}`);
+    if (!row.text.includes(String(row.range))) note("ranges", `strip text ${row.text}`);
+  }
+  if (!hangarRanges.shop.some((line) => /max \d+ m/.test(line))) note("ranges", "shop rows omit max range");
+  if (!/beam/.test(hangarRanges.heat) || !/max \d+ m/.test(hangarRanges.heat)) {
+    note("ranges", `equipped readout ${hangarRanges.heat}`);
+  }
+
+  await page.evaluate(() => {
     window.__ZOIDS__.pacifyOnStart = true;
   });
   await page.click('.contract-card[data-type="recon"] .launch');
@@ -575,6 +606,106 @@ try {
   else if (!arrows.some((text) => /\d+\s*m/.test(text))) note("survey", `arrow has no distance ${arrows.join(" | ")}`);
   const objective = await page.$eval("#objective", (el) => el.textContent);
   if (!/beacon/i.test(objective)) note("survey", `objective text ${objective}`);
+
+  await page.evaluate(() => window.__ZOIDS__.installWeapon("headWeapon", "missilePack"));
+  const aimed = await page.evaluate(() => window.__ZOIDS__.aimAtEnemy(0, null));
+  if (!aimed) note("lock", "no enemy to lock");
+  else console.log("lock aim", aimed.name, aimed.dist.toFixed(1));
+  await page.keyboard.down("Digit1");
+  const lockStart = Date.now();
+  let partial = null;
+  while (Date.now() - lockStart < 2200) {
+    partial = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
+    if (partial && partial.lock >= 0.55 && partial.lock < 0.93) break;
+    await sleep(30);
+  }
+  const ring = await page.evaluate(() => {
+    const el = document.querySelector("#lock-ring");
+    return {
+      hidden: !el || el.classList.contains("hidden"),
+      lock: el ? el.dataset.lock : "",
+      dash: el ? getComputedStyle(el.querySelector("circle")).strokeDashoffset : "",
+    };
+  });
+  await page.screenshot({ path: path.join(shots, "rocket-lock.png") });
+  console.log("screenshot screenshots/rocket-lock.png", ring.lock, partial && partial.lock);
+  if (!partial || partial.lock < 0.5) note("lock", `ring did not fill ${JSON.stringify(partial)}`);
+  if (!ring || ring.hidden) note("lock", "lock ring hidden");
+  let full = partial;
+  while (Date.now() - lockStart < 3200) {
+    full = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
+    if (full && full.lock >= 0.99) break;
+    await sleep(30);
+  }
+  await page.keyboard.up("Digit1");
+  const lockElapsed = Date.now() - lockStart;
+  console.log("lock done", lockElapsed, full && full.lock, "strength", full && full.strength);
+  if (!full || full.lock < 0.99) note("lock", `lock did not finish ${JSON.stringify(full)}`);
+  if (lockElapsed < 1100 || lockElapsed > 2600) note("lock", `1.5 s lock took ${lockElapsed} ms`);
+
+  await page.evaluate(() => window.__ZOIDS__.installWeapon("headWeapon", "shockCannon"));
+  await page.evaluate(() => window.__ZOIDS__.aimAtEnemy(0.5, -0.04));
+  await sleep(280);
+  let ballistic = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
+  if (!ballistic.markers || !ballistic.markers.drop) {
+    await page.evaluate(() => window.__ZOIDS__.aimAtEnemy(0.55, 0.02));
+    await sleep(280);
+    ballistic = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
+  }
+  const markText = await page.$eval("#aim-markers", (el) => el.innerText);
+  await page.screenshot({ path: path.join(shots, "ballistic-aim.png") });
+  console.log("screenshot screenshots/ballistic-aim.png", markText.replace(/\s+/g, " "));
+  if (!/IMPACT|SHORT/.test(markText)) note("ballistic", `no impact marker ${markText}`);
+  if (!/LEAD/.test(markText)) note("ballistic", `no lead marker ${markText}`);
+  if (!/DROP/.test(markText)) note("ballistic", `no drop marker ${JSON.stringify(ballistic.markers)}`);
+
+  await page.evaluate(() => {
+    window.__ZOIDS__.installWeapon("headWeapon", "chargedParticle");
+    window.__ZOIDS__.aimAtEnemy(0, -0.2);
+  });
+  await page.keyboard.down("Digit1");
+  const chargeStart = Date.now();
+  let charging = null;
+  while (Date.now() - chargeStart < 2700) {
+    charging = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
+    const gun = charging.weapons.find((weapon) => weapon.id === "chargedParticle");
+    if (gun && gun.charge >= 1.35 && gun.charge < 2.55 && gun.charging) break;
+    await sleep(40);
+  }
+  const chargeBar = await page.evaluate(() => {
+    const el = document.querySelector("#charge-bar");
+    return {
+      hidden: !el || el.classList.contains("hidden"),
+      charge: el ? el.dataset.charge : "",
+      text: el ? el.innerText : "",
+    };
+  });
+  await page.screenshot({ path: path.join(shots, "charge-bar.png") });
+  console.log("screenshot screenshots/charge-bar.png", chargeBar.charge);
+  const gun = charging && charging.weapons.find((weapon) => weapon.id === "chargedParticle");
+  if (!gun || gun.charge < 1.2 || !gun.charging) note("charge", `bar not charging ${JSON.stringify(gun)}`);
+  if (!chargeBar || chargeBar.hidden || !/CHARGE/.test(chargeBar.text)) note("charge", `charge bar ${JSON.stringify(chargeBar)}`);
+  await page.keyboard.down("KeyW");
+  await sleep(320);
+  const afterWalk = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
+  await page.keyboard.up("KeyW");
+  await page.keyboard.up("Digit1");
+  const afterMove = afterWalk.weapons.find((weapon) => weapon.id === "chargedParticle");
+  console.log("charge reset", afterWalk.moving, afterMove && afterMove.charge, afterMove && afterMove.cooldown);
+  if (!afterMove || afterMove.charge > 0.05) note("charge", `move did not clear charge ${JSON.stringify(afterMove)}`);
+  if (afterMove && afterMove.cooldown > 0.3) note("charge", "moving fired the cannon");
+
+  await page.keyboard.down("KeyH");
+  await sleep(80);
+  await page.keyboard.up("KeyH");
+  await sleep(80);
+  const help = await page.$eval("#help", (el) => el.innerText);
+  if (!/1\.5/.test(help) || !/stationary/i.test(help) || !/cannot fire/i.test(help) || !/30%/.test(help)) {
+    note("help", "weapon rules missing from the H overlay");
+  }
+  await page.keyboard.down("KeyH");
+  await sleep(60);
+  await page.keyboard.up("KeyH");
 } finally {
   if (browser) await browser.close();
   stopServer();

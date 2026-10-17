@@ -59,8 +59,21 @@ import {
   weaponWantsShot,
   stepProjectile,
   canOperateWeapon,
+  mountUsable,
   groupHeatState,
 } from "./combat.js";
+import {
+  BALLISTIC_GRAVITY,
+  LOCK_TIME,
+  STATIONARY_SPEED,
+  ballisticAim,
+  dropPoint,
+  leadPoint,
+  rangeFalloff,
+  rocketMayFire,
+  rocketTurn,
+  stepLock,
+} from "./ballistics.js";
 import { screenEdgeIndicator, minimapProject } from "./indicators.js";
 import {
   initSkill,
@@ -681,11 +694,67 @@ export function startMission(state, contract, hooks) {
     }
   }
 
+  // Hitscan barrels point at the crosshair point. Ballistic barrels rise by the
+  // drop solution so the arc meets that same point. aimCheck still uses the
+  // direct mountAimDirection, which is the hitscan convergence test.
+  function ballisticDirFor(unit, weapon, muzzle, point) {
+    const solved = ballisticAim(
+      { x: muzzle.x, y: muzzle.y, z: muzzle.z },
+      { x: point.x, y: point.y, z: point.z },
+      weapon.speed || 80,
+      weapon.gravity || BALLISTIC_GRAVITY,
+    );
+    let dir = new Vector3(solved.dir.x, solved.dir.y, solved.dir.z);
+    if (dir.lengthSq() < 1e-8) facingDirection(unit.model.root, dir);
+    if (unit !== player) {
+      const chassisFwd = facingDirection(unit.model.root, new Vector3());
+      dir = clampAim(chassisFwd, dir, 0.6);
+    }
+    const anchor = unit.model.anchors[weapon.mount];
+    if (anchor) aimNegZ(anchor, dir);
+    return dir;
+  }
+
   function trackPlayerWeapons(aimPoint) {
     for (const mount of Object.keys(player.model.muzzles)) {
       if (!player.model.muzzles[mount]) continue;
-      mountAimDirection(player, mount, aimPoint);
+      const gun = player.weapons.find((weapon) => weapon.mount === mount && weapon.delivery === "ballistic");
+      if (gun) {
+        const muzzle = new Vector3();
+        player.model.muzzles[mount].getWorldPosition(muzzle);
+        ballisticDirFor(player, gun, muzzle, aimPoint);
+      } else {
+        mountAimDirection(player, mount, aimPoint);
+      }
     }
+  }
+
+  function trackUnitWeapons(unit, aimPoint) {
+    if (unit === player) {
+      trackPlayerWeapons(aimPoint);
+      return;
+    }
+    const aim = unit.cmd && unit.cmd.aim
+      ? new Vector3(unit.cmd.aim.x, unit.cmd.aim.y, unit.cmd.aim.z)
+      : null;
+    if (!aim) {
+      trackWeapons(unit, desiredAim(unit));
+      return;
+    }
+    let aimed = false;
+    for (const mount of Object.keys(unit.model.muzzles)) {
+      if (!unit.model.muzzles[mount]) continue;
+      const gun = unit.weapons.find((weapon) => weapon.mount === mount && weapon.delivery === "ballistic");
+      if (gun) {
+        const muzzle = new Vector3();
+        unit.model.muzzles[mount].getWorldPosition(muzzle);
+        ballisticDirFor(unit, gun, muzzle, aim);
+      } else {
+        mountAimDirection(unit, mount, aim);
+      }
+      aimed = true;
+    }
+    if (!aimed) trackWeapons(unit, desiredAim(unit));
   }
 
   function shoot(unit, weapon, aimPoint) {
@@ -701,9 +770,11 @@ export function startMission(state, contract, hooks) {
         point = origin.clone().addScaledVector(fwd, 80);
       }
     }
-    const dir = mountAimDirection(unit, weapon.mount, point);
     const muzzle = new Vector3();
     muzzleObj.getWorldPosition(muzzle);
+    const dir = weapon.delivery === "ballistic"
+      ? ballisticDirFor(unit, weapon, muzzle, point)
+      : mountAimDirection(unit, weapon.mount, point);
     const volley = weapon.volley || 1;
     for (let i = 0; i < volley; i++) {
       const shotDir = dir.clone();
@@ -746,38 +817,64 @@ export function startMission(state, contract, hooks) {
     }
     const victim = units.find((u) => u.id === hit.object.userData.ownerId);
     if (!victim || !victim.alive) return;
-    applyDamage(victim, hit.object.userData.partId, weapon.damage * damageMul(unit), unit);
+    const dist = origin.distanceTo(hit.point);
+    const amount = weapon.damage * damageMul(unit) * rangeFalloff(dist, weapon.optimal, weapon.range);
+    if (amount <= 0) return;
+    applyDamage(victim, hit.object.userData.partId, amount, unit);
     flash(hit.point, weapon.color, 0.4);
   }
 
   function spawnProjectile(unit, weapon, origin, dir) {
     const speed = weapon.speed || 70;
+    const rocket = weapon.delivery === "rocket";
+    const gravity = rocket ? 0 : (weapon.gravity || 0);
     const mesh = new Mesh(
-      new SphereGeometry(weapon.id === "chargedParticle" ? 0.55 : 0.22, 8, 6),
+      new SphereGeometry(rocket ? 0.28 : 0.22, 8, 6),
       new MeshBasicMaterial({ color: weapon.color }),
     );
     mesh.position.copy(origin);
     scene.add(mesh);
-    // Player rounds fly at the crosshair point. Homing would pull them off it.
-    const homing = unit !== player && !!weapon.homing;
-    const target = homing ? unit.aiTarget : null;
+    // Beams and shells stay on the crosshair solution. Only rockets home, and
+    // only onto the locked target. Other player rounds are unguided.
+    const homing = rocket || (unit !== player && !!weapon.homing);
+    const targetId = rocket
+      ? (unit.rocketLockId || null)
+      : (homing && unit.aiTarget && unit.aiTarget.alive ? unit.aiTarget.id : null);
+    const vx = rocket ? dir.x * speed * 0.22 : dir.x * speed;
+    const vy = rocket ? speed * 0.96 : dir.y * speed;
+    const vz = rocket ? dir.z * speed * 0.22 : dir.z * speed;
     projectiles.push({
       x: origin.x,
       y: origin.y,
       z: origin.z,
-      vx: dir.x * speed,
-      vy: dir.y * speed,
-      vz: dir.z * speed,
+      ox: origin.x,
+      oy: origin.y,
+      oz: origin.z,
+      vx,
+      vy,
+      vz,
+      vx0: vx,
+      vy0: vy,
+      vz0: vz,
+      hx: dir.x,
+      hz: dir.z,
+      t: 0,
       speed,
+      gravity,
+      delivery: rocket ? "rocket" : (gravity ? "ballistic" : "shell"),
       damage: weapon.damage * damageMul(unit),
       color: weapon.color,
       ownerId: unit.id,
-      life: weapon.range / speed + 0.35,
+      life: (weapon.range / speed) * (rocket ? 2.6 : 1.7) + 0.5,
       traveled: 0,
       range: weapon.range,
+      optimal: weapon.optimal,
       homing,
-      turn: homing ? 2.6 : 0,
-      targetId: target && target.alive ? target.id : null,
+      turn: rocket ? rocketTurn(unit.rocketStrength || 0) : (homing ? 2.6 : 0),
+      targetId,
+      age: 0,
+      phase: rocket ? "pop" : "",
+      popTime: weapon.popTime,
       mesh,
     });
   }
@@ -790,6 +887,7 @@ export function startMission(state, contract, hooks) {
         x: target.model.root.position.x,
         y: target.model.root.position.y + target.radius * 0.4,
         z: target.model.root.position.z,
+        speed: planarSpeed(target),
       } : null);
       shot.mesh.position.set(shot.x, shot.y, shot.z);
       if (shot.y <= map.heightAt(shot.x, shot.z) + 0.2) {
@@ -810,7 +908,9 @@ export function startMission(state, contract, hooks) {
             const victim = units.find((u) => u.id === hit.object.userData.ownerId);
             const attacker = units.find((u) => u.id === shot.ownerId);
             if (victim && victim.alive && attacker) {
-              applyDamage(victim, hit.object.userData.partId, shot.damage, attacker);
+              const dist = Math.hypot(hit.point.x - shot.ox, hit.point.y - shot.oy, hit.point.z - shot.oz);
+              const amount = shot.damage * rangeFalloff(dist, shot.optimal, shot.range);
+              if (amount > 0) applyDamage(victim, hit.object.userData.partId, amount, attacker);
             }
             flash(hit.point, shot.color, 0.55);
           }
@@ -1227,12 +1327,13 @@ export function startMission(state, contract, hooks) {
     placeCamera();
 
     const playerAim = cameraAimPoint();
-    trackPlayerWeapons(playerAim);
+    trackUnitWeapons(player, playerAim);
     if (input.skill && player.alive) resolveSkillAction(player, activateSkill(player), playerAim);
     for (const unit of units) {
       if (!unit.alive) continue;
       if (!liveBattle && unit !== player) continue;
-      if (unit !== player) trackWeapons(unit, desiredAim(unit));
+      if (unit !== player) trackUnitWeapons(unit, null);
+      updateRocketLock(unit, dt, unit === player ? playerAim : null);
       const lockout = tickSkill(unit, dt);
       if (lockout && lockout.type === "lockout" && unit === player) {
         sfx("alarm");
@@ -1244,11 +1345,15 @@ export function startMission(state, contract, hooks) {
         coolWeapon(weapon, dt * mul, unit.speed);
       }
       const locked = weaponsLocked(unit);
+      const moving = planarSpeed(unit) >= STATIONARY_SPEED;
       for (const weapon of unit.weapons) {
-        const trigger = unit === player
+        let trigger = unit === player
           ? !!input.groups[(weapon.group || 1) - 1]
           : !!(unit.cmd && unit.cmd.fire);
-        if (weaponWantsShot(weapon, dt, trigger, canOperateWeapon(unit, weapon) && !locked)) {
+        if (weapon.delivery === "rocket") {
+          trigger = trigger && rocketMayFire(unit.rocketLock || 0) && !!unit.rocketLockId;
+        }
+        if (weaponWantsShot(weapon, dt, trigger, canOperateWeapon(unit, weapon) && !locked, moving)) {
           shoot(unit, weapon, unit === player ? playerAim : null);
         }
       }
@@ -1263,8 +1368,128 @@ export function startMission(state, contract, hooks) {
     renderer.render(scene, camera);
   }
 
+  function planarSpeed(unit) {
+    return Math.hypot(unit.speed || 0, unit.strafeVel || 0);
+  }
+
+  function unitPlanarVelocity(unit) {
+    const { fwd, right } = horizontalBasis(unit.model.root);
+    return {
+      x: fwd.x * (unit.speed || 0) + right.x * (unit.strafeVel || 0),
+      y: 0,
+      z: fwd.z * (unit.speed || 0) + right.z * (unit.strafeVel || 0),
+    };
+  }
+
+  const LOCK_CONE = Math.cos(6 * Math.PI / 180);
+
+  function playerRocketTarget(aimPoint, maxRange) {
+    camera.updateMatrixWorld(true);
+    const origin = camera.position;
+    const dir = new Vector3();
+    camera.getWorldDirection(dir);
+    const hit = raycast(origin, dir, player.id, Math.min(AIM_FAR, maxRange));
+    if (hit && hit.object.userData && hit.object.userData.ownerId) {
+      const hitUnit = units.find((u) => u.id === hit.object.userData.ownerId && u.alive && u.team === "enemy");
+      if (hitUnit) {
+        const dist = hitUnit.model.root.position.distanceTo(player.model.root.position);
+        if (dist <= maxRange) return { id: hitUnit.id, speed: planarSpeed(hitUnit) };
+      }
+    }
+    const selected = currentTarget();
+    if (!selected || !aimPoint) return null;
+    const dist = selected.model.root.position.distanceTo(player.model.root.position);
+    if (dist > maxRange) return null;
+    const to = selected.model.root.position.clone();
+    to.y += (selected.radius || 2) * 0.45;
+    to.sub(origin);
+    if (to.lengthSq() < 1e-6) return null;
+    to.normalize();
+    if (dir.dot(to) < LOCK_CONE) return null;
+    return { id: selected.id, speed: planarSpeed(selected) };
+  }
+
+  function updateRocketLock(unit, dt, aimPoint) {
+    const rockets = unit.weapons.filter((weapon) => weapon.delivery === "rocket" && mountUsable(unit, weapon));
+    if (!rockets.length) {
+      unit.rocketLock = 0;
+      unit.rocketLockId = null;
+      unit.rocketStrength = 0;
+      unit.rocketTracking = false;
+      return;
+    }
+    const maxRange = rockets.reduce((max, weapon) => Math.max(max, weapon.range || 0), 0);
+    const lockTime = rockets[0].lockTime || LOCK_TIME;
+    let track = null;
+    if (unit === player) track = playerRocketTarget(aimPoint, maxRange);
+    else if (unit.aiTarget && unit.aiTarget.alive) {
+      const dist = unit.aiTarget.model.root.position.distanceTo(unit.model.root.position);
+      if (dist <= maxRange) track = { id: unit.aiTarget.id, speed: planarSpeed(unit.aiTarget) };
+    }
+    const stepped = stepLock(unit.rocketLock || 0, dt, track ? track.speed : 0, !!track, lockTime);
+    unit.rocketLock = stepped.lock;
+    unit.rocketStrength = track ? stepped.strength : 0;
+    unit.rocketTracking = !!track;
+    unit.rocketLockId = track ? track.id : (stepped.lock > 0 ? unit.rocketLockId : null);
+  }
+
+  function projectHudPoint(x, y, z) {
+    indicatorPoint.set(x, y, z);
+    camera.getWorldDirection(indicatorDir);
+    const ahead = indicatorPoint.clone().sub(camera.position).dot(indicatorDir);
+    if (ahead <= 0.5) return null;
+    const ndc = indicatorPoint.clone().project(camera);
+    const width = window.innerWidth || 1280;
+    const height = window.innerHeight || 720;
+    return {
+      x: (ndc.x * 0.5 + 0.5) * width,
+      y: (-ndc.y * 0.5 + 0.5) * height,
+    };
+  }
+
+  let lastAimMarkers = { impact: null, lead: null, drop: null };
+
+  function ballisticHud(aimPoint) {
+    const gun = player.weapons.find((weapon) => weapon.delivery === "ballistic" && mountUsable(player, weapon));
+    if (!gun || !player.model.muzzles[gun.mount]) {
+      lastAimMarkers = { impact: null, lead: null, drop: null };
+      return lastAimMarkers;
+    }
+    const muzzle = new Vector3();
+    player.model.muzzles[gun.mount].getWorldPosition(muzzle);
+    const origin = { x: muzzle.x, y: muzzle.y, z: muzzle.z };
+    const aim = { x: aimPoint.x, y: aimPoint.y, z: aimPoint.z };
+    const speed = gun.speed || 80;
+    const gravity = gun.gravity || BALLISTIC_GRAVITY;
+    const solved = ballisticAim(origin, aim, speed, gravity);
+    const impactWorld = solved.solved ? aim : dropPoint(origin, aim, speed, gravity);
+    const dropped = dropPoint(origin, aim, speed, gravity);
+    const impact = projectHudPoint(impactWorld.x, impactWorld.y, impactWorld.z);
+    const drop = dropped.drop > 0.2 ? projectHudPoint(dropped.x, dropped.y, dropped.z) : null;
+    let lead = null;
+    const target = currentTarget();
+    if (target && target.alive) {
+      const pos = target.model.root.position;
+      const aimAt = {
+        x: pos.x,
+        y: pos.y + (target.radius || 2) * 0.45,
+        z: pos.z,
+      };
+      const leadWorld = leadPoint(origin, aimAt, unitPlanarVelocity(target), speed).point;
+      lead = projectHudPoint(leadWorld.x, leadWorld.y, leadWorld.z);
+    }
+    lastAimMarkers = {
+      impact: impact ? { ...impact, label: solved.solved ? "IMPACT" : "SHORT" } : null,
+      lead: lead ? { ...lead, label: "LEAD" } : null,
+      drop: drop ? { ...drop, label: `DROP ${dropped.drop.toFixed(1)}m` } : null,
+    };
+    return lastAimMarkers;
+  }
+
   function groupRows() {
     const rows = [];
+    const target = currentTarget();
+    const dist = target ? target.model.root.position.distanceTo(player.model.root.position) : null;
     for (let group = 1; group <= 4; group++) {
       const list = player.weapons.filter((weapon) => (weapon.group || 1) === group);
       const heat = groupHeatState(list, player);
@@ -1273,9 +1498,10 @@ export function startMission(state, contract, hooks) {
         continue;
       }
       const lead = list.find((weapon) => !weapon.overheated) || list[0];
-      const pct = lead.windup
-        ? Math.round((lead.charge / Math.max(0.001, lead.windup)) * 100)
+      const pct = lead.chargeTime
+        ? Math.round((lead.charge / Math.max(0.001, lead.chargeTime)) * 100)
         : Math.round((1 - Math.min(1, lead.cooldown * (lead.rate || 1))) * 100);
+      const maxRange = list.reduce((max, weapon) => Math.max(max, weapon.range || 0), 0);
       rows.push({
         group,
         name: list.map((weapon) => weapon.name).join(" + "),
@@ -1284,6 +1510,9 @@ export function startMission(state, contract, hooks) {
         color: lead.color,
         heat: heat.heat,
         heats: heat.heats,
+        maxRange,
+        delivery: lead.delivery || "",
+        far: dist != null && dist > maxRange,
       });
     }
     return rows;
@@ -1523,6 +1752,13 @@ export function startMission(state, contract, hooks) {
       marks.push({ x: marker.x, z: marker.z, color: marker.css, r: 4 });
     }
     const peak = player.weapons.reduce((max, weapon) => Math.max(max, weapon.heatGauge || 0), 0);
+    const aimNow = cameraAimPoint();
+    const aimMarkers = ballisticHud(aimNow);
+    const living = player.weapons.filter((weapon) => mountUsable(player, weapon));
+    const reach = living.reduce((max, weapon) => Math.max(max, weapon.range || 0), 0);
+    const outOfRange = !!(targetData && targetData.locked && reach > 0 && targetData.distance > reach);
+    const charging = player.weapons.find((weapon) => weapon.chargeTime && (weapon.charging || weapon.charge > 0));
+    const rocket = player.weapons.some((weapon) => weapon.delivery === "rocket");
     hud.update({
       scramble: perf.sensors.scramble * scrambleMul(player),
       vignette,
@@ -1539,7 +1775,18 @@ export function startMission(state, contract, hooks) {
       boosting: player.boosting,
       boostReady: perf.boosterReady,
       target: targetData,
+      outOfRange,
       weapons: groupRows(),
+      lock: rocket ? {
+        value: player.rocketLock || 0,
+        tracking: !!player.rocketTracking,
+        strength: player.rocketStrength || 0,
+      } : null,
+      charge: charging ? {
+        pct: (charging.charge || 0) / charging.chargeTime,
+        name: charging.name,
+      } : null,
+      markers: aimMarkers,
       skill: skillHud(player),
       indicators: probe.arrows,
       messages,
@@ -2008,6 +2255,100 @@ export function startMission(state, contract, hooks) {
   };
   window.__ZOIDS__.contract = contract.name;
   window.__ZOIDS__.contractType = contract.type;
+  const savedLoadout = player.weapons.map((weapon) => ({ ...weapon }));
+  window.__ZOIDS__.installWeapon = (mount, typeId) => {
+    const spec = WEAPONS[typeId];
+    if (!spec || !player.model.muzzles[mount]) return null;
+    const prev = player.weapons.find((weapon) => weapon.mount === mount);
+    const next = runtimeWeapon({ uid: `demo-${typeId}`, type: typeId, mount, group: prev ? prev.group : 1 });
+    next.cooldown = 0;
+    next.charge = 0;
+    next.charging = false;
+    next.heatGauge = 0;
+    next.overheated = false;
+    if (prev) player.weapons.splice(player.weapons.indexOf(prev), 1, next);
+    else player.weapons.push(next);
+    player.rocketLock = 0;
+    player.rocketLockId = null;
+    player.rocketStrength = 0;
+    player.rocketTracking = false;
+    pushHud();
+    return { id: next.id, mount, group: next.group, delivery: next.delivery, range: next.range };
+  };
+  window.__ZOIDS__.restoreWeapons = () => {
+    player.weapons = savedLoadout.map((weapon) => ({ ...weapon, cooldown: 0, charge: 0, charging: false }));
+    player.rocketLock = 0;
+    player.rocketLockId = null;
+    pushHud();
+  };
+  window.__ZOIDS__.weaponDebug = () => ({
+    lock: player.rocketLock || 0,
+    lockId: player.rocketLockId || null,
+    strength: player.rocketStrength || 0,
+    tracking: !!player.rocketTracking,
+    moving: planarSpeed(player),
+    weapons: player.weapons.map((weapon) => ({
+      id: weapon.id,
+      mount: weapon.mount,
+      group: weapon.group,
+      delivery: weapon.delivery,
+      range: weapon.range,
+      optimal: weapon.optimal,
+      charge: weapon.charge || 0,
+      charging: !!weapon.charging,
+      cooldown: weapon.cooldown,
+      speed: weapon.speed || 0,
+    })),
+    markers: lastAimMarkers,
+  });
+  window.__ZOIDS__.aimAtEnemy = (yawOffset = 0, pitch = null) => {
+    let best = null;
+    let bestD = Infinity;
+    for (const unit of enemies()) {
+      const dist = unit.model.root.position.distanceTo(player.model.root.position);
+      if (dist < bestD) {
+        bestD = dist;
+        best = unit;
+      }
+    }
+    if (!best) return null;
+    const pos = best.model.root.position;
+    player.speed = 0;
+    player.strafeVel = 0;
+    player.lookYaw = yawToFace(
+      pos.x - player.model.root.position.x,
+      pos.z - player.model.root.position.z,
+    ) + yawOffset;
+    player.model.root.rotation.y = player.lookYaw;
+    if (pitch != null) player.lookPitch = pitch;
+    else {
+      const goal = pos.clone();
+      goal.y += (best.radius || 2) * 0.5;
+      let bestPitch = player.lookPitch;
+      let bestErr = Infinity;
+      for (let attempt = -0.75; attempt <= 0.4; attempt += 0.02) {
+        player.lookPitch = attempt;
+        placeCamera();
+        const view = new Vector3();
+        camera.getWorldDirection(view);
+        const to = goal.clone().sub(camera.position);
+        if (to.lengthSq() < 1e-8) continue;
+        to.normalize();
+        const err = 1 - view.dot(to);
+        if (err < bestErr) {
+          bestErr = err;
+          bestPitch = attempt;
+        }
+      }
+      player.lookPitch = bestPitch;
+    }
+    placeCamera();
+    const aim = cameraAimPoint();
+    trackPlayerWeapons(aim);
+    updateRocketLock(player, 0, aim);
+    pushHud();
+    return { name: best.name, dist: bestD, err: player.lookPitch, debug: window.__ZOIDS__.weaponDebug() };
+  };
 
   return { finish };
 }

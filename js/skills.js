@@ -106,7 +106,7 @@ export const SKILLS = {
       name: "Particle Cannon",
       key: "Q",
       kind: "cannon",
-      blurb: "Fire a built-in particle bolt for 70 damage out to 160 m.",
+      blurb: "Instant bolt for 70 damage out to 160 m. Q is a tap, so this is not the mounted cannon's 3 second stationary charge.",
       cost: "70 skill heat, locked until below 40, cooldown 4s",
       cooldown: 4,
       damage: 70,

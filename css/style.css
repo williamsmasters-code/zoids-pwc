@@ -194,6 +194,67 @@ button:disabled { opacity: 0.45; cursor: default; }
   background: #fff;
   transform: translate(-50%, -50%);
 }
+.reticle.oor { border-color: #ff6677; box-shadow: 0 0 0 1px #ff6677; }
+.lock-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 78px;
+  height: 78px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.lock-ring circle {
+  fill: none;
+  stroke: #ffcc66;
+  stroke-width: 5;
+  stroke-dasharray: 100;
+  stroke-dashoffset: calc(100 - var(--lock, 0) * 100);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+.lock-ring.locked circle { stroke: #ffe7a8; }
+.lock-ring.hidden { display: none; }
+#aim-markers { position: absolute; inset: 0; pointer-events: none; }
+.aim-mark {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px #000;
+  color: #ffd35a;
+}
+.aim-mark b { display: block; margin: 0 auto; }
+.aim-mark.impact b { width: 14px; height: 14px; border: 2px solid #ffd35a; transform: rotate(45deg); }
+.aim-mark.lead { color: #7dffb2; }
+.aim-mark.lead b { width: 26px; height: 16px; border: 2px solid #7dffb2; }
+.aim-mark.drop { color: #ff8844; }
+.aim-mark.drop b { width: 2px; height: 22px; background: #ff8844; }
+.aim-mark span { display: block; margin-top: 2px; white-space: nowrap; }
+.charge-bar {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 46px);
+  transform: translateX(-50%);
+  width: 168px;
+  height: 14px;
+  border: 1px solid #d56bff;
+  background: rgba(8, 10, 16, 0.8);
+  pointer-events: none;
+}
+.charge-bar i { display: block; height: 100%; width: 0; background: #d56bff; }
+.charge-bar span {
+  position: absolute;
+  inset: 0;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  line-height: 14px;
+  color: #fff;
+}
+.charge-bar.hidden { display: none; }
 .compass, .objective, .cam-mode, .lock-prompt, .strip {
   position: absolute;
   left: 50%;
@@ -252,6 +313,10 @@ button:disabled { opacity: 0.45; cursor: default; }
 .wep.overheated { border-color: var(--danger); }
 .wep.overheated small { color: #ff6677; }
 .wep.empty { opacity: 0.55; }
+.wep.charging { border-color: #d56bff; }
+.wep.far { box-shadow: inset 0 0 0 1px #ff6677; }
+.wep .rng { display: block; color: var(--muted); font-style: normal; font-size: 10px; }
+.wep.far .rng { color: #ff6677; }
 .heat-pips { display: flex; gap: 2px; margin-top: 3px; min-height: 3px; }
 .heat-pips span { flex: 1; height: 3px; background: #1a120c; }
 .heat-pips em { display: block; height: 3px; background: #ff8844; }
@@ -294,6 +359,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .skill-list b { color: var(--cyan); margin-right: 4px; }
 .weapon-heat { flex-basis: 100%; color: var(--muted); font-size: 12px; }
 .weapon-heat span { display: block; }
+#weapon-ranges span { display: inline; margin-right: 8px; }
 #minimap { position: absolute; right: 12px; top: 42px; border: 1px solid var(--line); background: rgba(0,0,0,0.35); }
 .log {
   position: absolute;
