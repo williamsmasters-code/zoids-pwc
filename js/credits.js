@@ -19,7 +19,7 @@ export const MODEL_CREDITS = [
     author: "hdbanks1",
     authorUrl: "https://sketchfab.com/hdbanks1",
     modelUrl: "https://sketchfab.com/3d-models/shield-liger-wip-c903bfa399194201a0cb649311ec308f",
-    changes: "scaled/split/optimized/stripped helper nodes",
+    changes: "scaled/split/optimized/stripped helper nodes; rigged with armature, split into segments, animated",
   },
   {
     slug: "geno-saurer",

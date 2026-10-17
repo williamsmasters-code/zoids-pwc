@@ -1,0 +1,68 @@
+SHIELD LIGER (RZ-007) MOTION NOTES
+Reference for the skeletal animations in the Zoids proof of concept.
+Sources are web pages read on 2026-10-17. Notes are paraphrased, not copied.
+Limits: I could not watch the anime frame by frame. Gait notes come from the
+fact that it is a lion-type Zoid plus the written descriptions below.
+Where I say "design choice", it is my own animation decision.
+
+SOURCES
+ [1] The Iron Bible, Shield Liger (RZ-007) page
+     https://www.theironbible.com/IndexZoids/ShieldLiger.php
+ [2] The Iron Bible, Shield Liger Bang Spec. page
+     https://www.theironbible.com/IndexZoids/ShieldLigerBS.php
+ [3] The Iron Bible, RZ-007 model kit page
+     https://theironbible.com/ZoidsModelKits/NJR/ShieldLiger.php
+ [4] Zoids Wiki (Fandom), Energy Shield
+     https://zoids.fandom.com/wiki/Energy_Shield
+ [5] "Thoughts on the Edge of Forever" blog, Spotlight: Zoids - The Shield Liger
+     https://thoughtsontheedgeofforever.wordpress.com/2014/10/05/spotlight-zoids-the-shield-liger/
+
+BASIC DATA [1][3]
+ Lion type, Helic Republic, rollout ZAC 2042. Length 21.6 m, height 9.0 m,
+ weight 92 t, top speed 250 km/h. Built to face the Zenebas Saber Tiger and
+ faster than it. Weapons are folded into the body to cut drag. [1] says the
+ trade-off is poorer balance at speed while the weapons are stowed.
+
+GAIT (design choice, based on a big-cat quadruped)
+ Walk: diagonal pairs move together (front left with rear right). Slow, heavy
+ steps. Head and mane sway a little. Tail swings opposite to the body.
+ Run: bounding gallop. The spine flexes, front legs reach forward together and
+ rear legs push together, with a short airborne moment. Head stays level so the
+ weapons remain aimed forward. Weapons stay stowed while running [1].
+ Idle: slow breathing motion in the torso and a small tail drift.
+
+ENERGY SHIELD DEPLOYMENT [1][2][4][5]
+ - The generators are built into the mane. The top and bottom mane panels
+   expand. [1]
+ - In the anime the sides of the mane also flash gold. The field builds up in
+   planes and then solidifies into a dome. It wraps the top and sides and is
+   strongest at the front. [1][2]
+ - Blog description [5]: a chin armor plate flips down at roughly 70 degrees
+   while a plate behind the cockpit flips up to the same angle. The shield
+   covers the front half of the Zoid.
+ - Shields can be used to ram. Two shields that collide cancel each other. [1][4]
+ - Heavy hits can overload the shield (Geno Saurer's charged particle cannon
+   broke it in the series [2]). The game's heat lockout is based on this.
+ Animation plan: ShieldActivate is a one-shot. The lower mane/chin plate drops
+ about 70 degrees, the upper plate behind the head rises about 70 degrees, the
+ side panels flare outward, and the body braces (lower head and chest, legs set
+ wide). ShieldMaintain loops: panels hold their pose with a small hum-like
+ vibration and a slow breathing sway.
+
+WEAPONS AND HOW THEY FIRE [1][2][3][5]
+ - Upper back: AMD two-barrel 20 mm beam gun, tucked under a back armor panel.
+   The panel flips up to expose it. [1][5] Tail: 30 mm two-barrel beam gun
+   (standard model only; Bang's version lacks it). [1][2]
+ - Chest: Anti-Zoid triple shock cannon, three barrels, three shots, usually
+   shown firing one at a time. [1]
+ - Sides: two folding missile pods that swing down from the flanks. [1][5]
+ - Mouth: two laser sabres. Paws: four strike claws. [1]
+ Animation plan: Fire is a one-shot. The back armor panel flips up, the twin
+ gun pushes back (recoil) and returns, the chest cannon kicks back and the whole
+ body rocks back a little, then everything returns to idle. The game also uses
+ this clip for any weapon fire. Not modeled: separate missile pod deploy,
+ sabre, claws (the model's meshes do not separate them).
+
+NOTE ON THE GAME'S SHIELD
+ In the game the shield is a frontal energy arc. Weapons cannot fire while it
+ is up. The Fire clip is therefore never played during the shield.

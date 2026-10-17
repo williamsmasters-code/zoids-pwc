@@ -179,16 +179,24 @@ SKILLS
 
 MODELS
   Command Wolf, Shield Liger, Blade Liger, Iron Kong, and Geno Saurer load
-  Sketchfab meshes from assets/models (see CREDITS.txt). The files are
-  static, face local -Z, stand on y = 0, and are split into the same named
-  damage parts as the mocks. Zaber Fang, Gojulas, and Death Saurer stay
+  Sketchfab meshes from assets/models (see CREDITS.txt). They face local -Z,
+  stand on y = 0, and are split into the same named damage parts as the mocks.
+  Shield Liger prefers assets/models/shield-liger-anim.glb, a rigid skin with
+  Idle, Walk, Run, ShieldActivate, ShieldMaintain, and Fire. If that file
+  fails it uses the static shield-liger.glb, then the procedural mock. The
+  other four files are static. Zaber Fang, Gojulas, and Death Saurer stay
   boxes, cylinders, and cones. Add ?mock=1 to the page address to force the
   procedural model for every Zoid. If a GLB fails to load, that Zoid falls
   back to its mock. The hangar footer opens the credit list.
   Lions, the wolf, and the saber-tooth are quadrupeds. Iron Kong is a gorilla.
   Geno Saurer, Gojulas, and Death Saurer are bipedal theropods. Mock-only
   machines keep their colored silhouettes: red saber fangs, olive siege
-  walker, purple super heavy. Procedural legs swing while moving.
+  walker, purple super heavy. Procedural legs swing while moving. The Shield
+  Liger plays its skeletal clips instead: idle, a diagonal walk, a bounding
+  run, the energy-shield deploy, and a firing recoil. The hangar preview
+  loops the walk. Q still toggles the energy shield, and weapons do not fire
+  while it is up. Rebuild the animated file from the repo root:
+    /workspace/tools/blender-4.5.14-linux-x64/blender -b --python tools/rig_shield_liger.py
 
 MODEL CREDITS
   License for all five meshes: CC-BY-4.0
@@ -201,6 +209,8 @@ MODEL CREDITS
   Shield Liger WIP
     hdbanks1 — https://sketchfab.com/hdbanks1
     https://sketchfab.com/3d-models/shield-liger-wip-c903bfa399194201a0cb649311ec308f
+    Changes: scaled/split/optimized/stripped helper nodes; rigged with armature, split into segments, animated
+    Rebuild: /workspace/tools/blender-4.5.14-linux-x64/blender -b --python tools/rig_shield_liger.py
   Genosaurer Zoids (free)
     Anderson455 — https://sketchfab.com/pablo.gabriel87
     https://sketchfab.com/3d-models/genosaurer-zoids-free-3b7075f3b14a4022ad3996e0eda8ca88
@@ -214,6 +224,9 @@ MODEL CREDITS
 KNOWN GAPS
   Five Zoids use CC-BY Sketchfab meshes that were scaled, split, and
   compressed for the browser. They are not the official product models.
+  The Shield Liger rig is a rigid split by region, not a hand-weighted
+  skeleton. Small shards can sit off a limb, and the mane plates are the
+  regions that could be separated cleanly.
   Zaber Fang, Gojulas, and Death Saurer are still recognizable mockups.
   No multiplayer. Melee is the Blade Liger's laser-blade dash only.
   Weapons have no ammo count. Heat is per weapon, and there is no magazine.

@@ -13,7 +13,13 @@ import {
   Box3,
   Vector3,
   Color,
+  AnimationMixer,
+  AnimationUtils,
+  LoopOnce,
+  LoopRepeat,
+  AdditiveAnimationBlendMode,
 } from "three";
+import { clone as cloneSkeleton } from "../vendor/addons/utils/SkeletonUtils.js";
 import { partListFor } from "./catalog.js";
 
 // Real meshes for five Zoids. The others stay procedural.
@@ -73,8 +79,8 @@ export async function preloadModels(onProgress) {
   await Promise.all(ids.map(async (id) => {
     const slug = GLB_SLUG[id];
     try {
-      const gltf = await loader.loadAsync(modelUrl(slug));
-      glbTemplates.set(id, gltf.scene);
+      const scene = await loadTemplate(loader, id);
+      glbTemplates.set(id, scene);
     } catch (err) {
       console.warn(`GLB fallback for ${slug}`, err);
       glbTemplates.set(id, null);
@@ -82,6 +88,29 @@ export async function preloadModels(onProgress) {
     done += 1;
     if (onProgress) onProgress(done / ids.length, slug);
   }));
+}
+
+const SHIELD_CLIPS = ["Idle", "Walk", "Run", "ShieldActivate", "ShieldMaintain", "Fire"];
+
+// Shield Liger prefers the skinned GLB. A missing clip set, a network error,
+// or ?mock=1 falls through to the static file and then the procedural mock.
+async function loadTemplate(loader, id) {
+  if (id === "shieldLiger") {
+    try {
+      const gltf = await loader.loadAsync(modelUrl("shield-liger-anim"));
+      const names = (gltf.animations || []).map((clip) => clip.name);
+      if (SHIELD_CLIPS.every((name) => names.includes(name))) {
+        gltf.scene.userData.clips = gltf.animations;
+        gltf.scene.userData.skinned = true;
+        return gltf.scene;
+      }
+      console.warn("GLB fallback for shield-liger-anim", names.join(","));
+    } catch (err) {
+      console.warn("GLB fallback for shield-liger-anim", err);
+    }
+  }
+  const gltf = await loader.loadAsync(modelUrl(GLB_SLUG[id]));
+  return gltf.scene;
 }
 
 export function showLoading(text) {
@@ -649,7 +678,10 @@ function damagedTint(hex) {
 }
 
 function parkDestroyedGlb(mesh, destroyed) {
-  if (!mesh.userData.glbPart) return;
+  // Skinned vertices follow bones. Sliding the mesh object would tear it off
+  // the armature, so destroyed skinned parts only darken (and the mission
+  // hides them on the player).
+  if (!mesh.userData.glbPart || mesh.isSkinnedMesh) return;
   if (destroyed) {
     if (!mesh.userData.parked) {
       mesh.userData.parked = {
@@ -713,6 +745,10 @@ export function refreshPartColors(model, parts) {
 
 function animateModel(model, time, speedNorm, parts) {
   const anim = model.anim;
+  if (anim.kind === "skinned" && anim.mixer) {
+    updateSkinned(model, time, speedNorm);
+    return;
+  }
   const moving = Math.min(1, Math.max(0, speedNorm));
   const phase = time * (6.5 + moving * 3);
   const amp = moving * (anim.kind === "gorilla" ? 0.35 : 0.5);
@@ -759,7 +795,11 @@ function unionBox(meshes) {
 function buildGlb(visual, def, store, anim, anchors, template) {
   const savedScale = visual.scale.x;
   visual.scale.setScalar(1);
-  const clone = template.clone(true);
+  const clips = template.userData.clips || null;
+  const skinned = !!(template.userData.skinned && clips && clips.length);
+  if (clips) delete template.userData.clips;
+  const clone = skinned ? cloneSkeleton(template) : template.clone(true);
+  if (clips) template.userData.clips = clips;
   visual.add(clone);
   clone.traverse((obj) => {
     if (!obj.isMesh) return;
@@ -773,11 +813,158 @@ function buildGlb(visual, def, store, anim, anchors, template) {
     const emissive = material && material.emissive ? material.emissive.getHex() : 0;
     track(obj, partId, store, color, emissive, material ? material.emissiveIntensity || 0 : 0);
     obj.userData.glbPart = true;
+    if (obj.isSkinnedMesh) obj.frustumCulled = false;
   });
   visual.updateMatrixWorld(true);
-  placeGlbAnchors(visual, store, anchors);
+  placeGlbAnchors(visual, store, anchors, skinned ? clone : null);
   visual.scale.setScalar(savedScale || def.scale || 1);
-  anim.kind = "static";
+  if (skinned) setupSkinnedAnim(clone, clips, anim);
+  else anim.kind = "static";
+}
+
+function setupSkinnedAnim(root, clips, anim) {
+  const mixer = new AnimationMixer(root);
+  const byName = {};
+  for (const clip of clips) byName[clip.name] = clip;
+  const actions = {};
+  for (const name of SHIELD_CLIPS) {
+    if (!byName[name]) continue;
+    const source = name === "Fire" ? AnimationUtils.makeClipAdditive(byName[name].clone()) : byName[name];
+    const action = mixer.clipAction(source);
+    action.enabled = true;
+    if (name === "Fire") action.blendMode = AdditiveAnimationBlendMode;
+    action.setEffectiveWeight(name === "Idle" ? 1 : 0);
+    if (name === "ShieldActivate" || name === "Fire") {
+      action.setLoop(LoopOnce, 1);
+      action.clampWhenFinished = name === "ShieldActivate";
+    } else {
+      action.setLoop(LoopRepeat, Infinity);
+    }
+    actions[name] = action;
+  }
+  if (actions.Idle) actions.Idle.reset().play();
+  anim.kind = "skinned";
+  anim.mixer = mixer;
+  anim.actions = actions;
+  anim.loco = "Idle";
+  anim.shieldPhase = "off";
+  anim.shield = false;
+  anim.firePulse = false;
+  anim.lastTime = null;
+}
+
+function setLoco(anim, name) {
+  if (anim.loco === name) return;
+  const next = anim.actions[name];
+  const prev = anim.actions[anim.loco];
+  if (!next) return;
+  if (prev && prev !== next) prev.fadeOut(0.28);
+  // fadeIn multiplies the action's weight. A clip parked at weight 0 would stay invisible.
+  next.reset();
+  next.setEffectiveWeight(1);
+  next.fadeIn(0.28).play();
+  anim.loco = name;
+}
+
+function playShield(anim, reverse) {
+  const act = anim.actions.ShieldActivate;
+  if (!act) return;
+  const hold = anim.actions.ShieldMaintain;
+  if (hold) {
+    hold.stop();
+    hold.setEffectiveWeight(0);
+  }
+  // Reverse from the pose already on screen. A clip that is still at rest
+  // (never deployed) starts at the end so the plates close all the way.
+  const from = act.time;
+  const start = reverse ? (from > 1 / 24 ? from : act.getClip().duration) : 0;
+  act.reset();
+  act.setLoop(LoopOnce, 1);
+  act.clampWhenFinished = true;
+  act.enabled = true;
+  act.paused = false;
+  act.timeScale = reverse ? -1 : 1;
+  act.time = start;
+  act.setEffectiveWeight(1);
+  act.play();
+}
+
+function stepShield(anim) {
+  const want = !!anim.shield;
+  const phase = anim.shieldPhase;
+  if (want && phase === "off") {
+    playShield(anim, false);
+    anim.shieldPhase = "activate";
+    return;
+  }
+  if (want && phase === "retract") {
+    const act = anim.actions.ShieldActivate;
+    if (act) act.timeScale = 1;
+    anim.shieldPhase = "activate";
+    return;
+  }
+  if (phase === "activate") {
+    const act = anim.actions.ShieldActivate;
+    const dur = act ? act.getClip().duration : 0;
+    if (!want) {
+      playShield(anim, true);
+      anim.shieldPhase = "retract";
+    } else if (act && (act.time >= dur - 1 / 24 || !act.isRunning())) {
+      const hold = anim.actions.ShieldMaintain;
+      if (hold) hold.reset().setEffectiveWeight(1).fadeIn(0.2).play();
+      act.fadeOut(0.2);
+      anim.shieldPhase = "maintain";
+    }
+    return;
+  }
+  if (phase === "maintain" && !want) {
+    playShield(anim, true);
+    anim.shieldPhase = "retract";
+    return;
+  }
+  if (phase === "retract") {
+    const act = anim.actions.ShieldActivate;
+    if (act && act.time <= 1 / 24) {
+      act.fadeOut(0.05);
+      anim.shieldPhase = "off";
+    }
+  }
+}
+
+function stepFire(anim) {
+  if (!anim.firePulse) return;
+  anim.firePulse = false;
+  if (anim.shieldPhase !== "off") return;
+  const fire = anim.actions.Fire;
+  if (!fire) return;
+  fire.reset();
+  fire.setLoop(LoopOnce, 1);
+  fire.clampWhenFinished = false;
+  fire.timeScale = 1;
+  fire.setEffectiveWeight(1);
+  fire.play();
+}
+
+function updateSkinned(model, time, speedNorm) {
+  const anim = model.anim;
+  let dt = 0;
+  if (anim.lastTime != null) dt = time - anim.lastTime;
+  anim.lastTime = time;
+  if (!(dt > 0) || dt > 0.1) dt = 0;
+  const speed = Math.min(1, Math.max(0, speedNorm || 0));
+  let loco = "Idle";
+  if (speed >= 0.8) loco = "Run";
+  else if (speed >= 0.12) loco = "Walk";
+  setLoco(anim, loco);
+  const current = anim.actions[anim.loco];
+  if (current) {
+    if (anim.loco === "Walk") current.timeScale = 0.55 + (speed / 0.8) * 0.9;
+    else if (anim.loco === "Run") current.timeScale = 0.85 + ((speed - 0.8) / 0.2) * 0.5;
+    else current.timeScale = 1;
+  }
+  stepShield(anim);
+  stepFire(anim);
+  if (dt > 0) anim.mixer.update(dt);
 }
 
 function storeAllowed(def, name) {
@@ -789,35 +976,70 @@ function partIdFromObject(def, obj) {
   const hinted = obj.userData && obj.userData.partId;
   if (storeAllowed(def, hinted)) return hinted;
   const raw = String(obj.name || "");
-  const base = raw.replace(/_\d+$/, "");
+  const base = raw.replace(/[._]\d+$/, "");
   if (storeAllowed(def, base)) return base;
   if (storeAllowed(def, raw)) return raw;
+  const parts = partListFor(def).slice().sort((a, b) => b.length - a.length);
+  for (const id of parts) {
+    if (raw === id || raw.startsWith(`${id}_`) || raw.startsWith(`${id}.`)) return id;
+  }
   return "core";
 }
 
-function placeGlbAnchors(visual, store, anchors) {
-  const place = (id, pick) => {
+function findBone(root, name) {
+  if (!root) return null;
+  let exact = null;
+  let prefixed = null;
+  root.traverse((obj) => {
+    if (!obj.isBone) return;
+    if (obj.name === name) exact = obj;
+    else if (!prefixed && (obj.name.startsWith(`${name}_`) || obj.name.startsWith(`${name}.`))) prefixed = obj;
+  });
+  // GLTFLoader renames a bone when a mesh already uses that name ("head" -> "head_1").
+  return exact || prefixed;
+}
+
+function placeGlbAnchors(visual, store, anchors, skinnedRoot) {
+  const place = (id, pick, boneName) => {
     if (!store[id] || !store[id].length) return;
     const box = unionBox(store[id]);
     const center = box.getCenter(new Vector3());
     const point = pick(box, center);
+    const bone = findBone(skinnedRoot, boneName);
+    if (bone) {
+      const anchor = new Group();
+      anchor.name = id;
+      bone.updateWorldMatrix(true, false);
+      bone.add(anchor);
+      anchor.position.copy(bone.worldToLocal(point.clone()));
+      anchors[id] = anchor;
+      return;
+    }
     addAnchor(visual, anchors, id, point.x, point.y, point.z);
   };
-  place("headWeapon", (box, center) => new Vector3(center.x, center.y, box.min.z));
-  place("leftWeapon", (box, center) => new Vector3(box.min.x, center.y, Math.min(center.z, box.min.z + (box.max.z - box.min.z) * 0.35)));
-  place("rightWeapon", (box, center) => new Vector3(box.max.x, center.y, Math.min(center.z, box.min.z + (box.max.z - box.min.z) * 0.35)));
-  place("backMount", (box, center) => new Vector3(center.x, box.max.y, center.z));
+  place("headWeapon", (box, center) => new Vector3(center.x, center.y, box.min.z), "chestCannon");
+  place("leftWeapon", (box, center) => new Vector3(box.min.x, center.y, Math.min(center.z, box.min.z + (box.max.z - box.min.z) * 0.35)), "shieldLeft");
+  place("rightWeapon", (box, center) => new Vector3(box.max.x, center.y, Math.min(center.z, box.min.z + (box.max.z - box.min.z) * 0.35)), "shieldRight");
+  place("backMount", (box, center) => new Vector3(center.x, box.max.y, center.z), "twinGun");
   if (store.head && store.head.length) {
     const head = unionBox(store.head);
     const size = head.getSize(new Vector3());
     const eye = new Group();
     eye.name = "eye";
-    eye.position.set(
+    const point = new Vector3(
       (head.min.x + head.max.x) / 2,
       head.max.y - size.y * 0.28,
       head.min.z + Math.max(0.05, size.z * 0.22),
     );
-    visual.add(eye);
+    const bone = findBone(skinnedRoot, "head");
+    if (bone) {
+      bone.updateWorldMatrix(true, false);
+      bone.add(eye);
+      eye.position.copy(bone.worldToLocal(point));
+    } else {
+      eye.position.copy(point);
+      visual.add(eye);
+    }
     anchors.eye = eye;
   }
 }

@@ -772,6 +772,9 @@ export function startMission(state, contract, hooks) {
     }
     const muzzle = new Vector3();
     muzzleObj.getWorldPosition(muzzle);
+    if (unit.model && unit.model.anim && unit.model.anim.kind === "skinned") {
+      unit.model.anim.firePulse = true;
+    }
     const dir = weapon.delivery === "ballistic"
       ? ballisticDirFor(unit, weapon, muzzle, point)
       : mountAimDirection(unit, weapon.mount, point);
@@ -1203,7 +1206,11 @@ export function startMission(state, contract, hooks) {
     // while the view is first person. Raycasts ignore visibility, so hits still land.
     const showBody = cameraMode !== "fps";
     for (const meshes of Object.values(player.model.partMeshes)) {
-      for (const mesh of meshes) mesh.visible = showBody;
+      for (const mesh of meshes) {
+        const part = player.parts[mesh.userData.partId];
+        const destroyed = !!(part && (part.destroyed || part.structure <= 0));
+        mesh.visible = showBody && !(mesh.isSkinnedMesh && destroyed);
+      }
     }
   }
 
@@ -1320,6 +1327,9 @@ export function startMission(state, contract, hooks) {
     for (const unit of units) {
       if (!unit.model.root.visible) continue;
       const speedNorm = Math.min(1, Math.abs(unit.speed) / Math.max(1, unit.def.speed || 1));
+      if (unit.model.anim) {
+        unit.model.anim.shield = unit.def.id === "shieldLiger" && !!(unit.skill && unit.skill.active);
+      }
       unit.model.animate(missionTime, speedNorm, unit.parts);
       if (unit.alive) refreshPartColors(unit.model, unit.parts);
     }
@@ -2220,6 +2230,18 @@ export function startMission(state, contract, hooks) {
     overheated: !!weapon.overheated,
     cooling: weapon.cooling,
   }));
+  window.__ZOIDS__.animState = () => {
+    const anim = player.model && player.model.anim;
+    if (!anim) return null;
+    const fire = anim.actions && anim.actions.Fire;
+    return {
+      kind: anim.kind,
+      loco: anim.loco || null,
+      shieldPhase: anim.shieldPhase || "off",
+      firePlaying: !!(fire && fire.isRunning()),
+      clips: anim.actions ? Object.keys(anim.actions) : [],
+    };
+  };
   window.__ZOIDS__.skillState = () => {
     const hudSkill = skillHud(player);
     return {

@@ -461,7 +461,7 @@ function createPreview(canvas) {
         counts[id] = meshes.length;
         if (meshes.some((mesh) => mesh.userData && mesh.userData.glbPart)) glb = true;
       }
-      return { id: model.def.id, counts, glb, real: glb };
+      return { id: model.def.id, counts, glb, real: glb, anim: model.anim.kind };
     },
     dispose() {
       running = false;
