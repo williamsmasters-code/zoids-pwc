@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/damage.test.mjs && node tests/aim.test.mjs && node tests/input.test.mjs && node tests/reset.test.mjs && node tests/models_check.mjs && node tests/headless.mjs"
+    "test": "node tests/damage.test.mjs && node tests/aim.test.mjs && node tests/input.test.mjs && node tests/reset.test.mjs && node tests/models_check.mjs && node tests/heat.test.mjs && node tests/skills.test.mjs && node tests/indicators.test.mjs && node tests/headless.mjs"
   },
   "dependencies": {
     "three": "file:./vendor"

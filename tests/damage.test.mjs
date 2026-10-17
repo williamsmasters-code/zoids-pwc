@@ -29,7 +29,7 @@ import {
   partListFor,
 } from "../js/catalog.js";
 import { forwardFromYaw, rightFromForward, yawToFace, wrapAngle } from "../js/frame.js";
-import { canOperateWeapon, addHeat } from "../js/combat.js";
+import { canOperateWeapon } from "../js/combat.js";
 import { freshState, launchBlockReason, repairZoid, partsFor } from "../js/state.js";
 
 globalThis.localStorage = {
@@ -284,14 +284,6 @@ check("launch is blocked by a dead core or by tonnage, and a field loan can repa
   assert.equal(loan.ok, true);
   assert.ok(state.money < 0);
   assert.equal(launchBlockReason(state), null);
-});
-
-check("heat shutdown trips at 100", () => {
-  const unit = { heat: 90, shutdown: 0 };
-  assert.equal(addHeat(unit, 9), false);
-  assert.equal(addHeat(unit, 5), true);
-  assert.equal(unit.heat, 62);
-  assert.equal(unit.shutdown, 2.6);
 });
 
 console.log(`\n${passed} checks passed`);

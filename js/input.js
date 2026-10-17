@@ -94,6 +94,7 @@ export function createInput() {
         nearest: edges.has("KeyR"),
         camera: edges.has("KeyV"),
         help: edges.has("KeyH"),
+        skill: edges.has("KeyQ"),
       };
       dx = 0;
       dy = 0;

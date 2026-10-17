@@ -105,6 +105,11 @@ const look = input.read();
 assert.equal(look.dx, 8);
 assert.equal(look.dy, -3);
 
+key("KeyQ", "keydown");
+assert.equal(input.read().skill, true, "Q edges the active skill");
+assert.equal(input.read().skill, false, "skill edge clears after a read");
+key("KeyQ", "keyup");
+
 input.unmount();
 assert.equal(documentTarget.listenerCount("mousedown", true), 0);
 assert.equal(documentTarget.listenerCount("contextmenu", true), 0);

@@ -20,6 +20,9 @@ import {
   BoxGeometry,
   SphereGeometry,
   CylinderGeometry,
+  Sprite,
+  SpriteMaterial,
+  CanvasTexture,
   Clock,
   SRGBColorSpace,
   ACESFilmicToneMapping,
@@ -50,7 +53,30 @@ import { buildUnitModel, tagOwner, refreshPartColors, disposeTree } from "./mode
 import { createInput } from "./input.js";
 import { createHUD, headingOf } from "./hud.js";
 import { createBrain, updateBrain } from "./ai.js";
-import { addHeat, coolUnit, weaponWantsShot, stepProjectile, canOperateWeapon } from "./combat.js";
+import {
+  addWeaponHeat,
+  coolWeapon,
+  weaponWantsShot,
+  stepProjectile,
+  canOperateWeapon,
+  groupHeatState,
+} from "./combat.js";
+import { screenEdgeIndicator, minimapProject } from "./indicators.js";
+import {
+  initSkill,
+  tickSkill,
+  activateSkill,
+  weaponsLocked,
+  resolveIncoming,
+  skillHud,
+  skillSpeedMul,
+  energyCoolMul,
+  heatGenMul,
+  damageMul,
+  spreadMul,
+  radarMul,
+  scrambleMul,
+} from "./skills.js";
 import { sfx } from "./audio.js";
 import { wrapAngle, stepYaw, yawToFace, forwardFromYaw, clamp, approach } from "./frame.js";
 import {
@@ -104,7 +130,8 @@ export function startMission(state, contract, hooks) {
   let paused = false;
   let manual = false;
   let isolate = false;
-  let pacify = false;
+  let pacify = !!(window.__ZOIDS__ && window.__ZOIDS__.pacifyOnStart);
+  if (window.__ZOIDS__) window.__ZOIDS__.pacifyOnStart = false;
   let helpOn = false;
   let cameraMode = "tps";
   let endTimer = 0;
@@ -150,22 +177,15 @@ export function startMission(state, contract, hooks) {
 
   const beacons = [];
   let trucks = [];
-  const beaconMeshes = [];
+  const markers = [];
   if (contract.type === "recon") {
     for (const spot of [
       { x: 80, z: 10 },
       { x: -90, z: -80 },
       { x: 40, z: -190 },
     ]) {
-      const beacon = { ...spot, progress: 0, done: false };
+      const beacon = { ...spot, progress: 0, done: false, label: "SCAN" };
       beacons.push(beacon);
-      const mesh = new Mesh(
-        new CylinderGeometry(1.2, 1.2, 18, 8),
-        new MeshBasicMaterial({ color: 0xffdd66, transparent: true, opacity: 0.28 }),
-      );
-      mesh.position.set(spot.x, map.heightAt(spot.x, spot.z) + 8, spot.z);
-      scene.add(mesh);
-      beaconMeshes.push(mesh);
     }
   }
 
@@ -222,6 +242,39 @@ export function startMission(state, contract, hooks) {
     }
   }
 
+  if (contract.type === "recon") {
+    for (const beacon of beacons) {
+      beacon.marker = addObjectiveMarker({
+        x: beacon.x,
+        z: beacon.z,
+        color: 0xffdd66,
+        css: "#ffd35a",
+        label: "SCAN",
+        kind: "survey",
+      });
+    }
+  }
+  if (contract.type === "assault" && generator) {
+    addObjectiveMarker({
+      x: generator.model.root.position.x,
+      z: generator.model.root.position.z,
+      color: 0xff4455,
+      css: "#ff6677",
+      label: "GEN",
+      kind: "assault",
+    });
+  }
+  if (contract.type === "defend") {
+    addObjectiveMarker({
+      x: 0,
+      z: spawnZ - 320,
+      color: 0x7dffb2,
+      css: "#7dffb2",
+      label: "EXIT",
+      kind: "escort",
+    });
+  }
+
   const waves = contract.waves || [{ at: 0, enemies: contract.enemies }];
   const spawnedWaves = new Set();
 
@@ -235,6 +288,8 @@ export function startMission(state, contract, hooks) {
       cooldown: rng() * 0.3,
       charge: 0,
       charging: false,
+      heatGauge: 0,
+      overheated: false,
     };
   }
 
@@ -268,6 +323,7 @@ export function startMission(state, contract, hooks) {
       heat: 0,
       shutdown: 0,
       boosting: false,
+      skill: initSkill(def.id),
       brain: opts.brain ? createBrain(rng) : null,
       cmd: null,
       aiTarget: null,
@@ -278,6 +334,76 @@ export function startMission(state, contract, hooks) {
     };
     units.push(unit);
     return unit;
+  }
+
+  function paintMarker(marker, text) {
+    const ctx = marker.canvas.getContext("2d");
+    ctx.clearRect(0, 0, marker.canvas.width, marker.canvas.height);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.fillRect(8, 8, 240, 48);
+    ctx.fillStyle = marker.css;
+    ctx.font = "bold 28px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 128, 32);
+    marker.sprite.material.map.needsUpdate = true;
+  }
+
+  function addObjectiveMarker(spec) {
+    const groundY = map.heightAt(spec.x, spec.z);
+    const height = 76;
+    const pillar = new Mesh(
+      new CylinderGeometry(0.85, 1.35, height, 10),
+      new MeshBasicMaterial({
+        color: spec.color,
+        transparent: true,
+        opacity: 0.72,
+        fog: false,
+        depthWrite: false,
+      }),
+    );
+    pillar.position.set(spec.x, groundY + height * 0.5, spec.z);
+    scene.add(pillar);
+    const cap = new Mesh(
+      new SphereGeometry(1.8, 12, 8),
+      new MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.95,
+        fog: false,
+        depthTest: false,
+      }),
+    );
+    cap.position.set(spec.x, groundY + height + 1.2, spec.z);
+    cap.renderOrder = 20;
+    scene.add(cap);
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 64;
+    const texture = new CanvasTexture(canvas);
+    texture.colorSpace = SRGBColorSpace;
+    const sprite = new Sprite(new SpriteMaterial({
+      map: texture,
+      transparent: true,
+      fog: false,
+      depthTest: false,
+    }));
+    sprite.position.set(spec.x, groundY + height * 0.62, spec.z);
+    sprite.scale.set(18, 4.5, 1);
+    sprite.renderOrder = 30;
+    scene.add(sprite);
+    const marker = {
+      ...spec,
+      y: groundY + height * 0.72,
+      pillar,
+      cap,
+      sprite,
+      canvas,
+      height,
+    };
+    markers.push(marker);
+    paintMarker(marker, spec.label);
+    return marker;
   }
 
   function addBuilding(x, z, w, d, h, color) {
@@ -443,18 +569,12 @@ export function startMission(state, contract, hooks) {
     if (Math.abs(diff) > maxTwist) {
       player.lookYaw = wrapAngle(player.model.root.rotation.y + Math.sign(diff) * maxTwist);
     }
-    const boost = input.boost && input.forward > 0 && perf.boosterReady && player.shutdown <= 0;
-    const shutdownMul = player.shutdown > 0 ? 0.35 : 1;
-    const maxSpeed = perf.speed * (boost ? perf.boostMul : 1) * (input.forward < 0 ? 0.55 : 1) * shutdownMul;
+    const boost = input.boost && input.forward > 0 && perf.boosterReady;
+    const skillMul = skillSpeedMul(player);
+    const maxSpeed = perf.speed * (boost ? perf.boostMul : 1) * (input.forward < 0 ? 0.55 : 1) * skillMul;
     player.speed = approach(player.speed, input.forward * maxSpeed, 34 * dt);
-    player.strafeVel = approach(player.strafeVel, input.strafe * perf.speed * 0.62 * shutdownMul, 28 * dt);
+    player.strafeVel = approach(player.strafeVel, input.strafe * perf.speed * 0.62 * skillMul, 28 * dt);
     moveChassis(player, dt);
-    if (boost) {
-      if (addHeat(player, 9 * dt)) {
-        sfx("alarm");
-        pushMessage("Heat shutdown");
-      }
-    }
     player.boosting = boost;
   }
 
@@ -471,10 +591,10 @@ export function startMission(state, contract, hooks) {
       unit.strafeVel = 0;
       return;
     }
-    const shutdownMul = unit.shutdown > 0 ? 0.35 : 1;
-    const maxSpeed = perf.speed * (cmd.throttle < 0 ? 0.55 : 1) * shutdownMul;
+    const skillMul = skillSpeedMul(unit);
+    const maxSpeed = perf.speed * (cmd.throttle < 0 ? 0.55 : 1) * skillMul;
     unit.speed = approach(unit.speed, (cmd.throttle || 0) * maxSpeed, 28 * dt);
-    unit.strafeVel = approach(unit.strafeVel, (cmd.strafe || 0) * perf.speed * 0.55 * shutdownMul, 22 * dt);
+    unit.strafeVel = approach(unit.strafeVel, (cmd.strafe || 0) * perf.speed * 0.55 * skillMul, 22 * dt);
     moveChassis(unit, dt);
   }
 
@@ -587,18 +707,19 @@ export function startMission(state, contract, hooks) {
     const volley = weapon.volley || 1;
     for (let i = 0; i < volley; i++) {
       const shotDir = dir.clone();
-      if (weapon.spread) {
-        shotDir.x += (rng() - 0.5) * weapon.spread * (volley > 1 ? 2 : 1);
-        shotDir.y += (rng() - 0.5) * weapon.spread;
-        shotDir.z += (rng() - 0.5) * weapon.spread * (volley > 1 ? 2 : 1);
+      const spread = (weapon.spread || 0) * spreadMul(unit);
+      if (spread) {
+        shotDir.x += (rng() - 0.5) * spread * (volley > 1 ? 2 : 1);
+        shotDir.y += (rng() - 0.5) * spread;
+        shotDir.z += (rng() - 0.5) * spread * (volley > 1 ? 2 : 1);
         shotDir.normalize();
       }
       if (weapon.hitscan) hitscan(unit, weapon, muzzle, shotDir);
       else spawnProjectile(unit, weapon, muzzle, shotDir);
     }
-    if (addHeat(unit, weapon.heat)) {
+    if (!weapon.skillShot && addWeaponHeat(weapon, (weapon.heat || 0) * heatGenMul(unit))) {
       sfx("alarm");
-      if (unit === player) pushMessage("Heat shutdown");
+      if (unit === player) pushMessage(`${weapon.name} overheated`);
     }
     sfx(shotSound(weapon));
     flash(muzzle, weapon.color, 0.35);
@@ -625,7 +746,7 @@ export function startMission(state, contract, hooks) {
     }
     const victim = units.find((u) => u.id === hit.object.userData.ownerId);
     if (!victim || !victim.alive) return;
-    applyDamage(victim, hit.object.userData.partId, weapon.damage, unit);
+    applyDamage(victim, hit.object.userData.partId, weapon.damage * damageMul(unit), unit);
     flash(hit.point, weapon.color, 0.4);
   }
 
@@ -648,7 +769,7 @@ export function startMission(state, contract, hooks) {
       vy: dir.y * speed,
       vz: dir.z * speed,
       speed,
-      damage: weapon.damage,
+      damage: weapon.damage * damageMul(unit),
       color: weapon.color,
       ownerId: unit.id,
       life: weapon.range / speed + 0.35,
@@ -717,7 +838,16 @@ export function startMission(state, contract, hooks) {
     if (to.lengthSq() > 1e-6) to.normalize();
     const fwd = facingDirection(victim.model.root, new Vector3());
     const forwardDot = fwd.dot(to);
-    const result = applyHit(victim.parts, partId, amount, { zoidId: victim.def.id, forwardDot });
+    const incoming = resolveIncoming(victim, amount, forwardDot);
+    if (incoming.blocked) {
+      if (victim === player) {
+        sfx("alarm");
+        pushMessage("Energy shield blocked the hit");
+        noteHit(attacker);
+      }
+      return;
+    }
+    const result = applyHit(victim.parts, partId, incoming.amount, { zoidId: victim.def.id, forwardDot });
     refreshPartColors(victim.model, victim.parts);
     const label = PART_LABELS[partId] || partId;
     if (victim === player) {
@@ -897,8 +1027,12 @@ export function startMission(state, contract, hooks) {
         const beacon = beacons[i];
         if (beacon.done) {
           done += 1;
-          beaconMeshes[i].material.color.setHex(0x3dff7a);
-          beaconMeshes[i].material.opacity = 0.12;
+          if (beacon.marker && beacon.marker.css !== "#3dff7a") {
+            beacon.marker.css = "#3dff7a";
+            beacon.marker.pillar.material.color.setHex(0x3dff7a);
+            beacon.marker.pillar.material.opacity = 0.28;
+            beacon.marker.cap.material.color.setHex(0x3dff7a);
+          }
           continue;
         }
         const dist = Math.hypot(
@@ -1048,7 +1182,7 @@ export function startMission(state, contract, hooks) {
     missionTime += dt;
     const input = paused ? {
       forward: 0, strafe: 0, turn: 0, boost: false, groups: [false, false, false, false],
-      dx: 0, dy: 0, tab: false, nearest: false, camera: false, help: false,
+      dx: 0, dy: 0, tab: false, nearest: false, camera: false, help: false, skill: false,
     } : inputDevice.read();
     lastGroups = input.groups.slice();
     if (input.help) helpOn = !helpOn;
@@ -1071,6 +1205,7 @@ export function startMission(state, contract, hooks) {
         if (unit.script) unit.script(unit, dt);
         else if (unit.brain) {
           updateBrain(unit, unit.brain, { units }, dt);
+          if (unit.cmd && unit.cmd.skill) resolveSkillAction(unit, activateSkill(unit), null);
           driveAI(unit, dt);
         }
       }
@@ -1093,16 +1228,27 @@ export function startMission(state, contract, hooks) {
 
     const playerAim = cameraAimPoint();
     trackPlayerWeapons(playerAim);
+    if (input.skill && player.alive) resolveSkillAction(player, activateSkill(player), playerAim);
     for (const unit of units) {
       if (!unit.alive) continue;
       if (!liveBattle && unit !== player) continue;
       if (unit !== player) trackWeapons(unit, desiredAim(unit));
-      coolUnit(unit, dt);
+      const lockout = tickSkill(unit, dt);
+      if (lockout && lockout.type === "lockout" && unit === player) {
+        sfx("alarm");
+        pushMessage("Energy shield overheated");
+      }
+      const coolMul = energyCoolMul(unit);
+      for (const weapon of unit.weapons) {
+        const mul = weapon.kind === "energy" ? coolMul : 1;
+        coolWeapon(weapon, dt * mul, unit.speed);
+      }
+      const locked = weaponsLocked(unit);
       for (const weapon of unit.weapons) {
         const trigger = unit === player
           ? !!input.groups[(weapon.group || 1) - 1]
           : !!(unit.cmd && unit.cmd.fire);
-        if (weaponWantsShot(weapon, dt, trigger, canOperateWeapon(unit, weapon))) {
+        if (weaponWantsShot(weapon, dt, trigger, canOperateWeapon(unit, weapon) && !locked)) {
           shoot(unit, weapon, unit === player ? playerAim : null);
         }
       }
@@ -1121,27 +1267,226 @@ export function startMission(state, contract, hooks) {
     const rows = [];
     for (let group = 1; group <= 4; group++) {
       const list = player.weapons.filter((weapon) => (weapon.group || 1) === group);
+      const heat = groupHeatState(list, player);
       if (!list.length) {
-        rows.push({ group, name: "Empty", state: "empty", pct: 0, color: 0x334048 });
+        rows.push({ group, name: "Empty", state: heat.state, pct: 0, color: 0x334048, heat: 0, heats: [] });
         continue;
       }
-      const operable = list.filter((weapon) => canOperateWeapon(player, weapon));
-      let state = "ready";
-      if (!operable.length) state = "disabled";
-      else if (operable.every((weapon) => weapon.cooldown > 0.03 || weapon.charging)) state = "cooling";
-      const lead = operable[0] || list[0];
+      const lead = list.find((weapon) => !weapon.overheated) || list[0];
       const pct = lead.windup
         ? Math.round((lead.charge / Math.max(0.001, lead.windup)) * 100)
         : Math.round((1 - Math.min(1, lead.cooldown * (lead.rate || 1))) * 100);
       rows.push({
         group,
         name: list.map((weapon) => weapon.name).join(" + "),
-        state,
+        state: heat.state,
         pct,
         color: lead.color,
+        heat: heat.heat,
+        heats: heat.heats,
       });
     }
     return rows;
+  }
+
+  const indicatorPoint = new Vector3();
+  const indicatorDir = new Vector3();
+  let lastProbe = { arrows: [], rows: [], radarRange: 0 };
+
+  // Keep direction arrows off the objective banner, the minimap, and the weapon dock.
+  function parkArrow(edge, width, height) {
+    const x = Math.min(width - 48, Math.max(48, edge.x));
+    let y = Math.min(height - 140, Math.max(100, edge.y));
+    if (x > width - 180 && y < 220) y = 220;
+    return { ...edge, x, y };
+  }
+
+  function markerNdc(marker) {
+    indicatorPoint.set(marker.x, marker.y, marker.z);
+    camera.getWorldDirection(indicatorDir);
+    const toCam = indicatorPoint.clone().sub(camera.position);
+    const ahead = toCam.dot(indicatorDir);
+    if (ahead > 0.5) {
+      const ndc = indicatorPoint.clone().project(camera);
+      return { x: ndc.x, y: ndc.y, behind: false };
+    }
+    const flat = indicatorDir.clone();
+    flat.y = 0;
+    if (flat.lengthSq() < 1e-6) flat.set(0, 0, -1);
+    else flat.normalize();
+    const rightX = -flat.z;
+    const rightZ = flat.x;
+    const localRight = toCam.x * rightX + toCam.z * rightZ;
+    const localFwd = toCam.x * flat.x + toCam.z * flat.z;
+    const mag = Math.hypot(localRight, localFwd) || 1;
+    return { x: localRight / mag, y: localFwd / mag, behind: true };
+  }
+
+  function objectiveReadout(radarRange) {
+    camera.updateMatrixWorld(true);
+    const width = window.innerWidth || 1280;
+    const height = window.innerHeight || 720;
+    const px = player.model.root.position.x;
+    const pz = player.model.root.position.z;
+    const { fwd } = horizontalBasis(player.model.root);
+    const arrows = [];
+    const rows = [];
+    for (const marker of markers) {
+      const dist = Math.hypot(marker.x - px, marker.z - pz);
+      paintMarker(marker, `${marker.label} ${Math.round(dist)}m`);
+      const ndc = markerNdc(marker);
+      const beyond = dist > radarRange;
+      const open = marker.kind !== "survey" || !beacons.some((beacon) => beacon.marker === marker && beacon.done);
+      const edge = parkArrow(
+        screenEdgeIndicator(ndc.x, ndc.y, ndc.behind, width, height, 0.88, beyond && open && !ndc.behind),
+        width,
+        height,
+      );
+      const mini = minimapProject(fwd, px, pz, marker.x, marker.z, 0.55, 150, 150, 6);
+      rows.push({
+        label: marker.label,
+        kind: marker.kind,
+        dist,
+        beyond,
+        arrow: !!(open && edge.clamped),
+        miniClamped: mini.clamped,
+        x: edge.x,
+        y: edge.y,
+        fog: marker.pillar.material.fog,
+        markerDepth: marker.cap.material.depthTest,
+        spriteDepth: marker.sprite.material.depthTest,
+      });
+      if (open && edge.clamped) {
+        arrows.push({
+          x: edge.x,
+          y: edge.y,
+          angle: edge.angle,
+          dist,
+          label: marker.label,
+          color: marker.css,
+        });
+      }
+    }
+    lastProbe = { arrows, rows, radarRange };
+    return lastProbe;
+  }
+
+  function skillAimPoint(unit, aimPoint) {
+    if (aimPoint) return aimPoint;
+    if (unit.cmd && unit.cmd.aim) return new Vector3(unit.cmd.aim.x, unit.cmd.aim.y, unit.cmd.aim.z);
+    const fwd = facingDirection(unit.model.root, new Vector3());
+    const origin = unit.model.root.position.clone();
+    origin.y += 1.6;
+    return origin.addScaledVector(fwd, 80);
+  }
+
+  function muzzlePoint(unit, mounts) {
+    for (const name of mounts) {
+      const obj = (unit.model.muzzles && unit.model.muzzles[name]) || (unit.model.anchors && unit.model.anchors[name]);
+      if (!obj) continue;
+      const pos = new Vector3();
+      obj.getWorldPosition(pos);
+      return pos;
+    }
+    const pos = unit.model.root.position.clone();
+    pos.y += 1.8;
+    return pos;
+  }
+
+  function resolveSkillAction(unit, action, aimPoint) {
+    if (!action || !action.ok) {
+      if (unit === player && action && action.reason === "locked") pushMessage("Skill locked");
+      return;
+    }
+    if (action.type === "shield-on") {
+      if (unit === player) pushMessage("Energy shield up. Weapons cannot fire.");
+      sfx("alarm");
+      return;
+    }
+    if (action.type === "shield-off") {
+      if (unit === player) pushMessage("Energy shield down");
+      return;
+    }
+    if (action.type === "duration") {
+      if (unit === player) pushMessage(action.spec.name);
+      return;
+    }
+    if (action.type === "dash") {
+      const fwd = facingDirection(unit.model.root, new Vector3());
+      unit.model.root.position.addScaledVector(fwd, action.spec.dash || 0);
+      const reach = action.spec.range || 8;
+      for (const other of units) {
+        if (!other.alive || other === unit || other.team === unit.team) continue;
+        const rel = other.model.root.position.clone().sub(unit.model.root.position);
+        rel.y = 0;
+        const dist = rel.length();
+        if (dist > reach || dist < 0.01) continue;
+        rel.multiplyScalar(1 / dist);
+        if (rel.dot(fwd) < (action.spec.arc ?? 0.2)) continue;
+        applyDamage(other, "core", action.spec.slash || 0, unit);
+      }
+      if (unit === player) pushMessage("Laser blade");
+      sfx("beam");
+      return;
+    }
+    if (action.type === "slam") {
+      const radius = action.spec.radius || 10;
+      for (const other of units) {
+        if (!other.alive || other === unit || other.team === unit.team) continue;
+        const dist = other.model.root.position.distanceTo(unit.model.root.position);
+        if (dist <= radius) applyDamage(other, "core", action.spec.damage || 0, unit);
+      }
+      if (unit === player) pushMessage("Ground pound");
+      sfx("shock");
+      return;
+    }
+    if (action.type === "cannon") {
+      const muzzle = muzzlePoint(unit, ["headWeapon", "eye"]);
+      const point = skillAimPoint(unit, aimPoint);
+      const plain = directionToPoint(muzzle, point);
+      const dir = new Vector3(plain.x, plain.y, plain.z);
+      if (dir.lengthSq() < 1e-8) facingDirection(unit.model.root, dir);
+      hitscan(unit, {
+        damage: action.spec.damage,
+        range: action.spec.range,
+        color: action.spec.color || 0xd56bff,
+        id: "skillCannon",
+        hitscan: true,
+        skillShot: true,
+        heat: 0,
+        name: action.spec.name,
+      }, muzzle, dir);
+      if (unit === player) pushMessage("Charged particle cannon");
+      return;
+    }
+    if (action.type === "barrage") {
+      const muzzle = muzzlePoint(unit, ["backMount", "headWeapon", "eye"]);
+      const point = skillAimPoint(unit, aimPoint);
+      const plain = directionToPoint(muzzle, point);
+      const base = new Vector3(plain.x, plain.y, plain.z);
+      if (base.lengthSq() < 1e-8) facingDirection(unit.model.root, base);
+      const shots = action.spec.shots || 5;
+      for (let i = 0; i < shots; i++) {
+        const dir = base.clone();
+        dir.x += (i - (shots - 1) / 2) * 0.08;
+        dir.y += 0.18 + i * 0.02;
+        dir.normalize();
+        spawnProjectile(unit, {
+          id: "barrage",
+          damage: action.spec.damage,
+          range: action.spec.range || 150,
+          speed: action.spec.speed || 62,
+          color: action.spec.color || 0xffcc66,
+          spread: 0,
+          skillShot: true,
+          heat: 0,
+          name: action.spec.name,
+          homing: false,
+        }, muzzle, dir);
+      }
+      if (unit === player) pushMessage("Artillery barrage");
+      sfx("shock");
+    }
   }
 
   function pushHud() {
@@ -1151,7 +1496,7 @@ export function startMission(state, contract, hooks) {
     let targetData = null;
     if (target) {
       const distance = target.model.root.position.distanceTo(player.model.root.position);
-      const range = 190 * (perf.sensors.rangeMul || 1);
+      const range = 190 * (perf.sensors.rangeMul || 1) * radarMul(player);
       targetData = {
         name: target.name,
         layout: target.def.layout,
@@ -1160,7 +1505,8 @@ export function startMission(state, contract, hooks) {
         locked: distance <= range,
       };
     }
-    const radarRange = (perf.sensors.radar ? 230 : 42) * perf.sensors.rangeMul;
+    const radarRange = (perf.sensors.radar ? 230 : 42) * perf.sensors.rangeMul * radarMul(player);
+    const probe = objectiveReadout(radarRange);
     const marks = [];
     for (const unit of units) {
       if (unit === player || !unit.alive) continue;
@@ -1173,11 +1519,12 @@ export function startMission(state, contract, hooks) {
         r: unit.def.immobile ? 4 : 3,
       });
     }
-    for (const beacon of beacons) {
-      marks.push({ x: beacon.x, z: beacon.z, color: beacon.done ? "#3dff7a" : "#ffd35a", r: 3.5 });
+    for (const marker of markers) {
+      marks.push({ x: marker.x, z: marker.z, color: marker.css, r: 4 });
     }
+    const peak = player.weapons.reduce((max, weapon) => Math.max(max, weapon.heatGauge || 0), 0);
     hud.update({
-      scramble: perf.sensors.scramble,
+      scramble: perf.sensors.scramble * scrambleMul(player),
       vignette,
       heading: headingOf(player.model.root.rotation.y),
       objective: hudObjective,
@@ -1187,12 +1534,14 @@ export function startMission(state, contract, hooks) {
       parts: player.parts,
       speed: Math.abs(player.speed),
       speedPct: (Math.abs(player.speed) / Math.max(0.1, perf.speed)) * 100,
-      heat: player.heat,
+      heat: peak,
       shutdown: player.shutdown,
       boosting: player.boosting,
       boostReady: perf.boosterReady,
       target: targetData,
       weapons: groupRows(),
+      skill: skillHud(player),
+      indicators: probe.arrows,
       messages,
       help: helpOn,
       locked: document.pointerLockElement === renderer.domElement,
@@ -1264,7 +1613,14 @@ export function startMission(state, contract, hooks) {
     for (const unit of units) disposeTree(unit.model.root);
     for (const mesh of effects) disposeTree(mesh);
     for (const shot of projectiles) disposeTree(shot.mesh);
-    for (const mesh of beaconMeshes) disposeTree(mesh);
+    for (const marker of markers) {
+      scene.remove(marker.pillar);
+      scene.remove(marker.cap);
+      scene.remove(marker.sprite);
+      disposeTree(marker.pillar);
+      disposeTree(marker.cap);
+      disposeTree(marker.sprite);
+    }
     renderer.dispose();
     host.classList.add("hidden");
     host.innerHTML = "";
@@ -1608,6 +1964,47 @@ export function startMission(state, contract, hooks) {
   window.__ZOIDS__.setPacified = (value) => {
     pacify = !!value;
     return pacify;
+  };
+  window.__ZOIDS__.weaponHeat = () => player.weapons.map((weapon) => ({
+    mount: weapon.mount,
+    group: weapon.group,
+    name: weapon.name,
+    heat: weapon.heatGauge || 0,
+    overheated: !!weapon.overheated,
+    cooling: weapon.cooling,
+  }));
+  window.__ZOIDS__.skillState = () => {
+    const hudSkill = skillHud(player);
+    return {
+      active: !!(player.skill && player.skill.active),
+      heat: player.skill ? player.skill.heat : 0,
+      overheated: !!(player.skill && player.skill.overheated),
+      cooldown: player.skill ? player.skill.cooldown : 0,
+      locked: weaponsLocked(player),
+      name: hudSkill ? hudSkill.name : "",
+      state: hudSkill ? hudSkill.state : "",
+      hold: hudSkill ? hudSkill.hold : "",
+    };
+  };
+  window.__ZOIDS__.frameSurveyShot = () => {
+    if (!markers.length) return lastProbe;
+    let far = markers[0];
+    let farD = -1;
+    const px = player.model.root.position.x;
+    const pz = player.model.root.position.z;
+    for (const marker of markers) {
+      const dist = Math.hypot(marker.x - px, marker.z - pz);
+      if (dist > farD) {
+        far = marker;
+        farD = dist;
+      }
+    }
+    const yaw = yawToFace(far.x - px, far.z - pz) + 0.35;
+    player.lookYaw = yaw;
+    player.model.root.rotation.y = yaw;
+    placeCamera();
+    pushHud();
+    return lastProbe;
   };
   window.__ZOIDS__.contract = contract.name;
   window.__ZOIDS__.contractType = contract.type;

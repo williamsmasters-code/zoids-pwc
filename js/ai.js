@@ -60,7 +60,7 @@ export function updateBrain(unit, brain, ctx, dt) {
   const target = chooseTarget(unit, brain, ctx.units);
   unit.aiTarget = target;
   if (!target || brain.react > 0) {
-    unit.cmd = { throttle: brain.react > 0 ? 0.4 : 0, strafe: 0, yaw: null, fire: false };
+    unit.cmd = { throttle: brain.react > 0 ? 0.4 : 0, strafe: 0, yaw: null, fire: false, skill: false };
     return;
   }
   const x = unit.model.root.position.x;
@@ -98,12 +98,23 @@ export function updateBrain(unit, brain, ctx, dt) {
   }
   const maxRange = unit.weapons.reduce((m, w) => Math.max(m, w.range || 0), 40);
   const face = yawToFace(tx - x, tz - z);
+  const skill = unit.skill;
+  const skillReady = !!(skill && skill.cooldown <= 0 && !skill.overheated && !skill.active);
+  const inSkillRange = dist < Math.min(48, Math.max(28, maxRange));
+  let useSkill = false;
+  if (skillReady && inSkillRange) {
+    if (!brain.skillHeld) useSkill = true;
+    brain.skillHeld = true;
+  } else {
+    brain.skillHeld = false;
+  }
   // Loose aim gate. The mission compares the chassis forward to the target.
   unit.cmd = {
     throttle,
     strafe,
     yaw: face,
     fire: dist < maxRange * 0.98,
+    skill: useSkill,
     aim: {
       x: tx,
       y: target.model.root.position.y + (target.def.radius || 2) * 0.45,

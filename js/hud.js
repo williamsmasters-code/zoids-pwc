@@ -1,7 +1,9 @@
 // DOM HUD. There is no overall hit-point bar. Parts carry the damage.
 
 import { partColor, partRatio } from "./damage.js";
-import { rightFromForward, headingFromYaw } from "./frame.js";
+import { headingFromYaw } from "./frame.js";
+import { minimapProject } from "./indicators.js";
+import { skillHelpItems } from "./skills.js";
 
 const QUAD_BOXES = [
   { id: "headWeapon", x: 80, y: 4, w: 60, h: 24, short: "JAW" },
@@ -61,15 +63,6 @@ export function diagramSVG(layout, parts) {
   return `<svg viewBox="0 0 220 250" class="paper">${rects}</svg>`;
 }
 
-function worldToMini(fwd, px, pz, x, z, scale, cx, cy) {
-  const right = rightFromForward(fwd);
-  const dx = x - px;
-  const dz = z - pz;
-  const localRight = dx * right.x + dz * right.z;
-  const localFwd = dx * fwd.x + dz * fwd.z;
-  return { x: cx + localRight * scale, y: cy - localFwd * scale };
-}
-
 export function createHUD(root) {
   root.innerHTML = `
     <div id="scramble"></div>
@@ -81,12 +74,13 @@ export function createHUD(root) {
     <div class="reticle"><span></span></div>
     <div class="compass"><span id="heading">000</span></div>
     <div class="objective" id="objective"></div>
+    <div id="objective-indicators"></div>
     <div class="cam-mode" id="cam-mode">3RD</div>
     <section class="panel player-panel">
       <header id="player-name">Zoid</header>
       <div id="player-diagram"></div>
       <div class="speed-row"><span id="speed">0</span><small>SPD</small><div class="bar"><i id="speed-bar"></i></div></div>
-      <div class="heat-row">HEAT <div class="bar heat"><i id="heat-bar"></i></div></div>
+      <div class="heat-row">PEAK <div class="bar heat"><i id="heat-bar"></i></div></div>
       <div id="boost-flag"></div>
     </section>
     <section class="panel target-panel">
@@ -94,10 +88,11 @@ export function createHUD(root) {
       <div id="target-range"></div>
       <div id="target-diagram"></div>
     </section>
+    <section class="skill-hud" id="skill-hud"></section>
     <section class="weapon-dock" id="weapon-dock"></section>
     <canvas id="minimap" width="150" height="150"></canvas>
     <div class="log" id="log"></div>
-    <div class="strip" id="strip">WASD move · Mouse aim · LMB/RMB/1-4 weapons · Shift boost · V camera · Tab target · R nearest · H help · Esc pause</div>
+    <div class="strip" id="strip">WASD move · Mouse aim · LMB/RMB/1-4 weapons · Q skill · Shift boost · V camera · Tab target · R nearest · H help · Esc pause</div>
     <div class="help hidden" id="help">
       <h2>Controls</h2>
       <ul>
@@ -106,10 +101,15 @@ export function createHUD(root) {
         <li>Mouse, or arrow left / right — look. The chassis turns to follow, slower as legs take damage.</li>
         <li>Shift — boost, if back boosters are fitted and the back mount still stands.</li>
         <li>Left mouse or 1 — weapon group 1. Right mouse or 2 — group 2. 3 and 4 — the other groups.</li>
+        <li>Q — active skill. The skill panel shows the name, the key, and heat or cooldown. The Shield Liger's energy shield blocks weapons while it is up.</li>
         <li>V — first person / third person. Tab — cycle target. R — nearest hostile.</li>
         <li>H — this list. Esc — pause and release the mouse.</li>
       </ul>
-      <p>There is no Zoid health bar. Green, yellow, orange, red, then black on the paper doll are armor and structure per part. Core destruction kills. Leg damage slows you. Head damage scrambles the HUD. A destroyed mount kills its weapons.</p>
+      <p>There is no Zoid health bar. Green, yellow, orange, red, then black on the paper doll are armor and structure per part. Core destruction kills. Leg damage slows you. Head damage scrambles the HUD. A destroyed mount kills its weapons. Each weapon has its own heat gauge. The PEAK bar is the hottest gun. A gun that maxes its heat locks until it cools below 55. The others keep firing.</p>
+      <h2>Skills</h2>
+      <ul>
+        ${skillHelpItems().map((line) => `<li>${line}</li>`).join("")}
+      </ul>
     </div>
     <div class="lock-prompt" id="lock-prompt">Click the battlefield to take the controls</div>
     <div class="pause hidden" id="pause">
@@ -152,9 +152,24 @@ export function createHUD(root) {
       root.querySelector("#speed").textContent = String(Math.round(data.speed));
       root.querySelector("#speed-bar").style.width = `${Math.max(0, Math.min(100, data.speedPct))}%`;
       root.querySelector("#heat-bar").style.width = `${Math.max(0, Math.min(100, data.heat))}%`;
-      root.querySelector("#boost-flag").textContent = data.shutdown > 0
-        ? "SHUTDOWN"
-        : data.boosting ? "BOOST" : data.boostReady ? "BOOST READY" : "";
+      root.querySelector("#boost-flag").textContent = data.boosting ? "BOOST" : data.boostReady ? "BOOST READY" : "";
+      const skill = data.skill;
+      const skillRoot = root.querySelector("#skill-hud");
+      if (!skill) {
+        skillRoot.innerHTML = "";
+        skillRoot.dataset.state = "";
+      } else {
+        skillRoot.dataset.state = skill.state;
+        skillRoot.innerHTML = `<b>${skill.key}</b> ${skill.name} <small>${skill.state}</small><i style="width:${skill.pct}%"></i>${skill.hold ? `<div class="hold" id="skill-hold">${skill.hold}</div>` : ""}`;
+      }
+      const arrows = data.indicators || [];
+      root.querySelector("#objective-indicators").innerHTML = arrows.map((mark) => {
+        const color = mark.color || "#ffd35a";
+        return `<div class="obj-arrow" style="left:${mark.x}px;top:${mark.y}px;color:${color}">
+          <b style="transform:rotate(${mark.angle}rad)">▲</b>
+          <span>${mark.label} ${Math.round(mark.dist)}m</span>
+        </div>`;
+      }).join("");
       const target = data.target;
       if (!target) {
         root.querySelector("#target-name").textContent = "No target";
@@ -178,10 +193,16 @@ export function createHUD(root) {
             : Math.round((1 - weapon.cooldown * weapon.rate) * 100);
         const klass = state === "disabled" ? "dead" : state;
         const color = (weapon.color ?? 0x334048).toString(16).padStart(6, "0");
-        return `<div class="wep ${klass}" data-group="${weapon.group}" data-state="${state}">
+        const heats = (weapon.heats || []).filter((row) => !row.dead);
+        const pips = heats.map((row) => {
+          const hot = row.overheated ? "hot" : "";
+          return `<span title="${row.name}"><em class="${hot}" style="width:${Math.max(0, Math.min(100, row.heat))}%"></em></span>`;
+        }).join("");
+        return `<div class="wep ${klass}" data-group="${weapon.group}" data-state="${state}" data-heat="${Math.round(weapon.heat || 0)}">
           <b>${weapon.group}</b>
           <span>${weapon.name}</span>
           <small>${state}</small>
+          <div class="heat-pips">${pips}</div>
           <i style="width:${Math.max(0, Math.min(100, pct))}%; background:#${color}"></i>
         </div>`;
       }).join("");
@@ -210,12 +231,25 @@ function drawMini(ctx, mini) {
   const cy = h / 2;
   const scale = mini.scale || 0.28;
   for (const mark of mini.marks || []) {
-    const p = worldToMini(mini.fwd, mini.px, mini.pz, mark.x, mark.z, scale, cx, cy);
-    if (p.x < 4 || p.y < 4 || p.x > w - 4 || p.y > h - 4) continue;
+    const p = minimapProject(mini.fwd, mini.px, mini.pz, mark.x, mark.z, scale, w, h, 6);
     ctx.fillStyle = mark.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, mark.r || 3, 0, Math.PI * 2);
-    ctx.fill();
+    if (p.clamped) {
+      const ang = Math.atan2(p.y - cy, p.x - cx);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(ang);
+      ctx.beginPath();
+      ctx.moveTo(5, 0);
+      ctx.lineTo(-4, 3.5);
+      ctx.lineTo(-4, -3.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, mark.r || 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.fillStyle = "#e8f6ff";
   ctx.beginPath();

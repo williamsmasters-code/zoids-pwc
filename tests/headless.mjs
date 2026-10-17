@@ -182,9 +182,12 @@ try {
 
   await page.screenshot({ path: path.join(shots, "hangar.png") });
   console.log("screenshot screenshots/hangar.png");
+  await page.screenshot({ path: path.join(shots, "hangar-skills.png") });
+  console.log("screenshot screenshots/hangar-skills.png");
 
   const ids = await page.$$eval(".zoid-card", (els) => els.map((el) => el.dataset.id));
   if (ids.length !== 8) note("hangar", `expected 8 Zoid cards, saw ${ids.length}`);
+  const seenSkills = [];
   for (const id of ids) {
     await page.click(`.zoid-card[data-id="${id}"]`);
     await page.waitForFunction(
@@ -192,8 +195,23 @@ try {
       { timeout: 5000 },
       id,
     );
+    const skill = await page.$eval("#skill-list", (el) => ({
+      zoid: el.dataset.zoid,
+      passive: el.querySelector("[data-kind='passive']")?.dataset.name || "",
+      active: el.querySelector("[data-kind='active']")?.dataset.name || "",
+      text: el.innerText,
+    }));
+    if (skill.zoid !== id || !skill.passive || !skill.active || !/Passive/.test(skill.text) || !/Active/.test(skill.text)) {
+      note("skills", `${id} skill list ${JSON.stringify(skill)}`);
+    }
+    seenSkills.push(skill.active);
   }
+  if (new Set(seenSkills).size !== 8) note("skills", `active names ${seenSkills.join(", ")}`);
   await page.click('.zoid-card[data-id="shieldLiger"]');
+  const heatLine = await page.$eval("#weapon-heat", (el) => el.innerText);
+  if (!/heat\/shot/.test(heatLine) || !/cool /.test(heatLine)) note("heat", `hangar heat line ${heatLine}`);
+  const shopLine = await page.$eval(".shop-row", (el) => el.innerText);
+  if (!/heat\/shot/.test(shopLine) || !/cool /.test(shopLine)) note("heat", `shop row ${shopLine}`);
   const freshTitles = await page.$$eval(".contract-card h4", (els) => els.map((el) => el.textContent));
   const moneyBefore = await page.$eval("#money", (el) => el.textContent);
   console.log("hangar money", moneyBefore);
@@ -360,6 +378,73 @@ try {
   await fireGroup("Digit4", 3);
   await page.evaluate(() => window.__ZOIDS__.setGroup("leftWeapon", 2));
   await fireGroup("MouseRight", 1);
+
+  await page.keyboard.down("Digit1");
+  let heatSample = null;
+  const heatDeadline = Date.now() + 8000;
+  while (Date.now() < heatDeadline) {
+    heatSample = await page.evaluate(() => {
+      const rows = window.__ZOIDS__.weaponHeat();
+      const dock = [...document.querySelectorAll("#weapon-dock .wep")].map((el) => ({
+        group: el.dataset.group,
+        state: el.dataset.state,
+        heat: el.dataset.heat,
+      }));
+      return { rows, dock, peak: document.querySelector("#heat-bar")?.style.width || "" };
+    });
+    const hot = heatSample.rows.find((row) => row.group === 1);
+    const other = heatSample.rows.find((row) => row.group === 2);
+    const dock1 = heatSample.dock.find((row) => row.group === "1");
+    if (hot && hot.overheated && other && !other.overheated && dock1 && dock1.state === "overheated") break;
+    await sleep(40);
+  }
+  await page.keyboard.up("Digit1");
+  console.log("weapon heat", JSON.stringify(heatSample));
+  const group1 = heatSample && heatSample.rows.find((row) => row.group === 1);
+  const group2 = heatSample && heatSample.rows.find((row) => row.group === 2);
+  if (!group1 || !group1.overheated) note("heat", `group 1 did not overheat ${JSON.stringify(heatSample)}`);
+  if (!group2 || group2.overheated || group2.heat > 40) note("heat", `group 2 was not independent ${JSON.stringify(group2)}`);
+  const dock1 = heatSample && heatSample.dock.find((row) => row.group === "1");
+  const dock2 = heatSample && heatSample.dock.find((row) => row.group === "2");
+  if (!dock1 || dock1.state !== "overheated") note("heat", `dock group 1 ${dock1 && dock1.state}`);
+  if (!dock2 || dock2.state === "overheated" || dock2.state === "disabled") {
+    note("heat", `dock group 2 ${dock2 && dock2.state}`);
+  }
+  if (!heatSample || !heatSample.peak.startsWith("100")) note("heat", `peak bar ${heatSample && heatSample.peak}`);
+  await page.screenshot({ path: path.join(shots, "heat-dock.png") });
+  console.log("screenshot screenshots/heat-dock.png");
+
+  await page.keyboard.down("KeyQ");
+  await sleep(90);
+  await page.keyboard.up("KeyQ");
+  await sleep(120);
+  const shield = await page.evaluate(() => ({
+    skill: window.__ZOIDS__.skillState(),
+    text: document.querySelector("#skill-hud")?.innerText || "",
+    state: document.querySelector("#skill-hud")?.dataset.state || "",
+  }));
+  console.log("skill", shield.state, shield.skill.hold);
+  if (shield.skill.name !== "Energy Shield" || !shield.skill.active || shield.state !== "active") {
+    note("skills", `shield did not arm ${JSON.stringify(shield)}`);
+  }
+  if (!/cannot fire/i.test(shield.text)) note("skills", `missing hold message ${shield.text}`);
+  await page.screenshot({ path: path.join(shots, "skills-hud.png") });
+  console.log("screenshot screenshots/skills-hud.png");
+  const beforeShot = await page.evaluate(() => window.__ZOIDS__.weaponCooldowns().find((row) => row.group === 2));
+  await page.keyboard.down("Digit2");
+  await sleep(180);
+  await page.keyboard.up("Digit2");
+  const afterShot = await page.evaluate(() => window.__ZOIDS__.weaponCooldowns().find((row) => row.group === 2));
+  if (!beforeShot || !afterShot || afterShot.cooldown > beforeShot.cooldown + 0.02) {
+    note("skills", `shield let group 2 fire ${beforeShot && beforeShot.cooldown} -> ${afterShot && afterShot.cooldown}`);
+  }
+  await page.keyboard.down("KeyQ");
+  await sleep(90);
+  await page.keyboard.up("KeyQ");
+  await sleep(80);
+  const shieldDown = await page.evaluate(() => window.__ZOIDS__.skillState());
+  if (shieldDown.active || shieldDown.locked) note("skills", `shield stayed up ${JSON.stringify(shieldDown)}`);
+
   await page.evaluate(() => window.__ZOIDS__.setPacified(false));
 
   const selfTest = await page.evaluate(() => window.__ZOIDS__.selfTest());
@@ -462,6 +547,34 @@ try {
   if (reset.screen !== "hangar") note("reset", `screen is ${reset.screen}`);
 
   await page.screenshot({ path: path.join(shots, "debrief-return.png") });
+
+  await page.evaluate(() => {
+    window.__ZOIDS__.pacifyOnStart = true;
+  });
+  await page.click('.contract-card[data-type="recon"] .launch');
+  await page.waitForFunction(
+    () => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission" && window.__ZOIDS__.contractType === "recon",
+    { timeout: 20000 },
+  );
+  await page.evaluate(() => window.__ZOIDS__.setPacified(true));
+  await sleep(400);
+  const survey = await page.evaluate(() => window.__ZOIDS__.frameSurveyShot());
+  await sleep(250);
+  await page.screenshot({ path: path.join(shots, "survey-objectives.png") });
+  console.log("screenshot screenshots/survey-objectives.png");
+  console.log("survey", JSON.stringify(survey));
+  if (!survey || survey.rows.length < 3) note("survey", `expected 3 beacons, saw ${survey && survey.rows.length}`);
+  if (!survey.rows.some((row) => row.beyond)) note("survey", "no beacon past radar range");
+  if (!survey.rows.some((row) => row.arrow)) note("survey", "no edge indicator");
+  if (!survey.rows.some((row) => row.miniClamped)) note("survey", "minimap did not clamp a far objective");
+  if (survey.rows.some((row) => row.fog !== false || row.markerDepth !== false || row.spriteDepth !== false)) {
+    note("survey", "beacon fog or depthTest was left on");
+  }
+  const arrows = await page.$$eval(".obj-arrow", (els) => els.map((el) => el.innerText));
+  if (!arrows.length) note("survey", "screen arrow missing");
+  else if (!arrows.some((text) => /\d+\s*m/.test(text))) note("survey", `arrow has no distance ${arrows.join(" | ")}`);
+  const objective = await page.$eval("#objective", (el) => el.textContent);
+  if (!/beacon/i.test(objective)) note("survey", `objective text ${objective}`);
 } finally {
   if (browser) await browser.close();
   stopServer();
