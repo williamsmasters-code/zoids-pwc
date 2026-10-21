@@ -2,13 +2,26 @@
 
 import { yawToFace } from "./frame.js";
 
-export function createBrain(rng) {
+// tune (js/difficulty.js aiTuning): aimError (m of scatter per 100 m),
+// react (s before first move), preferred (stand-off m), aggroRange (m: the
+// player inside this pulls aggro), guard ({x, z, radius}: hold an ambush
+// spot until a foe comes inside radius or the unit is shot).
+export function createBrain(rng, tune = {}) {
   return {
     flank: rng() < 0.5 ? 1 : -1,
     nextFlank: 2.2 + rng() * 3.2,
-    react: 1.15 + rng() * 1.35,
-    preferred: 38 + rng() * 28,
-    prefersObjective: rng() < 0.6,
+    react: (tune.react != null ? tune.react : 1.15) + rng() * 1.35,
+    preferred: (tune.preferred != null ? tune.preferred - 10 : 38) + rng() * 20,
+    aimError: tune.aimError || 0,
+    aggroRange: tune.aggroRange || 0,
+    guard: tune.guard || null,
+    alerted: !tune.guard,
+    jitterT: 0,
+    jx: 0,
+    jy: 0,
+    jz: 0,
+    rng,
+    prefersObjective: tune.prefersObjective != null ? tune.prefersObjective : rng() < 0.6,
     stuckT: 0,
     lastX: 0,
     lastZ: 0,
@@ -32,7 +45,18 @@ function nearest(unit, list) {
   return best ? { unit: best, dist: bestD } : null;
 }
 
-export function chooseTarget(unit, brain, units) {
+// Who is this pilot fighting? Order:
+// 1. whoever shot it in the last few seconds (provokedBy / provokedUntil),
+// 2. a non-vehicle foe inside aggroRange (the player getting close),
+// 3. the objective (generator / trucks) if it prefers objectives,
+// 4. the nearest foe.
+export function chooseTarget(unit, brain, units, time = 0) {
+  const p = unit.provokedBy;
+  if (p && p.alive && p.team !== unit.team && (unit.provokedUntil || 0) > time) return p;
+  if (brain.aggroRange > 0) {
+    const close = nearest(unit, units.filter((u) => u.alive && u.team !== unit.team && u.def.layout !== "vehicle" && !u.def.immobile));
+    if (close && close.dist <= brain.aggroRange) return close.unit;
+  }
   const foes = units.filter((u) => u.alive && u.team !== unit.team && u.def.layout !== "vehicle");
   const trucks = units.filter((u) => u.alive && u.team !== unit.team && u.def.layout === "vehicle");
   const objectives = units.filter((u) => u.alive && u.team !== unit.team && u.def.build === "generator");
@@ -57,7 +81,20 @@ export function updateBrain(unit, brain, ctx, dt) {
     brain.flank *= -1;
     brain.nextFlank = 2.4 + Math.random() * 3.4;
   }
-  const target = chooseTarget(unit, brain, ctx.units);
+  const time = ctx.time || 0;
+  if (!brain.alerted) {
+    // Ambush: hold the spot until something walks in or we get shot.
+    const g = brain.guard;
+    const provoked = unit.provokedBy && (unit.provokedUntil || 0) > time;
+    const intruder = nearest(unit, ctx.units.filter((u) => u.alive && u.team !== unit.team));
+    if (provoked || (intruder && intruder.dist <= g.radius)) brain.alerted = true;
+    else {
+      unit.aiTarget = null;
+      unit.cmd = { throttle: 0, strafe: 0, yaw: null, fire: false, skill: false };
+      return;
+    }
+  }
+  const target = chooseTarget(unit, brain, ctx.units, time);
   unit.aiTarget = target;
   if (!target || brain.react > 0) {
     unit.cmd = { throttle: brain.react > 0 ? 0.4 : 0, strafe: 0, yaw: null, fire: false, skill: false };
@@ -113,6 +150,16 @@ export function updateBrain(unit, brain, ctx, dt) {
   } else {
     brain.skillHeld = false;
   }
+  // Pilot scatter: a wandering offset sized by aimError per 100 m of range.
+  brain.jitterT -= dt;
+  if (brain.jitterT <= 0) {
+    const r = brain.rng || Math.random;
+    brain.jitterT = 0.6;
+    brain.jx = (r() * 2 - 1);
+    brain.jy = (r() * 2 - 1) * 0.5;
+    brain.jz = (r() * 2 - 1);
+  }
+  const scatter = brain.aimError * (dist / 100);
   // Loose aim gate. The mission compares the chassis forward to the target.
   unit.cmd = {
     throttle,
@@ -121,9 +168,9 @@ export function updateBrain(unit, brain, ctx, dt) {
     fire: dist < maxRange * 0.98,
     skill: useSkill,
     aim: {
-      x: tx,
-      y: target.model.root.position.y + (target.def.radius || 2) * 0.45,
-      z: tz,
+      x: tx + brain.jx * scatter,
+      y: target.model.root.position.y + (target.def.radius || 2) * 0.45 + brain.jy * scatter,
+      z: tz + brain.jz * scatter,
     },
   };
 }

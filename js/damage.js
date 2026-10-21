@@ -6,6 +6,8 @@ import {
   PART_LABELS,
   ARMOR_LEVEL_BONUS,
   partListFor,
+  DAMAGE_VS_ARMOR,
+  damageClassOf,
 } from "./catalog.js";
 
 import { tonnageZone } from "./tonnage.js";
@@ -132,11 +134,24 @@ function damagePart(parts, partId, amount, ctx, events) {
     }
     return;
   }
+  // Damage-class modifiers (catalog DAMAGE_VS_ARMOR): the armour step sees
+  // amount * armorMul; the raw amount it did not use goes on to structure
+  // at internalMul.
+  const armorMul = ctx.armorMul != null ? ctx.armorMul : 1;
+  const internalMul = ctx.internalMul != null ? ctx.internalMul : 1;
   let left = amount;
-  const armorTake = Math.min(part.armor, left);
-  part.armor -= armorTake;
-  left -= armorTake;
-  if (armorTake > 0 && part.armor <= 0) events.push({ type: "armorGone", partId });
+  let stripped = false;
+  if (part.armor > 0 && armorMul > 0) {
+    const armorTake = Math.min(part.armor, left * armorMul);
+    part.armor -= armorTake;
+    left -= armorTake / armorMul;
+    if (part.armor <= 1e-9) {
+      part.armor = 0;
+      stripped = armorTake > 0;
+    }
+  }
+  left *= internalMul;
+  if (stripped) events.push({ type: "armorGone", partId });
   if (left <= 0) return;
   const structBefore = part.structure;
   part.structure -= left;
@@ -153,6 +168,13 @@ function damagePart(parts, partId, amount, ctx, events) {
   }
   if (structBefore >= part.maxStructure - 0.0001) events.push({ type: "structure", partId });
   else if (part.structure < part.maxStructure * 0.35) events.push({ type: "critical", partId });
+}
+
+// Context for applyHit from a weapon spec: { damageClass, armorMul, internalMul }.
+export function damageCtxFor(weapon) {
+  const cls = damageClassOf(weapon);
+  const mods = cls ? DAMAGE_VS_ARMOR[cls] : null;
+  return mods ? { damageClass: cls, armorMul: mods.armor, internalMul: mods.internal } : {};
 }
 
 export function applyHit(parts, partId, amount, ctx = {}) {

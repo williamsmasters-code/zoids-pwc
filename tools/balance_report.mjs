@@ -17,6 +17,10 @@ import { pathToFileURL } from "node:url";
 const file = path.resolve(process.argv[2] || new URL("../js/catalog.js", import.meta.url).pathname);
 const cat = await import(pathToFileURL(file).href);
 const { WEAPONS, ZOIDS, ZOID_ORDER, PART_BASE, stockWeaponsFor } = cat;
+// Damage class vs armour (absent in older catalogs: treated as x1).
+const VS = cat.DAMAGE_VS_ARMOR || {};
+const classOf = cat.damageClassOf || (() => null);
+const mulOf = (w, key) => (VS[classOf(w)] ? VS[classOf(w)][key] : 1);
 const HIT = { beam: 0.85, ballistic: 0.65, rocket: 0.9, charge: 0.9, melee: 0.75 };
 const RANGES = [10, 60, 120];
 
@@ -39,6 +43,18 @@ function zoidStats(id) {
   });
   const core = (PART_BASE.core.armor + PART_BASE.core.structure) * def.armorScale;
   const byRange = {};
+  const vsArmor = {};
+  const vsInternal = {};
+  for (const r of RANGES) {
+    const sum = (key) => loadout.reduce((acc, w) => {
+      if (w.range < r || (w.minRange && r < w.minRange)) return acc;
+      const st = weaponStats(w);
+      const fall = r <= w.optimal ? 1 : 1 - 0.7 * (r - w.optimal) / (w.range - w.optimal);
+      return acc + st.sustain * st.hit * fall * mulOf(w, key);
+    }, 0);
+    vsArmor[r] = sum("armor");
+    vsInternal[r] = sum("internal");
+  }
   for (const r of RANGES) {
     byRange[r] = loadout.reduce((sum, w) => {
       if (w.range < r || (w.minRange && r < w.minRange)) return sum;
@@ -48,10 +64,18 @@ function zoidStats(id) {
     }, 0);
   }
   const burst = loadout.reduce((s, w) => s + weaponStats(w).burst, 0);
-  return { id, def, loadout, core, byRange, burst, maxRange: Math.max(...loadout.map((w) => w.range)) };
+  return { id, def, loadout, core, byRange, vsArmor, vsInternal, burst, maxRange: Math.max(...loadout.map((w) => w.range)) };
 }
 
 const rows = ZOID_ORDER.map(zoidStats);
+// Armour half of the core EHP is chewed at the vs-armour rate, the structure
+// half at the vs-component rate (same 1.6 spread factor as before).
+function ttk(a, b) {
+  const armor = PART_BASE.core.armor * b.def.armorScale * 1.6;
+  const struct = PART_BASE.core.structure * b.def.armorScale * 1.6;
+  if (!(a.vsArmor[60] > 0) || !(a.vsInternal[60] > 0)) return Infinity;
+  return armor / a.vsArmor[60] + struct / a.vsInternal[60];
+}
 const pad = (s, n) => String(s).padEnd(n);
 const num = (v, n = 6, d = 1) => v.toFixed(d).padStart(n);
 console.log(`catalog: ${path.relative(process.cwd(), file)}`);
@@ -66,8 +90,17 @@ console.log(pad("zoid", 14) + "speed  coreEHP  burst  eff@10  eff@60  eff@120  m
 for (const r of rows) {
   console.log(pad(r.id, 14) + num(r.def.speed, 5, 0) + num(r.core, 9) + num(r.burst, 7) + num(r.byRange[10], 8) + num(r.byRange[60], 8) + num(r.byRange[120], 9) + num(r.maxRange, 10, 0) + "  " + r.loadout.map((w) => w.id + (w.turret ? "(T)" : "")).join(", "));
 }
+console.log("\nDAMAGE CLASS vs ARMOUR (armour x / component x)");
+for (const [id, w] of Object.entries(WEAPONS)) {
+  console.log(pad(id, 20) + pad(classOf(w) || "-", 10) + num(mulOf(w, "armor"), 5, 2) + num(mulOf(w, "internal"), 6, 2));
+}
+console.log("\nEFFECTIVE DPS at 60 m: raw (no class mods) / vs armour plating / vs exposed components");
+console.log(pad("zoid", 14) + "   raw  armour  comps");
+for (const r of rows) {
+  console.log(pad(r.id, 14) + num(r.byRange[60], 6) + num(r.vsArmor[60], 8) + num(r.vsInternal[60], 7));
+}
 console.log("\nTTK matrix at 60 m, seconds (row attacks column)");
 console.log(pad("", 14) + rows.map((r) => pad(r.id.slice(0, 9), 10)).join(""));
 for (const a of rows) {
-  console.log(pad(a.id, 14) + rows.map((b) => pad((a.byRange[60] > 0 ? (b.core * 1.6) / a.byRange[60] : Infinity).toFixed(1), 10)).join(""));
+  console.log(pad(a.id, 14) + rows.map((b) => pad(ttk(a, b).toFixed(1), 10)).join(""));
 }

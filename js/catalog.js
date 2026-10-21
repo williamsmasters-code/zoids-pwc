@@ -84,6 +84,31 @@ export const MODS = {
 // kind "melee" weapons are short hitscan strikes (claws, blades).
 // turret (optional): { arc: radians up to 2*PI, speed: rad/s }. Only honoured
 // on the back mount; tracks and fires at the locked target only (js/turret.js).
+// Damage class vs armour. armor = multiplier while the hit is eaten by armour
+// plating; internal = multiplier on whatever reaches structure/components.
+//   beam      energy weapons (lasers, beam cannons, charged particle): x0.7 on
+//             plating (it ablates), unchanged once the plating is gone.
+//   ballistic kinetic rounds and rockets (gatling, shock cannon, missiles):
+//             x1.3 on plating (it cracks), unchanged on components.
+//   melee     claws and blades: x1.0 both. They already pay with 8-14 m reach
+//             and per-swing heat; a plating bonus would make them dominate.
+// Classes come from weapon kind (energy -> beam, ballistic/missile ->
+// ballistic, melee -> melee) unless a weapon sets damageClass.
+export const DAMAGE_VS_ARMOR = {
+  beam: { armor: 0.7, internal: 1 },
+  ballistic: { armor: 1.3, internal: 1 },
+  melee: { armor: 1, internal: 1 },
+};
+
+export function damageClassOf(weapon) {
+  if (!weapon) return null;
+  if (weapon.damageClass) return weapon.damageClass;
+  if (weapon.kind === "melee") return "melee";
+  if (weapon.kind === "energy") return "beam";
+  if (weapon.kind === "ballistic" || weapon.kind === "missile") return "ballistic";
+  return null;
+}
+
 export const WEAPONS = {
   pulseLaser: {
     // Guide: standard gun / beam. Beams are faster than shells, a little weaker.

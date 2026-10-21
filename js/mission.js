@@ -44,6 +44,7 @@ import {
   applyCondition,
   applyHit,
   derivePerformance,
+  damageCtxFor,
   serializeParts,
   sensorsFromHead,
   repairCost,
@@ -54,6 +55,8 @@ import { turretSpecFor, relativeBearing, stepTurret, turretTrigger } from "./tur
 import { createInput } from "./input.js";
 import { createHUD, headingOf } from "./hud.js";
 import { createBrain, updateBrain } from "./ai.js";
+import { aiTuning, difficultySpec } from "./difficulty.js";
+import { escortLayout } from "./escort.js";
 import {
   addWeaponHeat,
   coolWeapon,
@@ -154,6 +157,50 @@ export function startMission(state, contract, hooks) {
   let endTimer = 0;
   let endVictory = false;
   let missionTime = 0;
+  // Test-only bot pilot (window.__ZOIDS__.autopilot): scout to the nearest
+  // hostile, lock it, close to ~60 m and fire every group. Used by the escort
+  // winnability sim; never on in normal play.
+  let autopilot = false;
+  let autoTarget = null;
+  function autopilotInput() {
+    const idle = {
+      forward: 0, strafe: 0, turn: 0, boost: false, groups: [false, false, false, false],
+      dx: 0, dy: 0, tab: false, nearest: false, camera: false, help: false, skill: false,
+    };
+    if (!player.alive) return idle;
+    const px = player.model.root.position.x;
+    const pz = player.model.root.position.z;
+    let best = null;
+    let bestD = Infinity;
+    for (const u of units) {
+      if (!u.alive || u.team !== "enemy") continue;
+      const d = Math.hypot(u.model.root.position.x - px, u.model.root.position.z - pz);
+      if (d < bestD) { bestD = d; best = u; }
+    }
+    autoTarget = best;
+    if (!best) {
+      // Nothing left: shadow the convoy.
+      const lead = trucks.find((t) => t.alive);
+      if (lead) {
+        const dz = lead.model.root.position.z - 25 - pz;
+        player.lookYaw = yawToFace(lead.model.root.position.x - px, dz);
+        return { ...idle, forward: Math.abs(dz) > 15 ? 1 : 0 };
+      }
+      return idle;
+    }
+    player.lockId = best.id;
+    const bx = best.model.root.position.x;
+    const bz = best.model.root.position.z;
+    player.lookYaw = yawToFace(bx - px, bz - pz);
+    player.lookPitch = -0.12;
+    // Stand off just inside the longest fitted gun, back-pedal and strafe when
+    // a raider closes, so it fights like a cautious pilot rather than charging.
+    const reach = Math.max(60, ...player.weapons.map((w) => w.optimal || 0));
+    const fire = bestD < Math.max(...player.weapons.map((w) => w.range || 0));
+    const forward = bestD > reach + 20 ? 1 : bestD < reach * 0.7 ? -1 : 0;
+    const strafe = Math.sin(missionTime * 0.6) > 0 ? 1 : -1;
+    return { ...idle, forward, strafe: bestD < reach + 30 ? strafe : 0, boost: bestD > reach + 120, groups: [fire, fire, fire, fire] };
+  }
   let kills = 0;
   const messages = [];
   const hits = { front: 0, back: 0, left: 0, right: 0 };
@@ -176,7 +223,12 @@ export function startMission(state, contract, hooks) {
     if (item) playerWeapons.push({ uid: item.uid, type: item.type, group: item.group || 1, mount });
   }
 
-  const spawnZ = contract.type === "defend" ? 70 : 90;
+  // Escort: long route, ambush spawned mid-route (js/escort.js).
+  const escort = contract.type === "defend" ? escortLayout(contract) : null;
+  const spawnZ = escort ? escort.playerZ : 90;
+  const tuning = aiTuning(contract.difficulty || 1);
+  const diffSpec = difficultySpec(contract.difficulty || 1);
+  let ambushSeen = false;
   const player = spawnUnit(ZOIDS[zoidId], {
     team: "player",
     name: ZOIDS[zoidId].name,
@@ -226,6 +278,7 @@ export function startMission(state, contract, hooks) {
       z: baseZ + 16,
       weapons: stockWeaponsFor(STRUCTURES.gunTurret, rng),
       brain: true,
+      brainTune: tuning,
     });
     spawnUnit(STRUCTURES.gunTurret, {
       team: "enemy",
@@ -234,6 +287,7 @@ export function startMission(state, contract, hooks) {
       z: baseZ + 8,
       weapons: stockWeaponsFor(STRUCTURES.gunTurret, rng),
       brain: true,
+      brainTune: tuning,
     });
   }
 
@@ -242,12 +296,19 @@ export function startMission(state, contract, hooks) {
       team: "player",
       name: `Supply Truck ${i + 1}`,
       x,
-      z: spawnZ + 28,
+      z: escort.truckZ,
       yaw: 0,
       weapons: [],
       scripted: true,
     }));
     for (const truck of trucks) {
+      // Tougher trucks on easier contracts (difficulty table truckArmor).
+      for (const part of Object.values(truck.parts)) {
+        part.maxArmor *= diffSpec.truckArmor;
+        part.armor *= diffSpec.truckArmor;
+        part.maxStructure *= diffSpec.truckArmor;
+        part.structure *= diffSpec.truckArmor;
+      }
       truck.script = (unit, dt) => {
         if (!unit.alive) return;
         unit.model.root.rotation.y = 0;
@@ -284,7 +345,7 @@ export function startMission(state, contract, hooks) {
   if (contract.type === "defend") {
     addObjectiveMarker({
       x: 0,
-      z: spawnZ - 320,
+      z: escort.exitZ,
       color: 0x7dffb2,
       css: "#7dffb2",
       label: "EXIT",
@@ -345,7 +406,10 @@ export function startMission(state, contract, hooks) {
       shutdown: 0,
       boosting: false,
       skill: initSkill(def.id),
-      brain: opts.brain ? createBrain(rng) : null,
+      brain: opts.brain ? createBrain(rng, opts.brainTune || {}) : null,
+      fireRateMul: opts.brain && opts.brainTune ? opts.brainTune.fireRate || 1 : 1,
+      provokedBy: null,
+      provokedUntil: 0,
       cmd: null,
       aiTarget: null,
       lockId: null,
@@ -359,6 +423,9 @@ export function startMission(state, contract, hooks) {
   }
 
   function paintMarker(marker, text) {
+    // Re-upload the label texture only when the text changes.
+    if (marker.lastText === text) return;
+    marker.lastText = text;
     const ctx = marker.canvas.getContext("2d");
     ctx.clearRect(0, 0, marker.canvas.width, marker.canvas.height);
     ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
@@ -446,16 +513,22 @@ export function startMission(state, contract, hooks) {
     wave.enemies.forEach((entry, i) => {
       const def = ZOIDS[entry.zoidId];
       if (!def) return;
-      const level = contract.difficulty >= 5 ? 2 : contract.difficulty >= 4 ? 1 : 0;
+      const level = diffSpec.armorLevel;
       const armorLevels = {};
       for (const id of partListFor(def)) armorLevels[id] = level;
       const weapons = stockWeaponsFor(def, rng);
       let x;
       let z;
       const side = (i - (wave.enemies.length - 1) / 2) * 18;
+      let guard = null;
       if (contract.type === "assault" && generator) {
         x = generator.model.root.position.x + side;
         z = generator.model.root.position.z + 18 + i * 8;
+      } else if (escort) {
+        const spot = escort.ambush[Math.min(escort.ambush.length - 1, (wave.ambush || 1) - 1)];
+        x = spot.x + side;
+        z = spot.z - i * 6;
+        guard = { x: spot.x, z: spot.z, radius: escort.guardRadius };
       } else {
         const dist = 32 + index * 10 + i * 12;
         x = player.model.root.position.x + fwd.x * dist + right.x * side;
@@ -469,6 +542,7 @@ export function startMission(state, contract, hooks) {
         weapons,
         armorLevels,
         brain: true,
+        brainTune: { ...tuning, guard, prefersObjective: escort ? true : undefined },
       });
       const face = yawToFace(player.model.root.position.x - x, player.model.root.position.z - z);
       unit.model.root.rotation.y = face;
@@ -668,6 +742,7 @@ export function startMission(state, contract, hooks) {
   // Screen-center ray. The player's own Zoid is ignored so a third-person
   // camera behind the hull still aims at the point the crosshair covers.
   function cameraAimPoint() {
+    if (autopilot && autoTarget && autoTarget.alive) return lockAimPoint(autoTarget);
     camera.updateMatrixWorld(true);
     raycaster.setFromCamera(screenCenterNdc, camera);
     const origin = raycaster.ray.origin.clone();
@@ -857,7 +932,7 @@ export function startMission(state, contract, hooks) {
     const dist = origin.distanceTo(hit.point);
     const amount = weapon.damage * damageMul(unit) * rangeFalloff(dist, weapon.optimal, weapon.range);
     if (amount <= 0) return;
-    applyDamage(victim, hit.object.userData.partId, amount, unit);
+    applyDamage(victim, hit.object.userData.partId, amount, unit, damageCtxFor(weapon));
     flash(hit.point, weapon.color, 0.4);
   }
 
@@ -881,6 +956,7 @@ export function startMission(state, contract, hooks) {
     const vy = rocket ? speed * 0.96 : dir.y * speed;
     const vz = rocket ? dir.z * speed * 0.22 : dir.z * speed;
     projectiles.push({
+      dmgCtx: damageCtxFor(weapon),
       x: origin.x,
       y: origin.y,
       z: origin.z,
@@ -947,7 +1023,7 @@ export function startMission(state, contract, hooks) {
             if (victim && victim.alive && attacker) {
               const dist = Math.hypot(hit.point.x - shot.ox, hit.point.y - shot.oy, hit.point.z - shot.oz);
               const amount = shot.damage * rangeFalloff(dist, shot.optimal, shot.range);
-              if (amount > 0) applyDamage(victim, hit.object.userData.partId, amount, attacker);
+              if (amount > 0) applyDamage(victim, hit.object.userData.partId, amount, attacker, shot.dmgCtx);
             }
             flash(hit.point, shot.color, 0.55);
           }
@@ -965,8 +1041,14 @@ export function startMission(state, contract, hooks) {
     }
   }
 
-  function applyDamage(victim, partId, amount, attacker) {
+  function applyDamage(victim, partId, amount, attacker, dmgCtx = {}) {
     if (!partId || !victim.alive) return;
+    if (attacker && attacker.team !== victim.team && victim.brain) {
+      // Getting shot pulls aggro: escort raiders turn on whoever engages them.
+      victim.provokedBy = attacker;
+      victim.provokedUntil = missionTime + 8;
+      if (victim.brain.guard) victim.brain.alerted = true;
+    }
     const to = new Vector3(
       attacker.model.root.position.x - victim.model.root.position.x,
       0,
@@ -984,7 +1066,7 @@ export function startMission(state, contract, hooks) {
       }
       return;
     }
-    const result = applyHit(victim.parts, partId, incoming.amount, { zoidId: victim.def.id, forwardDot });
+    const result = applyHit(victim.parts, partId, incoming.amount, { ...dmgCtx, zoidId: victim.def.id, forwardDot });
     refreshPartColors(victim.model, victim.parts);
     const label = PART_LABELS[partId] || partId;
     if (victim === player) {
@@ -1268,8 +1350,24 @@ export function startMission(state, contract, hooks) {
         return;
       }
       const lead = Math.min(...rolling.map((t) => t.model.root.position.z));
-      hudObjective = `Escort the trucks. ${rolling.length} still rolling.`;
-      if (lead < spawnZ - 320) {
+      const ahead = Math.round(Math.max(0, lead - escort.ambush[0].z));
+      hudObjective = ambushSeen
+        ? `Escort the trucks. ${rolling.length} rolling. Ambush ${ahead} m ahead of the convoy.`
+        : `Escort the trucks. ${rolling.length} rolling. Scout ahead for the ambush.`;
+      if (!ambushSeen) {
+        // Spotted once the player's radar (or the lead truck) reaches it.
+        const radar = player.perf && player.perf.sensors ? (player.perf.sensors.radar ? 230 : 42) * player.perf.sensors.rangeMul : 230;
+        const spot = escort.ambush[0];
+        const pd = Math.hypot(player.model.root.position.x - spot.x, player.model.root.position.z - spot.z);
+        if (pd <= radar || ahead <= 150) {
+          ambushSeen = true;
+          for (const a of escort.ambush) {
+            addObjectiveMarker({ x: a.x, z: a.z, color: 0xff3344, css: "#ff5566", label: "AMBUSH", kind: "ambush" });
+          }
+          pushMessage(`Ambush spotted ${Math.round(pd)} m out. Trucks are ${ahead} m from it.`);
+        }
+      }
+      if (lead < escort.exitZ) {
         endTimer = 1;
         endVictory = true;
         pushMessage("Convoy is through.");
@@ -1394,7 +1492,7 @@ export function startMission(state, contract, hooks) {
     const input = paused ? {
       forward: 0, strafe: 0, turn: 0, boost: false, groups: [false, false, false, false],
       dx: 0, dy: 0, tab: false, nearest: false, camera: false, help: false, skill: false,
-    } : inputDevice.read();
+    } : autopilot ? autopilotInput() : inputDevice.read();
     lastGroups = input.groups.slice();
     if (input.help) helpOn = !helpOn;
     if (input.camera) cameraMode = cameraMode === "fps" ? "tps" : "fps";
@@ -1415,7 +1513,7 @@ export function startMission(state, contract, hooks) {
         if (unit === player || !unit.alive) continue;
         if (unit.script) unit.script(unit, dt);
         else if (unit.brain) {
-          updateBrain(unit, unit.brain, { units }, dt);
+          updateBrain(unit, unit.brain, { units, time: missionTime }, dt);
           if (unit.cmd && unit.cmd.skill) resolveSkillAction(unit, activateSkill(unit), null);
           driveAI(unit, dt);
         }
@@ -1472,6 +1570,7 @@ export function startMission(state, contract, hooks) {
           }
           const lock = trigger ? lockTargetOf(unit) : null;
           if (weaponWantsShot(weapon, dt, trigger && !!lock, canOperateWeapon(unit, weapon) && !locked, moving)) {
+            if (unit !== player && unit.fireRateMul !== 1) weapon.cooldown /= unit.fireRateMul;
             shoot(unit, weapon, lockAimPoint(lock));
           }
           continue;
@@ -1483,6 +1582,7 @@ export function startMission(state, contract, hooks) {
           trigger = trigger && rocketMayFire(unit.rocketLock || 0) && !!unit.rocketLockId;
         }
         if (weaponWantsShot(weapon, dt, trigger, canOperateWeapon(unit, weapon) && !locked, moving)) {
+          if (unit !== player && unit.fireRateMul !== 1) weapon.cooldown /= unit.fireRateMul;
           shoot(unit, weapon, unit === player ? playerAim : null);
         }
       }
@@ -1494,7 +1594,22 @@ export function startMission(state, contract, hooks) {
     applyFpvWeapons();
     updateEffects(dt);
     pushHud(input);
+    cullFarUnits();
     renderer.render(scene, camera);
+  }
+
+  // Units deep in the fog (FogExp2 leaves ~10% at 330 m) still cost a full
+  // draw; skip them. The escort ambush sits 250-430 m out at the start, and
+  // drawing it there took glb_browser's frame from ~70 to ~105 ms.
+  const CULL_DIST = 330;
+  function cullFarUnits() {
+    const cx = camera.position.x;
+    const cz = camera.position.z;
+    for (const unit of units) {
+      if (unit === player || !unit.alive) continue;
+      const p = unit.model.root.position;
+      unit.model.root.visible = Math.hypot(p.x - cx, p.z - cz) < CULL_DIST + (unit.radius || 2);
+    }
   }
 
   function planarSpeed(unit) {
@@ -2228,7 +2343,7 @@ export function startMission(state, contract, hooks) {
     if (contract.type === "defend") {
       for (const truck of trucks) {
         if (!truck.alive) continue;
-        truck.model.root.position.z = spawnZ - 400;
+        truck.model.root.position.z = escort.exitZ - 20;
       }
       return;
     }
@@ -2374,6 +2489,34 @@ export function startMission(state, contract, hooks) {
   // Headless frames are slow, and the mission caps each step at 50 ms, so a
   // wall-clock sleep does not advance a 0.75 s clip. Tests freeze the render
   // loop and step simulate() themselves.
+  window.__ZOIDS__.difficulty = contract.difficulty || 1;
+  window.__ZOIDS__.autopilot = (on) => {
+    autopilot = !!on;
+    return autopilot;
+  };
+  window.__ZOIDS__.escortInfo = () => {
+    if (!escort) return null;
+    const pos = (u) => ({ x: u.model.root.position.x, z: u.model.root.position.z });
+    return {
+      layout: escort,
+      seen: ambushSeen,
+      player: pos(player),
+      trucks: trucks.map((t) => ({ ...pos(t), alive: t.alive, structure: t.parts.core.structure, maxStructure: t.parts.core.maxStructure })),
+      enemies: units.filter((u) => u.team === "enemy").map((u) => ({
+        id: u.id, name: u.name, alive: u.alive, ...pos(u),
+        alerted: !!(u.brain && u.brain.alerted),
+        target: u.aiTarget && u.aiTarget.alive ? u.aiTarget.id : null,
+        targetKind: u.aiTarget ? (u.aiTarget === player ? "player" : u.aiTarget.def.layout === "vehicle" ? "truck" : "other") : null,
+        aimError: u.brain ? u.brain.aimError : null,
+        fireRateMul: u.fireRateMul,
+      })),
+      playerId: player.id,
+      objective: hudObjective,
+      time: missionTime,
+      ending: endTimer > 0 || ended,
+      victory: endVictory,
+    };
+  };
   window.__ZOIDS__.holdSim = (held) => {
     manual = !!held;
     if (manual) paused = false;

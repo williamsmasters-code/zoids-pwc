@@ -1,18 +1,11 @@
 import { ZOIDS, BIOMES, mulberry32 } from "./catalog.js";
+import { DIFFICULTY, clampDifficulty, payoutFor, enemyCountFor } from "./difficulty.js";
 
 const NAMES = {
   destroy: ["Wolf Hunt", "Broken Fang", "Lance Breaker", "Red Sand Cleanup", "No Survivors"],
   defend: ["Convoy Escort", "Supply Push", "Last Trucks Through", "Road Open"],
   recon: ["Beacon Survey", "Signal Walk", "Quiet Grid", "Three Pings"],
   assault: ["Outpost Breaker", "Generator Strike", "Hardpoint Assault", "Basefall"],
-};
-
-const POOL = {
-  1: ["commandWolf", "commandWolf", "zaberFang"],
-  2: ["commandWolf", "zaberFang", "shieldLiger"],
-  3: ["shieldLiger", "bladeLiger", "zaberFang", "ironKong"],
-  4: ["bladeLiger", "ironKong", "genoSaurer", "gojulas"],
-  5: ["ironKong", "genoSaurer", "gojulas", "deathSaurer"],
 };
 
 function shuffle(items, rng) {
@@ -27,16 +20,16 @@ function shuffle(items, rng) {
 }
 
 function rollEnemies(type, difficulty, rng) {
-  const pool = POOL[difficulty];
-  let count = difficulty >= 3 ? 3 : 2;
-  if (type === "recon" || type === "assault") count = Math.max(1, count - 1);
+  const pool = DIFFICULTY[difficulty].pool;
+  const count = enemyCountFor(difficulty, type);
   const out = [];
   for (let i = 0; i < count; i++) {
     let zoidId = pool[Math.floor(rng() * pool.length)];
     if (zoidId === "deathSaurer" && out.some((e) => e.zoidId === "deathSaurer")) zoidId = "gojulas";
     out.push({ zoidId, name: `${ZOIDS[zoidId].name} ${i + 1}` });
   }
-  if (out.some((e) => e.zoidId === "deathSaurer") && out.length > 2) out.length = 2;
+  // One Death Saurer is a lance on its own: cap the escort at 3 total.
+  if (out.some((e) => e.zoidId === "deathSaurer") && out.length > 3) out.length = 3;
   return out;
 }
 
@@ -47,14 +40,8 @@ function wavesFor(type, enemies) {
   if (!second.length) second = [{ zoidId: "commandWolf", name: "Command Wolf R" }];
   return [
     { at: 0, enemies: first },
-    { at: 36, enemies: second },
+    { at: 0, enemies: second, ambush: 2 },
   ];
-}
-
-function payoutFor(difficulty, type) {
-  const base = { 1: 48000, 2: 72000, 3: 110000, 4: 165000, 5: 260000 }[difficulty];
-  const mul = { destroy: 1, defend: 1.15, recon: 0.9, assault: 1.25 }[type];
-  return Math.round((base * mul) / 500) * 500;
 }
 
 function briefFor(type, biome, enemies, difficulty) {
@@ -64,12 +51,31 @@ function briefFor(type, biome, enemies, difficulty) {
     return `Drop into the ${place} and destroy the hostile lance (${who}). Difficulty ${difficulty}.`;
   }
   if (type === "defend") {
-    return `Escort the supply trucks across the ${place}. Hostiles in the area: ${who}.`;
+    return `Escort the supply trucks across the ${place}. A hostile ambush (${who}) waits somewhere mid-route. Scout ahead and clear or distract it before the trucks arrive.`;
   }
   if (type === "recon") {
     return `Scan three beacons in the ${place}. Stay inside each ring until it locks. Patrol: ${who}.`;
   }
   return `Assault the outpost in the ${place}. Destroy the generator. Defenders: ${who}.`;
+}
+
+// Rebuild a contract's enemies, waves, payout and brief at a chosen difficulty.
+// Deterministic per contract id + level, so the slider preview matches the launch.
+export function withDifficulty(contract, level) {
+  const difficulty = clampDifficulty(level, contract.suggested || contract.difficulty);
+  let h = 2166136261;
+  for (const ch of `${contract.id}:${difficulty}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  const rng = mulberry32(h);
+  const enemies = rollEnemies(contract.type, difficulty, rng);
+  return {
+    ...contract,
+    difficulty,
+    payout: payoutFor(difficulty, contract.type),
+    enemies,
+    waves: wavesFor(contract.type, enemies),
+    escortSeed: h,
+    brief: briefFor(contract.type, contract.biome, enemies, difficulty),
+  };
 }
 
 export function generateContracts(state) {
@@ -82,7 +88,7 @@ export function generateContracts(state) {
     if (state.wins < 2) difficulty = Math.min(difficulty, 2);
     const biome = biomes[i % biomes.length];
     const enemies = rollEnemies(type, difficulty, rng);
-    return {
+    const base = {
       id: `${state.contractSeed}-${type}-${i}`,
       name: NAMES[type][Math.floor(rng() * NAMES[type].length)],
       type,
@@ -93,6 +99,9 @@ export function generateContracts(state) {
       waves: wavesFor(type, enemies),
       mapSeed: (state.contractSeed + i * 101 + difficulty * 13) >>> 0,
       brief: briefFor(type, biome, enemies, difficulty),
+      suggested: difficulty,
     };
+    const chosen = state.missionDifficulty ? clampDifficulty(state.missionDifficulty) : difficulty;
+    return withDifficulty(base, chosen);
   });
 }

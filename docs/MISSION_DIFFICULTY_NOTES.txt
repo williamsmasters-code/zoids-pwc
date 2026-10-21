@@ -1,0 +1,89 @@
+MISSION DIFFICULTY + SUPPLY PUSH (ESCORT) NOTES
+===============================================
+
+1. Per-mission difficulty (js/difficulty.js, one table)
+--------------------------------------------------------
+Click a contract -> launch popover: brief, difficulty slider 1-5, live
+payout, live hostile list and AI numbers, "Launch with <active Zoid>".
+Moving the slider updates the popover payout and the contract buttons at
+once. The value is saved (state.missionDifficulty in the save) and every
+contract uses it until changed; a new company uses each contract's
+suggested level. The old fixed difficulty dots are gone; buttons show
+"D3 Veteran".
+
+ D  label    base pay  hostiles*  enemy pool                              AI aim   react  stand-off  aggro  fire   plating  truck
+                                                                          m/100m   s      m          m      rate   +lvl     armour
+ 1  Green     48,000   2          Command Wolf x2, Zaber Fang              9.0      2.4    62         70     x0.65  0        x2.00
+ 2  Regular   72,000   2          Command Wolf, Zaber Fang, Shield Liger   6.0      1.9    54         85     x0.80  0        x1.70
+ 3  Veteran  110,000   3          Shield, Blade Liger, Zaber, Iron Kong    4.0      1.4    48         100    x1.00  0        x1.45
+ 4  Elite    165,000   3          Blade Liger, Iron Kong, Geno, Gojulas    2.5      1.0    44         115    x1.10  1        x1.25
+ 5  Ace      260,000   4**        Iron Kong, Geno, Gojulas, Death Saurer   1.5      0.7    40         130    x1.20  2        x1.10
+
+ * recon and assault field one fewer. ** a lance with a Death Saurer is
+   capped at 3.
+ Payout = base pay x type (destroy 1.0, escort 1.15, recon 0.9, assault 1.25),
+ rounded to 500. Example (Road Open, escort): D1 55,000 ... D5 299,000.
+ AI aim: the pilot's aim point wanders by +-aimError per 100 m of range.
+ react: delay before the first move (+0-1.35 s random). stand-off: preferred
+ fighting range (+0-20 m random). aggro: a non-vehicle foe inside this range
+ pulls the pilot onto it. fire rate: multiplier on AI weapon fire rate.
+ Enemies at a given difficulty are rolled deterministically per contract
+ (withDifficulty in js/contracts.js), so what the popover lists is what you
+ fight.
+
+2. Supply Push / convoy escort (js/escort.js, js/mission.js, js/ai.js)
+---------------------------------------------------------------------
+- Route: trucks start at z=+310 and drive to the EXIT at z=-300 (610 m,
+  ~76 s at 8 m/s). Player starts at z=+290, 20 m ahead of the trucks so they
+  are never in the line of fire (was: trucks 28 m behind the player and the
+  first wave spawned 32-50 m in front of the player). A start message gives
+  the reported window ("Raiders reported 244-427 m up the 610 m route").
+- Ambush: wave 1 spawns at a seeded random 40-70% of the route, 12-60 m off
+  the road; wave 2 (reinforcements) 15-25% further on (max 88%). So the
+  nearest raider starts ~245-430 m from the trucks (30-53 s of truck travel)
+  and 220+ m from the player, who reaches it in ~12-20 s at ~75 km/h.
+- Raiders hold their ambush spot (guard radius 120 m) until a truck or the
+  player comes inside it or someone shoots them.
+- Target choice (js/ai.js chooseTarget): 1. whoever shot it within the last
+  8 s, 2. the player if inside the aggro range (table above), 3. the trucks,
+  4. nearest foe. So shooting a raider or getting close pulls it off the
+  convoy (distraction works) and it drifts back to the trucks if ignored.
+- Trucks: armour and structure x truckArmor (table above).
+- Warning: once the ambush is inside the player's radar range (230 m with a
+  healthy head) or the lead truck is within 150 m of it, red AMBUSH markers
+  with live distance appear (screen-edge arrow + minimap) and the message
+  "Ambush spotted N m out. Trucks are M m from it." The objective line then
+  shows the ambush distance ahead of the convoy.
+
+3. Escort sim (tests/escort_browser.mjs)
+---------------------------------------
+Bot pilot (window.__ZOIDS__.autopilot, test-only) drives to the nearest
+raider, locks it, stands off at its longest optimal range and strafes.
+Fixed-step sim (stepSim 0.05 s), seed 1002 "Road Open".
+  D1  starter Shield Liger (pulse laser, beam cannon, gatling): WIN,
+      2/2 trucks, 2/2 kills, 77 s. Ambush 344 m from trucks at start.
+  D3  same Liger, plating +2: WIN, 2/2 trucks, 3/3 kills, 77 s.
+      Ambush 340 m from trucks.
+  D5  plated Geno Saurer (+ charged particle): LOSS, 0/2 trucks left,
+      1/3 kills in 50 s. Ambush 275 m from trucks.
+  (Final run 21 Oct 2026: D1 WIN 2/2 trucks 77 s, D3 WIN 2/2 trucks 76 s,
+  D5 LOSS 0 trucks 1/3 kills 50 s.)
+  In every run the first raider switched to the player while still
+  ~230-260 m from the trucks (when the bot closed to ~130-150 m).
+The test asserts the D1 win and reports D3/D5. D5 losing to a simple bot
+is expected for "Ace"; it is not proof it is unwinnable by a human.
+
+4. Test-harness notes
+---------------------
+- headless.mjs: the first contract is an escort. It now checks the ambush
+  starts >= 200 m from the trucks and holds, then walks the player up to the
+  raiders for the "AI moves" check and puts the player back.
+- headless.mjs lock (2.2 s) and charge checks now run on fixed sim steps
+  (stepSim) and measure game seconds. They were wall-clock based and failed
+  when an enemy model costs more to render under swiftshader (a recon run
+  with a Command Wolf enemy rendered at ~12 ms/step vs ~5 ms for a Zaber
+  Fang).
+- glb_browser.mjs average-frame guard (< 100 ms): measured 85-88 ms in the
+  final full run and 96-106 ms in earlier runs on the same box (HEAD 0beafc5
+  measured 78 ms in the same period, 55-61 ms earlier in the day), so this
+  check is close to its limit on this machine.

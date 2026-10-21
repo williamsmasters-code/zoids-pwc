@@ -190,3 +190,52 @@ Changed on purpose:
   count no longer shifts the AI brain rolls.
 Screenshots: screenshots/balance/command-wolf-turret-firing-backwards.png,
 command-wolf-turret-firing-sideways.png, command-wolf-turret-no-lock-rest.png
+
+DAMAGE CLASS vs ARMOUR (added with the difficulty/escort batch)
+---------------------------------------------------------------
+Table: DAMAGE_VS_ARMOR in js/catalog.js (next to WEAPONS). Class comes from
+weapon kind via damageClassOf(): energy -> beam, ballistic/missile ->
+ballistic, melee -> melee. A weapon can override with damageClass.
+
+  class      vs armour plating   vs structure / components
+  beam       x0.70               x1.00 (current damage)
+  ballistic  x1.30               x1.00 (current damage)
+  melee      x1.00               x1.00
+
+  beam:      pulseLaser, beamCannon, doubleBeamCannon, chargedParticle
+  ballistic: gatling, shockCannon, missilePack (rockets count as kinetic)
+  melee:     strikeLaserClaw, laserBlade
+
+Melee is neutral on purpose: claws and blades already trade reach (8-14 m)
+and per-swing heat for the highest damage per hit; a plating bonus would make
+them the best tool against every armoured target, and a beam-style penalty
+would make the Laser Blade pointless against fresh Zoids.
+
+How it is applied (js/damage.js damagePart): while a part still has armour,
+the armour step sees amount x armorMul. The raw amount the plating did not
+absorb is converted back (armour taken / armorMul) and carried on to
+structure at internalMul. So a 30 dmg beam shot into 7 armour strips it with
+10 raw and puts the other 20 into structure, unchanged. The same path is
+used for player and AI (hitscan and projectile hits both pass the weapon's
+damage ctx into applyDamage -> applyHit). Skill hits (slash, ground pound,
+artillery) carry no class and stay x1.
+
+DPS report (node tools/balance_report.mjs, full output in
+docs/balance_report_after_armor.txt), effective DPS at 60 m:
+
+  zoid          raw   vs armour  vs components
+  commandWolf   47.2  41.1       47.2
+  zaberFang     42.1  37.5       42.1
+  shieldLiger   43.1  38.8       43.1
+  bladeLiger    21.6  15.1       21.6
+  ironKong      40.2  52.2       40.2
+  genoSaurer    41.3  28.9       41.3
+  gojulas       37.3  40.9       37.3
+  deathSaurer   39.4  43.6       39.4
+
+TTK at 60 m now chews the core's armour at the vs-armour rate and its
+structure at the vs-component rate. Beam-heavy Zoids (Geno Saurer, Blade
+Liger, Command Wolf) take longer to open a fresh Zoid (e.g. Command Wolf vs
+Shield Liger 2.9 s -> 3.2 s, Geno vs Shield 3.3 -> 4.2 s); kinetic loadouts
+(Iron Kong, Gojulas, Death Saurer) open plating faster (Iron Kong vs Shield
+3.4 -> 2.9 s). Once plating is gone the numbers are unchanged.

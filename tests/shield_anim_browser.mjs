@@ -219,7 +219,8 @@ try {
   const hangar = await page.evaluate(() => window.__ZOIDS__.previewParts());
   if (!hangar || hangar.anim !== "skinned") note("hangar", `preview anim is ${hangar && hangar.anim}`);
   await page.evaluate(() => { window.__ZOIDS__.pacifyOnStart = true; });
-  await page.click("button.launch");
+  await page.click(".contract-btn");
+  await page.click("#launch-go");
   await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission", { timeout: 60000 });
   await sleep(400);
 

@@ -176,7 +176,8 @@ try {
   await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.ready && window.__ZOIDS__.screen === "hangar", { timeout: 60000 });
   await page.evaluate(() => { window.__ZOIDS__.pacifyOnStart = true; });
-  await page.click("button.launch");
+  await page.click(".contract-btn");
+  await page.click("#launch-go");
   await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission", { timeout: 60000 });
   await page.evaluate(() => window.__ZOIDS__.holdSim(true));
   const info = await page.evaluate(() => window.__ZOIDS__.turretDebug());

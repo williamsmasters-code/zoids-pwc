@@ -74,6 +74,9 @@ function sanitize(raw) {
   base.nextUid = raw.nextUid || 3;
   base.inventory = Array.isArray(raw.inventory) ? raw.inventory.filter((w) => w && WEAPONS[w.type]) : base.inventory;
   if (ZOIDS[raw.selected]) base.selected = raw.selected;
+  // Last difficulty picked on the contract popover (1..5); null = use the suggestion.
+  const md = Math.round(Number(raw.missionDifficulty));
+  base.missionDifficulty = md >= 1 && md <= 5 ? md : null;
   for (const id of ZOID_ORDER) {
     const saved = raw.hangar && raw.hangar[id];
     if (!saved) continue;
@@ -110,6 +113,14 @@ function sanitize(raw) {
     }
   }
   return base;
+}
+
+export function setMissionDifficulty(state, level) {
+  const n = Math.round(Number(level));
+  if (!(n >= 1 && n <= 5)) return fail("Difficulty is 1 to 5.");
+  state.missionDifficulty = n;
+  saveState(state);
+  return { ok: true };
 }
 
 function clampLevel(value, max) {

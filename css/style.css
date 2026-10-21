@@ -135,6 +135,23 @@ button:disabled { opacity: 0.45; cursor: default; }
 .contract-btn .c-pay { color: var(--amber); text-align: right; }
 .contract-btn .c-meta { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .contract-btn .c-diff { font-size: 11px; color: var(--amber); text-align: right; }
+.launch-pop {
+  position: fixed; left: 50%; bottom: 112px; transform: translateX(-50%);
+  width: min(460px, 92vw); max-height: calc(100vh - 140px); overflow: auto;
+  background: #0f1820; border: 1px solid var(--cyan); padding: 8px 12px; z-index: 6;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+}
+.launch-pop header { display: flex; justify-content: space-between; align-items: center; }
+.launch-pop h3 { margin: 0; font-size: 15px; }
+.launch-pop header button { padding: 0 8px; }
+.launch-pop p { margin: 3px 0; font-size: 12px; }
+.launch-pop .diff-row { display: flex; flex-direction: column; gap: 2px; font-size: 13px; margin-top: 4px; }
+.launch-pop .diff-row b { color: var(--amber); }
+#difficulty-slider { width: 100%; accent-color: #e8c537; }
+.pop-enemies small { color: var(--muted); }
+.pop-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.pop-pay { color: var(--amber); font-size: 18px; }
+#launch-go { background: #1d4a3a; }
 #status { position: fixed; left: 12px; top: 84px; color: var(--amber); font-size: 13px; pointer-events: none; }
 .hangar-foot {
   display: flex;

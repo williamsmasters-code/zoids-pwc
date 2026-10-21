@@ -193,7 +193,7 @@ try {
     const dossier = document.querySelector("#dossier").getBoundingClientRect();
     return {
       roster: !!document.querySelector("#roster, .zoid-card"),
-      contractBtns: document.querySelectorAll("button.contract-btn.launch").length,
+      contractBtns: document.querySelectorAll("button.contract-btn").length,
       longBrief: !!document.querySelector(".contract-card"),
       bands: [...document.querySelectorAll("#tonnage .band")].map((el) => el.dataset.zone),
       zoneLabel: document.querySelector("#tonnage .zone-label")?.textContent || "",
@@ -249,7 +249,8 @@ try {
   const moneyBefore = await page.$eval("#money", (el) => el.textContent);
   console.log("hangar money", moneyBefore);
 
-  await page.click(".contract-btn.launch");
+  await page.click(".contract-btn");
+  await page.click("#launch-go");
   await page.waitForFunction(
     () => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission" && typeof window.__ZOIDS__.selfTest === "function",
     { timeout: 60000 },
@@ -278,6 +279,16 @@ try {
   if (!hud.strip.includes("V camera")) note("hud", "controls strip missing");
   if (!hud.objective) note("hud", "objective empty");
 
+  if (hud.contractType === "defend") {
+    // Escort raiders hold a mid-route ambush: check they start far from the
+    // convoy and do not move yet, then walk the player up to wake them.
+    const esc = await page.evaluate(() => window.__ZOIDS__.escortInfo());
+    const gap = Math.min(...esc.enemies.map((e) => Math.min(...esc.trucks.map((t) => Math.hypot(t.x - e.x, t.z - e.z)))));
+    console.log("escort ambush gap", gap.toFixed(0), "m, alerted", esc.enemies.map((e) => e.alerted).join(","));
+    if (gap < 200 || esc.enemies.some((e) => e.alerted)) note("escort", `ambush ${gap} m, alerted early`);
+    const e0 = esc.enemies[0];
+    await page.evaluate((id, x, z) => window.__ZOIDS__.placeUnit(id, x, z, 0), esc.playerId, e0.x, e0.z + 70);
+  }
   const before = await page.evaluate(() => window.__ZOIDS__.enemySnapshot());
   await sleep(2200);
   const after = await page.evaluate(() => window.__ZOIDS__.enemySnapshot());
@@ -288,6 +299,11 @@ try {
     return Math.hypot(unit.x - start.x, unit.z - start.z) > 1 || Math.abs(unit.speed) > 0.4;
   });
   if (!moved) note("ai", `enemies did not move ${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
+  if (hud.contractType === "defend") {
+    // Back to the convoy and full health so the rest of the run matches the old flow.
+    const esc = await page.evaluate(() => window.__ZOIDS__.escortInfo());
+    await page.evaluate((id, p) => { window.__ZOIDS__.placeUnit(id, p.x, p.z, 0); window.__ZOIDS__.repairPlayer(); }, esc.playerId, { x: 0, z: esc.layout.playerZ });
+  }
   else console.log("ai moved", after.map((unit) => `${unit.name} speed ${unit.speed.toFixed(1)}`).join("; "));
 
   await page.evaluate(() => window.__ZOIDS__.setPacified(true));
@@ -435,7 +451,9 @@ try {
   await page.evaluate(() => window.__ZOIDS__.holdSim(true));
   await page.keyboard.down("Digit1");
   let heatSample = null;
-  const heatDeadline = Date.now() + 15000;
+  // Wall-clock cap is generous: with raiders on screen swiftshader can take
+  // ~75 ms per sim step. The loop exits as soon as group 1 overheats.
+  const heatDeadline = Date.now() + 60000;
   while (Date.now() < heatDeadline) {
     heatSample = await page.evaluate(() => {
       for (let i = 0; i < 30; i++) { window.__ZOIDS__.stepSim(1 / 60); if (window.__ZOIDS__.weaponHeat().some((w) => w.overheated)) break; }
@@ -458,7 +476,9 @@ try {
   console.log("weapon heat", JSON.stringify(heatSample));
   const group1 = heatSample && heatSample.rows.find((row) => row.group === 1);
   const group2 = heatSample && heatSample.rows.find((row) => row.group === 2);
-  if (!group1 || !group1.overheated) note("heat", `group 1 did not overheat ${JSON.stringify(heatSample)}`);
+  if (!group1 || !group1.overheated) {
+    note("heat", `group 1 did not overheat ${JSON.stringify(heatSample)}`);
+  }
   if (!group2 || group2.overheated || group2.heat > 40) note("heat", `group 2 was not independent ${JSON.stringify(group2)}`);
   const dock1 = heatSample && heatSample.dock.find((row) => row.group === "1");
   const dock2 = heatSample && heatSample.dock.find((row) => row.group === "2");
@@ -522,6 +542,9 @@ try {
   if (cam !== "3RD") note("camera", `expected to finish in 3RD, saw ${cam}`);
 
   await page.evaluate(() => window.__ZOIDS__.debugForceWin());
+  // The page may be in the click-to-resume pause (no pointer lock in headless);
+  // step the sim through the end timer instead of relying on real-time frames.
+  await page.evaluate(() => { for (let i = 0; i < 60; i++) window.__ZOIDS__.stepSim(0.05); });
   await page.waitForFunction(
     () => {
       const host = document.querySelector("#debrief-root");
@@ -638,7 +661,8 @@ try {
   await page.evaluate(() => {
     window.__ZOIDS__.pacifyOnStart = true;
   });
-  await page.click('.contract-btn.launch[data-type="recon"]');
+  await page.click('.contract-btn[data-type="recon"]');
+  await page.click("#launch-go");
   await page.waitForFunction(
     () => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission" && window.__ZOIDS__.contractType === "recon",
     { timeout: 60000 },
@@ -667,13 +691,17 @@ try {
   const aimed = await page.evaluate(() => window.__ZOIDS__.aimAtEnemy(0, null));
   if (!aimed) note("lock", "no enemy to lock");
   else console.log("lock aim", aimed.name, aimed.dist.toFixed(1));
+  // Fixed-step sim so the lock time is measured in game seconds, not in
+  // wall-clock time that depends on how heavy the enemy model is to render.
+  await page.evaluate(() => window.__ZOIDS__.holdSim(true));
   await page.keyboard.down("Digit1");
-  const lockStart = Date.now();
+  const lockStep = 1 / 30;
+  let lockSim = 0;
   let partial = null;
-  while (Date.now() - lockStart < 2200) {
-    partial = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
+  while (lockSim < 2.2) {
+    partial = await page.evaluate((dt) => { window.__ZOIDS__.stepSim(dt); return window.__ZOIDS__.weaponDebug(); }, lockStep);
+    lockSim += lockStep;
     if (partial && partial.lock >= 0.55 && partial.lock < 0.93) break;
-    await sleep(30);
   }
   const ring = await page.evaluate(() => {
     const el = document.querySelector("#lock-ring");
@@ -688,17 +716,18 @@ try {
   if (!partial || partial.lock < 0.5) note("lock", `ring did not fill ${JSON.stringify(partial)}`);
   if (!ring || ring.hidden) note("lock", "lock ring hidden");
   let full = partial;
-  while (Date.now() - lockStart < 4400) {
-    full = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
+  while (lockSim < 4.4) {
+    full = await page.evaluate((dt) => { window.__ZOIDS__.stepSim(dt); return window.__ZOIDS__.weaponDebug(); }, lockStep);
+    lockSim += lockStep;
     if (full && full.lock >= 0.99) break;
-    await sleep(30);
   }
   await page.keyboard.up("Digit1");
-  const lockElapsed = Date.now() - lockStart;
-  console.log("lock done", lockElapsed, full && full.lock, "strength", full && full.strength);
+  await page.evaluate(() => window.__ZOIDS__.holdSim(false));
+  const lockElapsed = Math.round(lockSim * 1000);
+  console.log("lock done (sim ms)", lockElapsed, full && full.lock, "strength", full && full.strength);
   if (!full || full.lock < 0.99) note("lock", `lock did not finish ${JSON.stringify(full)}`);
   // Missile Pack lock is 2.2 s since the balance pass (guide: 2-4 s).
-  if (lockElapsed < 1700 || lockElapsed > 4400) note("lock", `2.2 s lock took ${lockElapsed} ms`);
+  if (lockElapsed < 1700 || lockElapsed > 4400) note("lock", `2.2 s lock took ${lockElapsed} sim ms`);
 
   await page.evaluate(() => window.__ZOIDS__.installWeapon("headWeapon", "shockCannon"));
   await page.evaluate(() => window.__ZOIDS__.aimAtEnemy(0.5, -0.04));
@@ -720,15 +749,18 @@ try {
     window.__ZOIDS__.installWeapon("headWeapon", "chargedParticle");
     window.__ZOIDS__.aimAtEnemy(0, -0.2);
   });
+  // Fixed-step sim (game seconds), then back to real time for the walk check.
+  await page.evaluate(() => window.__ZOIDS__.holdSim(true));
   await page.keyboard.down("Digit1");
-  const chargeStart = Date.now();
+  let chargeSim = 0;
   let charging = null;
-  while (Date.now() - chargeStart < 2700) {
-    charging = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
+  while (chargeSim < 2.7) {
+    charging = await page.evaluate(() => { window.__ZOIDS__.stepSim(1 / 25); return window.__ZOIDS__.weaponDebug(); });
+    chargeSim += 1 / 25;
     const gun = charging.weapons.find((weapon) => weapon.id === "chargedParticle");
     if (gun && gun.charge >= 1.35 && gun.charge < 2.55 && gun.charging) break;
-    await sleep(40);
   }
+  await page.evaluate(() => window.__ZOIDS__.holdSim(false));
   const chargeBar = await page.evaluate(() => {
     const el = document.querySelector("#charge-bar");
     return {

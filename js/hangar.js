@@ -37,6 +37,7 @@ function weaponFacts(spec) {
 import { diagramSVG } from "./hud.js";
 import { buildUnitModel, disposeTree } from "./models.js";
 import { generateContracts } from "./contracts.js";
+import { DIFFICULTY, DIFFICULTY_MIN, DIFFICULTY_MAX } from "./difficulty.js";
 import {
   formatC,
   rankName,
@@ -59,6 +60,7 @@ import {
   applyMissionResult,
   rerollSeed,
   resetState,
+  setMissionDifficulty,
 } from "./state.js";
 
 const UP = new Vector3(0, 1, 0);
@@ -112,6 +114,7 @@ export function showHangar(state, hooks) {
       <button type="button" data-act="credits">Model credits</button>
       <span class="muted">Sketchfab meshes under CC-BY-4.0. ?mock=1 uses the procedural models.</span>
     </footer>
+    <div id="launch-pop" class="launch-pop hidden" role="dialog" aria-label="Launch contract"></div>
     <div id="credits-panel" class="credits hidden"></div>
     <div id="status"></div>
   `;
@@ -120,6 +123,7 @@ export function showHangar(state, hooks) {
   let picker = null;
   let status = "";
   let detailsOpen = false;
+  let pending = null; // contract index whose launch popover is open
   const preview = createPreview(root.querySelector("#preview-canvas"));
 
   function flash(result) {
@@ -289,21 +293,68 @@ export function showHangar(state, hooks) {
       </header>
       <div class="contract-row">
         ${contracts.map((contract, index) => {
-          const dots = `${"●".repeat(contract.difficulty)}${"○".repeat(5 - contract.difficulty)}`;
-          const tip = `${contract.name} (${labelType(contract.type)}, ${BIOMES[contract.biome]}, difficulty ${contract.difficulty}/5)\n${contract.brief}\nPays ${formatC(contract.payout)}. Click to launch with ${ZOIDS[activeId].name}.`;
-          return `<button type="button" class="contract-btn launch" data-act="launch" data-index="${index}" data-type="${contract.type}" title="${escapeAttr(tip)}" ${block ? "disabled" : ""}><span class="c-grid">
+          const spec = DIFFICULTY[contract.difficulty];
+          const tip = `${contract.name} (${labelType(contract.type)}, ${BIOMES[contract.biome]})\n${contract.brief}\nClick to pick difficulty and launch with ${ZOIDS[activeId].name}.`;
+          return `<button type="button" class="contract-btn" data-act="pick-contract" data-index="${index}" data-type="${contract.type}" title="${escapeAttr(tip)}" ${block ? "disabled" : ""}><span class="c-grid">
             <span class="c-name">${contract.name}</span>
             <b class="c-pay">${formatC(contract.payout)}</b>
             <span class="c-meta">${labelType(contract.type)} · ${BIOMES[contract.biome]}</span>
-            <span class="c-diff" aria-label="difficulty ${contract.difficulty} of 5">${dots}</span>
+            <span class="c-diff" data-level="${contract.difficulty}">D${contract.difficulty} ${spec.label}</span>
           </span></button>`;
         }).join("")}
       </div>
     `;
+    renderPopover(contracts, block, activeId);
     root.querySelector("#status").textContent = status;
     root.querySelector("#reset-btn").textContent = "Reset company";
     preview.show(def, weapons);
   }
+
+  function renderPopover(contracts, block, activeId) {
+    const pop = root.querySelector("#launch-pop");
+    if (pending == null || !contracts[pending]) {
+      pop.classList.add("hidden");
+      pop.innerHTML = "";
+      return;
+    }
+    const c = contracts[pending];
+    pop.classList.remove("hidden");
+    pop.innerHTML = `
+      <header><h3>${c.name}</h3><button type="button" data-act="close-pop" aria-label="Close">×</button></header>
+      <p class="muted">${labelType(c.type)} · ${BIOMES[c.biome]} · suggested D${c.suggested}</p>
+      <p class="pop-brief" id="pop-brief">${c.brief}</p>
+      <label class="diff-row">
+        <span>Difficulty <b id="pop-level">${c.difficulty} · ${DIFFICULTY[c.difficulty].label}</b></span>
+        <input type="range" id="difficulty-slider" min="${DIFFICULTY_MIN}" max="${DIFFICULTY_MAX}" step="1" value="${c.difficulty}">
+      </label>
+      <p class="pop-enemies" id="pop-enemies">${enemyLine(c)}</p>
+      <div class="pop-foot">
+        <b class="pop-pay" id="pop-payout">${formatC(c.payout)}</b>
+        <button type="button" class="launch" id="launch-go" data-act="launch" data-index="${pending}" ${block ? "disabled" : ""}>Launch with ${ZOIDS[activeId].name}</button>
+      </div>
+    `;
+  }
+
+  function onInput(event) {
+    if (event.target.id !== "difficulty-slider") return;
+    setMissionDifficulty(state, event.target.value);
+    // Refresh in place so the slider keeps focus while dragging.
+    const contracts = generateContracts(state);
+    const c = contracts[pending];
+    if (!c) return;
+    root.querySelector("#pop-level").textContent = `${c.difficulty} · ${DIFFICULTY[c.difficulty].label}`;
+    root.querySelector("#pop-payout").textContent = formatC(c.payout);
+    root.querySelector("#pop-enemies").innerHTML = enemyLine(c);
+    root.querySelector("#pop-brief").textContent = c.brief;
+    root.querySelectorAll(".contract-btn").forEach((btn, i) => {
+      const k = contracts[i];
+      btn.querySelector(".c-pay").textContent = formatC(k.payout);
+      const d = btn.querySelector(".c-diff");
+      d.textContent = `D${k.difficulty} ${DIFFICULTY[k.difficulty].label}`;
+      d.dataset.level = k.difficulty;
+    });
+  }
+  root.addEventListener("input", onInput);
 
   function onClick(event) {
     const target = event.target.closest("[data-act]");
@@ -318,6 +369,16 @@ export function showHangar(state, hooks) {
     }
     if (act === "close-credits") {
       root.querySelector("#credits-panel").classList.add("hidden");
+      return;
+    }
+    if (act === "pick-contract") {
+      pending = Number(target.dataset.index);
+      render();
+      return;
+    }
+    if (act === "close-pop") {
+      pending = null;
+      render();
       return;
     }
     if (act === "toggle-details") {
@@ -355,7 +416,10 @@ export function showHangar(state, hooks) {
     else if (act === "sell-weapon") flash(sellWeapon(state, target.dataset.uid));
     else if (act === "repair") flash(repairZoid(state, viewing));
     else if (act === "loan") flash(repairZoid(state, viewing, { allowDebt: true }));
-    else if (act === "reroll") flash(rerollSeed(state));
+    else if (act === "reroll") {
+      pending = null;
+      flash(rerollSeed(state));
+    }
     else if (act === "reset") {
       const ok = window.confirm(
         "Reset the company? This wipes money, Zoids, weapons, and contract progress saved in this browser.",
@@ -399,8 +463,15 @@ export function showHangar(state, hooks) {
     closed = true;
     root.removeEventListener("click", onClick);
     root.removeEventListener("change", onChange);
+    root.removeEventListener("input", onInput);
     preview.dispose();
   };
+}
+
+function enemyLine(c) {
+  const spec = DIFFICULTY[c.difficulty];
+  const names = c.enemies.map((e) => ZOIDS[e.zoidId].name).join(", ");
+  return `${c.enemies.length} hostile${c.enemies.length === 1 ? "" : "s"}: ${names}<br><small>AI aim ±${spec.aimError} m/100 m · fire rate ×${spec.fireRate} · plating +${spec.armorLevel}${c.type === "defend" ? ` · truck armour ×${spec.truckArmor}` : ""}</small>`;
 }
 
 function escapeAttr(text) {
