@@ -1,0 +1,192 @@
+BALANCE NOTES — Zoids, weapons, and back-mount turrets (2026-10-20)
+
+Reference: Zoids Fanon Wiki, "Weapons Guide" by Phelan,
+https://zoidsfanon.fandom.com/wiki/Weapons_Guide . It is a fan wiki, so it
+was used for each weapon class's character, not for hard numbers.
+
+All weapon numbers are in one table: WEAPONS in js/catalog.js (each entry has
+a comment linking it to the guide). The Zoid stats, hardpoints (including the
+turret arcs) and stock loadouts are in ZOIDS and stockWeaponsFor() in the same
+file. Paper DPS / TTK: node tools/balance_report.mjs [catalog path].
+
+------------------------------------------------------------------------
+1. WEAPONS, BEFORE -> AFTER
+------------------------------------------------------------------------
+(dmg x volley, shots/s, heat per shot, cooling/s, optimal/max m,
+ projectile m/s, lock s; sustained = heat-limited DPS)
+
+Pulse Laser (beam, S)
+  before 5 x1, 7.5/s, heat 6,  cool 22, 50/85 m              sust 18.3
+  after  4.5 x1, 7.5/s, heat 7, cool 22, 55/90 m             sust 14.1
+  Guide: beams are faster than shells but "generally do slightly less
+  damage"; the standard gun is "average in every way". Strong short
+  bursts that overheat when held, a bit more reach.
+
+Beam Cannon (beam, M)
+  before 16, 1.6/s, heat 18, cool 12, 90/150 m               sust 10.7
+  after  18, 1.4/s, heat 12, cool 14, 95/160 m               sust 21.0
+  Guide: a cannon "trades a little accuracy for a little more power". It
+  was heat-starved to half its listed DPS; now a usable long beam.
+
+Double-Barreled Beam Cannon (beam, M, NEW, 360 turret)
+  after  9 x2, 1.5/s, heat 10, cool 15, 70/120 m             sust 27.0
+  Command Wolf's back weapon. Guide "twin-linked": paired barrels converge
+  for more damage "but they usually have a limited range".
+
+Missile Pack (rocket, M)
+  before 7 x4, 0.5/s, heat 14, cool 10, 80/200 m, 68 m/s, lock 1.5   sust 14.0
+  after  10 x4, 0.4/s, heat 12, cool 10, 90/200 m, 60 m/s, lock 2.2  sust 16.0
+  Guide: missiles lock in "2-4 seconds with 3 being the average", near-
+  certain once locked, slower than rockets. Bigger warheads, longer lock,
+  slower flight. Lock/homing system unchanged (base LOCK_TIME stays 1.5;
+  the pack carries its own 2.2 lockTime).
+
+Gatling Gun (ballistic, M)
+  before 2.3, 16/s, heat 1.8, cool 18, 40/110 m, spread .03  sust 23.0
+  after  2.2, 16/s, heat 1.4, cool 18, 35/100 m, spread .04  sust 28.3
+  Guide: "fires extremely rapidly", "very poor accuracy", "very
+  inaccurate at anything beyond close range". Hose up close.
+
+Shock Cannon (ballistic, L)
+  before 30, 0.7/s, heat 16, cool 9, 60/130 m, 82 m/s, spread .01  sust 16.9
+  after  46, 0.5/s, heat 20, cool 10, 45/105 m, 75 m/s, spread .02 sust 23.0
+  Guide: shock/impact cannons are "short ranged", "terribly inaccurate",
+  "so powerful that people keep using them", and "take longer to fire".
+
+Charged Particle Cannon (charge, XL)
+  before 88, charge 3 s, 0.18/s, heat 55, 110/220 m          sust 10.3
+  after  120, charge 3 s, 0.18/s, heat 55, 130/240 m         sust 14.0
+  Guide: particle weapons are "perhaps the most advanced", heavy surface
+  damage plus armour penetration. Still a braced 3 s charge; never a turret.
+
+Strike Laser Claw (melee, S, NEW)
+  after  14, 1.5/s, heat 9, cool 16, 8/12 m                  sust 21.0
+  Guide "Charged Weapons": energy-charged melee cuts deeper than hardened
+  alloy but "have a finite period ... then a cooldown" (modelled as heat).
+
+Laser Blade (melee, M, NEW)
+  after  26, 1.2/s, heat 14, cool 15, 10/14 m                sust 27.9
+  Guide: laser-charged weapons "usually do the most damage of all the close
+  combat weapons", "usually only on the Blade Liger", must recover.
+
+Melee uses the existing hitscan beam path with a very short range, so no new
+delivery system was added (beams, shell drop + lead, homing rockets with
+lock, and charge weapons are unchanged).
+
+------------------------------------------------------------------------
+2. ZOIDS, BEFORE -> AFTER
+------------------------------------------------------------------------
+Command Wolf (light scout; was far too weak)
+  speed 26 -> 27, turn 1.5 -> 1.55, armorScale 0.72 -> 0.84,
+  maxTonnage 46 -> 50.
+  Back Dish (M) -> Back Turret (M, 360 deg, 2.8 rad/s).
+  Stock: pulse, gatling, missile pack
+      -> pulse, gatling, strike laser claw, double-barreled beam turret.
+  Reason: fastest Zoid that can now shoot at its lock while circling or
+  running away. Still the thinnest armour after Zaber Fang.
+Zaber Fang (fast attacker): stock pulse x2, gatling -> claw, pulse,
+  gatling, beam cannon (the back mount was empty).
+Shield Liger: unchanged stats, hardpoints and loadout (animation file not
+  touched). Benefits from the beam cannon and missile changes.
+Blade Liger (skirmisher): back -> "Back Gun Pods", 180 deg forward turret
+  (2.2 rad/s). Stock pulse, beam cannon, gatling -> pulse, laser blade x2,
+  pulse laser in the back pods. Best damage of all at blade range.
+Iron Kong (heavy arms): back "Shoulders" -> "Missile Pack", 270 deg turret
+  (1.5 rad/s). Same stock weapons, missile pack now a turret.
+Geno Saurer: back mount keeps the charged particle cannon. The mount is a
+  135 deg turret (1.6 rad/s) for any non-charge weapon fitted there; the CPC
+  itself never turrets (it needs the whole body braced).
+Gojulas / Death Saurer: no Zoid stat changes; they gain from the shock
+  cannon and CPC changes.
+
+------------------------------------------------------------------------
+3. TURRETS (js/turret.js, mission.js updateTurrets)
+------------------------------------------------------------------------
+- Per-weapon option: WEAPONS[x].turret = { arc, speed } (arc up to 2*PI,
+  speed rad/s). A hardpoint can also carry turret, used for whatever is
+  fitted there. Only the back mount turrets; charge and melee weapons never do.
+- Locked target only. Player: the Tab (cycle) / R (nearest) lock. AI: its
+  own chosen target. No lock = the turret returns to its rest angle (0, the
+  nose) and does NOT fire, even with an enemy close. No nearest-enemy
+  fallback.
+- With a lock it swings at its traverse speed (clamped to the arc; limited
+  arcs never swing through the back), and auto-fires when the barrel is
+  within 0.09 rad of the bearing and the lock is inside the weapon range,
+  whatever the chassis heading and while moving. Turret missile packs lock
+  onto the same target. Turret shots are never clamped to the nose.
+- The back-mount part meshes and the weapon anchor are re-parented under a
+  pivot (models.js buildTurretPivots) that visibly rotates. Skinned meshes
+  (Shield Liger rig) are never re-parented.
+- Turret weapons ignore the group trigger. Command Wolf's turret is on
+  group 3 for the HUD only.
+
+------------------------------------------------------------------------
+4. DPS / TTK COMPARISON (tools/balance_report.mjs, stock loadouts)
+------------------------------------------------------------------------
+Effective DPS = heat-limited DPS x hit factor (beam .85, ballistic .65,
+locked rocket .9, charge .9, melee .75) x range falloff, counted only for
+weapons that reach. Paper numbers, not a fight sim.
+
+zoid          eff@10m  before->after   eff@60m  before->after   eff@120m before->after
+commandWolf     43.1 -> 63.6           37.0 -> 47.2            9.7 -> 6.9   
+zaberFang       46.1 -> 58.5           36.9 -> 42.1            0.0 -> 13.0  
+shieldLiger     37.3 -> 44.3           34.1 -> 43.1           15.6 -> 24.7  
+bladeLiger      39.6 -> 65.8           33.5 -> 21.6            5.9 -> 0.0   
+ironKong        38.5 -> 47.7           35.5 -> 40.2           14.0 -> 11.7  
+genoSaurer      33.9 -> 42.5           30.8 -> 41.3           14.6 -> 25.7  
+gojulas         31.2 -> 42.5           31.2 -> 37.3           17.4 -> 12.6  
+deathSaurer     32.8 -> 42.0           32.8 -> 39.4           22.7 -> 24.3  
+
+Core-kill time at 60 m (seconds), before -> after:
+commandWolf   wolf 2.7->2.4  kong 4.9->3.8  geno 4.2->3.3  death 8.0->6.3
+zaberFang     wolf 2.7->2.7  kong 4.9->4.3  geno 4.2->3.7  death 8.0->7.0
+shieldLiger   wolf 2.9->2.7  kong 5.3->4.2  geno 4.5->3.6  death 8.7->6.9
+bladeLiger    wolf 3.0->5.3  kong 5.4->8.4  geno 4.6->7.1  death 8.8->13.7
+ironKong      wolf 2.8->2.9  kong 5.1->4.5  geno 4.3->3.8  death 8.3->7.4
+genoSaurer    wolf 3.2->2.8  kong 5.9->4.4  geno 5.0->3.7  death 9.6->7.2
+gojulas       wolf 3.2->3.1  kong 5.8->4.9  geno 4.9->4.1  death 9.5->7.9
+deathSaurer   wolf 3.0->2.9  kong 5.5->4.6  geno 4.7->3.9  death 9.0->7.5
+
+Reading it:
+- Command Wolf: 37.0 -> 47.2 effective DPS at 60 m (+28%), 43 -> 64 at
+  10 m, core 62 -> 72. Before it had the lowest staying power and its
+  missiles were its only reach; now it out-damages the mediums mid-range
+  while still dying fastest, and the 360 turret lets it shoot at its lock
+  while running. Its weak point is now reach (120 m).
+- Blade Liger: best close damage (66 at 10 m), weakest at 60 m (21.6) on
+  purpose: it has to close with the blades.
+- Heavies (Kong, Gojulas, Death Saurer) gain from the shock cannon and CPC;
+  they still have the most core HP and the longest reach.
+- Against a Shield Liger at 60 m every stock Zoid except the Blade Liger
+  now kills its core in 2.9-3.7 s (was 3.7-4.5 s); the Blade Liger needs
+  6.4 s there because it should be in blade range. The heavies stay the
+  slowest to kill.
+Full before/after tables: save the pre-balance catalog
+(git show <this commit>~1:js/catalog.js > /tmp/old.mjs) and run
+node tools/balance_report.mjs /tmp/old.mjs.
+
+------------------------------------------------------------------------
+5. TESTS
+------------------------------------------------------------------------
+New: tests/turret.test.mjs (pure): a locked target directly behind and one
+beside, with the chassis running and weaving; fires rearward and sideways;
+no lock = no fire even with an enemy 6 m away and the turret back at rest;
+out of range = no fire; a 180 deg arc holds fire on a target behind;
+traverse speed limit.
+New: tests/turret_browser.mjs (Chrome): Command Wolf running at 27 m/s.
+No lock with an enemy 7 m beside -> 0 shots, yaw stays 0. Lock behind ->
+fires, turret yaw -3.14, back-mount pivot follows, target takes damage.
+Lock beside -> fires at yaw -1.47. Lock released -> stops, back to rest.
+It also checks AI turrets when the contract has a turreted enemy (the
+default escort contract had none on that run, so that branch was not hit).
+Changed on purpose:
+- weapons.test: new weapon deliveries; missile lockTime >= LOCK_TIME.
+- damage.test: catalog weapon count 6 -> 9.
+- headless: hangar range strip 6 -> 9; rocket lock bound to the 2.2 s
+  lock; after pacifying, the player is repaired and the enemies are parked
+  70+ m out (the stronger AI can now land hits in the live window, and one
+  standing in front of the camera spoiled the FPV / aim checks).
+- mission.js: weapon cooldown jitter uses its own seeded stream, so weapon
+  count no longer shifts the AI brain rolls.
+Screenshots: screenshots/balance/command-wolf-turret-firing-backwards.png,
+command-wolf-turret-firing-sideways.png, command-wolf-turret-no-lock-rest.png

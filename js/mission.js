@@ -49,7 +49,8 @@ import {
   repairCost,
 } from "./damage.js";
 import { createMap } from "./maps.js";
-import { buildUnitModel, tagOwner, refreshPartColors, disposeTree } from "./models.js";
+import { buildUnitModel, tagOwner, refreshPartColors, disposeTree, setTurretYaw } from "./models.js";
+import { turretSpecFor, relativeBearing, stepTurret, turretTrigger } from "./turret.js";
 import { createInput } from "./input.js";
 import { createHUD, headingOf } from "./hud.js";
 import { createBrain, updateBrain } from "./ai.js";
@@ -133,6 +134,9 @@ export function startMission(state, contract, hooks) {
   scene.add(fill);
 
   const rng = mulberry32(contract.mapSeed ^ 0x9e3779b9);
+  // Separate stream for weapon cooldown jitter, so the number of weapons on a
+  // Zoid does not shift the AI brain rolls that follow it in `rng`.
+  const weaponRng = mulberry32(contract.mapSeed ^ 0x5bd1e995);
   const units = [];
   const obstacles = map.obstacles;
   const projectiles = [];
@@ -291,14 +295,18 @@ export function startMission(state, contract, hooks) {
   const waves = contract.waves || [{ at: 0, enemies: contract.enemies }];
   const spawnedWaves = new Set();
 
-  function runtimeWeapon(w) {
+  function runtimeWeapon(w, def) {
     const spec = WEAPONS[w.type];
+    const turret = turretSpecFor(def, { ...spec, mount: w.mount });
     return {
       ...spec,
+      turret,
+      turretState: turret ? { yaw: turret.rest } : null,
+      turretFired: 0,
       uid: w.uid,
       mount: w.mount,
       group: w.group || 1,
-      cooldown: rng() * 0.3,
+      cooldown: weaponRng() * 0.3,
       charge: 0,
       charging: false,
       heatGauge: 0,
@@ -308,7 +316,7 @@ export function startMission(state, contract, hooks) {
 
   function spawnUnit(def, opts) {
     const id = `u${uid++}`;
-    const weapons = (opts.weapons || []).map(runtimeWeapon);
+    const weapons = (opts.weapons || []).map((w) => runtimeWeapon(w, def));
     const armorLevels = opts.armorLevels || {};
     const parts = createParts(def, armorLevels);
     applyCondition(parts, opts.condition);
@@ -340,6 +348,7 @@ export function startMission(state, contract, hooks) {
       brain: opts.brain ? createBrain(rng) : null,
       cmd: null,
       aiTarget: null,
+      lockId: null,
       script: null,
       scripted: !!opts.scripted,
       radius: def.radius || 2,
@@ -690,6 +699,7 @@ export function startMission(state, contract, hooks) {
   function trackWeapons(unit, dir) {
     for (const [mount, anchor] of Object.entries(unit.model.anchors)) {
       if (mount === "eye" || !unit.model.muzzles[mount] || !anchor.visible) continue;
+      if (isTurretMount(unit, mount)) continue;
       aimNegZ(anchor, dir);
     }
   }
@@ -718,6 +728,7 @@ export function startMission(state, contract, hooks) {
   function trackPlayerWeapons(aimPoint) {
     for (const mount of Object.keys(player.model.muzzles)) {
       if (!player.model.muzzles[mount]) continue;
+      if (isTurretMount(player, mount)) continue;
       const gun = player.weapons.find((weapon) => weapon.mount === mount && weapon.delivery === "ballistic");
       if (gun) {
         const muzzle = new Vector3();
@@ -744,6 +755,7 @@ export function startMission(state, contract, hooks) {
     let aimed = false;
     for (const mount of Object.keys(unit.model.muzzles)) {
       if (!unit.model.muzzles[mount]) continue;
+      if (isTurretMount(unit, mount)) continue;
       const gun = unit.weapons.find((weapon) => weapon.mount === mount && weapon.delivery === "ballistic");
       if (gun) {
         const muzzle = new Vector3();
@@ -775,9 +787,28 @@ export function startMission(state, contract, hooks) {
     if (unit.model && unit.model.anim && unit.model.anim.kind === "skinned") {
       unit.model.anim.firePulse = true;
     }
-    const dir = weapon.delivery === "ballistic"
-      ? ballisticDirFor(unit, weapon, muzzle, point)
-      : mountAimDirection(unit, weapon.mount, point);
+    let dir;
+    if (weapon.turret) {
+      // Turret: straight from the barrel to the lock, never clamped to the nose.
+      if (weapon.delivery === "ballistic") {
+        const solved = ballisticAim(
+          { x: muzzle.x, y: muzzle.y, z: muzzle.z },
+          { x: point.x, y: point.y, z: point.z },
+          weapon.speed || 80,
+          weapon.gravity || BALLISTIC_GRAVITY,
+        );
+        dir = new Vector3(solved.dir.x, solved.dir.y, solved.dir.z);
+      } else {
+        dir = point.clone().sub(muzzle);
+      }
+      if (dir.lengthSq() < 1e-8) facingDirection(unit.model.root, dir);
+      dir.normalize();
+      weapon.turretFired = (weapon.turretFired || 0) + 1;
+    } else {
+      dir = weapon.delivery === "ballistic"
+        ? ballisticDirFor(unit, weapon, muzzle, point)
+        : mountAimDirection(unit, weapon.mount, point);
+    }
     const volley = weapon.volley || 1;
     for (let i = 0; i < volley; i++) {
       const shotDir = dir.clone();
@@ -812,6 +843,9 @@ export function startMission(state, contract, hooks) {
     const hit = raycast(origin, dir, unit.id, weapon.range);
     const end = hit ? hit.point.clone() : origin.clone().addScaledVector(dir, weapon.range);
     beam(origin, end, weapon.color);
+    weapon.lastHit = hit
+      ? { owner: (hit.object.userData || {}).ownerId || null, part: (hit.object.userData || {}).partId || null, ground: !!((hit.object.userData || {}).ground || hit.object === map.ground), block: !!(hit.object.userData || {}).block, dist: hit.distance }
+      : null;
     if (!hit) return;
     const hitData = hit.object.userData || {};
     if (hitData.block || hitData.ground || hit.object === map.ground) {
@@ -1073,6 +1107,7 @@ export function startMission(state, contract, hooks) {
     const list = enemies();
     if (!list.length) return;
     targetIndex = (targetIndex + step + list.length) % list.length;
+    player.lockId = list[targetIndex].id;
   }
 
   function targetNearest() {
@@ -1087,6 +1122,75 @@ export function startMission(state, contract, hooks) {
       }
     });
     targetIndex = best;
+    if (list[best]) player.lockId = list[best].id;
+  }
+
+  // The unit's LOCKED target, the only thing turrets track and fire at.
+  // Player: the Tab / R lock. AI: its own chosen target. No fallback.
+  function lockTargetOf(unit) {
+    if (unit === player) {
+      if (!player.lockId) return null;
+      const hit = units.find((u) => u.id === player.lockId);
+      if (!hit || !hit.alive) {
+        player.lockId = null;
+        return null;
+      }
+      return hit;
+    }
+    return unit.aiTarget && unit.aiTarget.alive && unit.aiTarget.team !== unit.team ? unit.aiTarget : null;
+  }
+
+  // Aim at the centre of the target's core meshes (legs leave gaps under a
+  // fixed root-height offset), falling back to root + radius height.
+  const lockBox = new Box3();
+  function lockAimPoint(target) {
+    const core = target.model.partMeshes && target.model.partMeshes.core;
+    if (core && core.length) {
+      lockBox.makeEmpty();
+      for (const mesh of core) lockBox.expandByObject(mesh);
+      if (!lockBox.isEmpty()) return lockBox.getCenter(new Vector3());
+    }
+    const p = target.model.root.position;
+    return new Vector3(p.x, p.y + (target.radius || 2) * 0.45, p.z);
+  }
+
+  function isTurretMount(unit, mount) {
+    return unit.weapons.some((weapon) => weapon.turret && weapon.mount === mount);
+  }
+
+  // Swing every turret toward the lock (or back to rest) and decide whether it
+  // fires this tick. Runs for the player and AI alike, moving or not.
+  function updateTurrets(unit, dt) {
+    const lock = lockTargetOf(unit);
+    const root = unit.model.root;
+    for (const weapon of unit.weapons) {
+      if (!weapon.turret) continue;
+      let bearing = null;
+      let dist = Infinity;
+      if (lock) {
+        const tp = lock.model.root.position;
+        bearing = relativeBearing(root.rotation.y, root.position.x, root.position.z, tp.x, tp.z);
+        dist = Math.hypot(tp.x - root.position.x, tp.z - root.position.z);
+      }
+      const result = stepTurret(weapon.turretState, weapon.turret, bearing, dt);
+      setTurretYaw(unit.model, weapon.mount, weapon.turretState.yaw);
+      const anchor = unit.model.anchors[weapon.mount];
+      if (anchor && anchor.visible) {
+        let dir;
+        if (lock && result.inArc) {
+          const muzzle = new Vector3();
+          anchor.getWorldPosition(muzzle);
+          dir = lockAimPoint(lock).sub(muzzle);
+        } else {
+          const yaw = root.rotation.y + weapon.turretState.yaw;
+          dir = new Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+        }
+        if (dir.lengthSq() > 1e-8) aimNegZ(anchor, dir.normalize());
+      }
+      weapon.turretTrigger = turretTrigger(lock ? { alive: lock.alive, dist } : null, result, weapon.range);
+      weapon.turretTargetId = lock ? lock.id : null;
+      weapon.turretResult = result;
+    }
   }
 
   function pushMessage(text) {
@@ -1356,7 +1460,20 @@ export function startMission(state, contract, hooks) {
       }
       const locked = weaponsLocked(unit);
       const moving = planarSpeed(unit) >= STATIONARY_SPEED;
+      updateTurrets(unit, dt);
       for (const weapon of unit.weapons) {
+        if (weapon.turret) {
+          // Auto-fire: only at the locked target, only when on it.
+          let trigger = !!weapon.turretTrigger;
+          if (weapon.delivery === "rocket") {
+            trigger = trigger && rocketMayFire(unit.rocketLock || 0) && unit.rocketLockId === weapon.turretTargetId;
+          }
+          const lock = trigger ? lockTargetOf(unit) : null;
+          if (weaponWantsShot(weapon, dt, trigger && !!lock, canOperateWeapon(unit, weapon) && !locked, moving)) {
+            shoot(unit, weapon, lockAimPoint(lock));
+          }
+          continue;
+        }
         let trigger = unit === player
           ? !!input.groups[(weapon.group || 1) - 1]
           : !!(unit.cmd && unit.cmd.fire);
@@ -1431,7 +1548,14 @@ export function startMission(state, contract, hooks) {
     const maxRange = rockets.reduce((max, weapon) => Math.max(max, weapon.range || 0), 0);
     const lockTime = rockets[0].lockTime || LOCK_TIME;
     let track = null;
-    if (unit === player) track = playerRocketTarget(aimPoint, maxRange);
+    const turretRocket = rockets.some((weapon) => weapon.turret);
+    if (turretRocket) {
+      const lock = lockTargetOf(unit);
+      if (lock) {
+        const dist = lock.model.root.position.distanceTo(unit.model.root.position);
+        if (dist <= maxRange) track = { id: lock.id, speed: planarSpeed(lock) };
+      }
+    } else if (unit === player) track = playerRocketTarget(aimPoint, maxRange);
     else if (unit.aiTarget && unit.aiTarget.alive) {
       const dist = unit.aiTarget.model.root.position.distanceTo(unit.model.root.position);
       if (dist <= maxRange) track = { id: unit.aiTarget.id, speed: planarSpeed(unit.aiTarget) };
@@ -2300,7 +2424,7 @@ export function startMission(state, contract, hooks) {
     const spec = WEAPONS[typeId];
     if (!spec || !player.model.muzzles[mount]) return null;
     const prev = player.weapons.find((weapon) => weapon.mount === mount);
-    const next = runtimeWeapon({ uid: `demo-${typeId}`, type: typeId, mount, group: prev ? prev.group : 1 });
+    const next = runtimeWeapon({ uid: `demo-${typeId}`, type: typeId, mount, group: prev ? prev.group : 1 }, player.def);
     next.cooldown = 0;
     next.charge = 0;
     next.charging = false;
@@ -2320,6 +2444,56 @@ export function startMission(state, contract, hooks) {
     player.rocketLock = 0;
     player.rocketLockId = null;
     pushHud();
+  };
+  window.__ZOIDS__.turretDebug = () => ({
+    lockId: player.lockId || null,
+    chassisYaw: player.model.root.rotation.y,
+    speed: planarSpeed(player),
+    pos: { x: player.model.root.position.x, z: player.model.root.position.z },
+    turrets: player.weapons.filter((w) => w.turret).map((w) => ({
+      name: w.name,
+      mount: w.mount,
+      yaw: w.turretState.yaw,
+      pivotYaw: player.model.turrets && player.model.turrets[w.mount] ? player.model.turrets[w.mount].rotation.y : null,
+      fired: w.turretFired || 0,
+      onTarget: !!(w.turretResult && w.turretResult.onTarget),
+      targetId: w.turretTargetId || null,
+      lastHit: w.lastHit || null,
+    })),
+    enemies: units.filter((u) => u.alive && u.team === "enemy").map((u) => ({
+      id: u.id,
+      zoid: u.def.id,
+      lockId: u.aiTarget && u.aiTarget.alive ? u.aiTarget.id : null,
+      turrets: u.weapons.filter((w) => w.turret).map((w) => ({ name: w.name, yaw: w.turretState.yaw, fired: w.turretFired || 0 })),
+      y: u.model.root.position.y,
+      x: u.model.root.position.x,
+      z: u.model.root.position.z,
+      armor: Object.values(u.parts).reduce((sum, part) => sum + part.armor + part.structure, 0),
+    })),
+  });
+  // Test hooks: set or clear the player's lock, place a unit, freeze AI.
+  // Test hook: restore the player's parts (headless lets the AI fight for a
+  // few real-time seconds before it pacifies them).
+  window.__ZOIDS__.repairPlayer = () => {
+    for (const part of Object.values(player.parts)) {
+      part.armor = part.maxArmor;
+      part.structure = part.maxStructure;
+      part.destroyed = false;
+    }
+    refreshPartColors(player.model, player.parts);
+    return true;
+  };
+  window.__ZOIDS__.setLock = (id) => {
+    player.lockId = id || null;
+    return player.lockId;
+  };
+  window.__ZOIDS__.placeUnit = (id, x, z, yaw) => {
+    const unit = units.find((u) => u.id === id);
+    if (!unit) return null;
+    unit.model.root.position.set(x, map.heightAt(x, z), z);
+    if (yaw != null) unit.model.root.rotation.y = yaw;
+    unit.model.root.updateMatrixWorld(true);
+    return { x, z };
   };
   window.__ZOIDS__.weaponDebug = () => ({
     lock: player.rocketLock || 0,

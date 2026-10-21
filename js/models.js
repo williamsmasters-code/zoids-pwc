@@ -614,6 +614,18 @@ function makeWeaponVisual(type) {
     const ring = new Mesh(new TorusGeometry(0.3, 0.04, 6, 12), mat(0xd56bff, { emissive: 0xd56bff, emissiveIntensity: 0.8 }));
     ring.position.set(0, 0.05, -0.7);
     g.add(ring);
+  } else if (type === "doubleBeamCannon") {
+    // Command Wolf's twin-barrel back turret.
+    addBox(g, {}, null, 0.5, 0.26, 0.5, 0, 0, 0.05, housing);
+    for (const xo of [-0.12, 0.12]) {
+      addBarrel(g, {}, null, 0.07, 1.25, xo, 0.04, -0.05, 0x3aa0ff, { emissive: 0x1a66cc, emissiveIntensity: 0.5 });
+    }
+  } else if (type === "strikeLaserClaw") {
+    for (const xo of [-0.1, 0, 0.1]) {
+      addConeForward(g, {}, null, 0.04, 0.5, xo, -0.05, -0.15, 0xffb37a, { emissive: 0xff7a33, emissiveIntensity: 0.7 });
+    }
+  } else if (type === "laserBlade") {
+    addBox(g, {}, null, 0.06, 0.28, 1.6, 0, 0, -0.5, 0xe8f6ff, { emissive: 0x7fd8ff, emissiveIntensity: 0.8, metalness: 0.8, roughness: 0.2 });
   } else {
     addBox(g, {}, null, 0.2, 0.2, 0.4, 0, 0, -0.2, housing);
   }
@@ -624,6 +636,9 @@ function makeWeaponVisual(type) {
   if (type === "beamCannon" || type === "shockCannon") reach = 1.15;
   if (type === "chargedParticle") reach = 1.7;
   if (type === "missilePack") reach = 0.75;
+  if (type === "doubleBeamCannon") reach = 1.3;
+  if (type === "laserBlade") reach = 1.3;
+  if (type === "strikeLaserClaw") reach = 0.45;
   muzzle.position.set(0, 0, -reach);
   g.add(muzzle);
   g.userData.muzzle = muzzle;
@@ -1073,11 +1088,43 @@ export function buildUnitModel(def, weapons, team = "player") {
     });
     iff.name = "iff";
   }
-  const model = { root, visual, partMeshes: store, anim, anchors, muzzles: {}, def };
+  const model = { root, visual, partMeshes: store, anim, anchors, muzzles: {}, def, turrets: {} };
   assertModel(root, def, store);
+  buildTurretPivots(model);
   attachWeapons(model, weapons || []);
   model.animate = (time, speedNorm, parts) => animateModel(model, time, speedNorm, parts);
   return model;
+}
+
+// Back-mount turret: re-parent the back mount part meshes and the weapon
+// anchor under a pivot so the part visibly swings with the turret yaw.
+// Only for Zoids whose back hardpoint is turreted. Skinned meshes (the
+// Shield Liger rig) stay on their bones and are never re-parented.
+function buildTurretPivots(model) {
+  const def = model.def;
+  const hard = def.hardpoints ? def.hardpoints.find((h) => h.id === "backMount") : null;
+  if (!hard || !hard.turret) return;
+  const meshes = (model.partMeshes.backMount || []).filter((m) => !m.isSkinnedMesh && m.parent);
+  if (!meshes.length) return;
+  const parent = meshes[0].parent;
+  const group = meshes.filter((m) => m.parent === parent);
+  model.root.updateMatrixWorld(true);
+  const box = unionBox(group);
+  const center = box.getCenter(new Vector3());
+  const pivot = new Group();
+  pivot.name = "backMountTurret";
+  parent.add(pivot);
+  pivot.position.copy(parent.worldToLocal(new Vector3(center.x, box.min.y, center.z)));
+  pivot.updateMatrixWorld(true);
+  for (const mesh of group) pivot.attach(mesh);
+  const anchor = model.anchors.backMount;
+  if (anchor && anchor.parent) pivot.attach(anchor);
+  model.turrets.backMount = pivot;
+}
+
+export function setTurretYaw(model, mount, yaw) {
+  const pivot = model.turrets && model.turrets[mount];
+  if (pivot) pivot.rotation.y = yaw;
 }
 
 export function disposeTree(obj) {

@@ -258,6 +258,24 @@ try {
   else console.log("ai moved", after.map((unit) => `${unit.name} speed ${unit.speed.toFixed(1)}`).join("; "));
 
   await page.evaluate(() => window.__ZOIDS__.setPacified(true));
+  // Since the balance pass the AI can land hits in that live window; the
+  // checks below need an intact Zoid, so restore it after pacifying.
+  await page.evaluate(() => window.__ZOIDS__.repairPlayer());
+  // Which enemy wanders close in that window depends on the seeded brains, and
+  // one standing in front of the camera spoils the aim / FPV checks. Park the
+  // pacified enemies 70+ m out on the flanks (still in lock range ahead).
+  await page.evaluate(() => {
+    const d = window.__ZOIDS__.turretDebug();
+    const yaw = d.chassisYaw;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    d.enemies.forEach((e, i) => {
+      const side = i % 2 ? 1 : -1;
+      const ang = side * (0.5 + 0.15 * i);
+      const c = Math.cos(ang), s = Math.sin(ang);
+      const dx = fx * c - fz * s, dz = fx * s + fz * c;
+      window.__ZOIDS__.placeUnit(e.id, d.pos.x + dx * (75 + 10 * i), d.pos.z + dz * (75 + 10 * i));
+    });
+  });
   const dock = await page.evaluate(() => [...document.querySelectorAll("#weapon-dock .wep")].map((el) => ({
     group: el.dataset.group,
     state: el.dataset.state,
@@ -567,7 +585,7 @@ try {
   await page.screenshot({ path: path.join(shots, "hangar-ranges.png") });
   console.log("screenshot screenshots/hangar-ranges.png");
   console.log("ranges", hangarRanges.key.map((row) => `${row.id}:${row.delivery}:${row.range}`).join(" "));
-  if (hangarRanges.key.length !== 6) note("ranges", `catalog strip has ${hangarRanges.key.length}`);
+  if (hangarRanges.key.length !== 9) note("ranges", `catalog strip has ${hangarRanges.key.length}`);
   const rangeSet = new Set(hangarRanges.key.map((row) => row.range));
   if (rangeSet.size !== hangarRanges.key.length) note("ranges", `ranges collide ${[...rangeSet].join(",")}`);
   for (const row of hangarRanges.key) {
@@ -632,7 +650,7 @@ try {
   if (!partial || partial.lock < 0.5) note("lock", `ring did not fill ${JSON.stringify(partial)}`);
   if (!ring || ring.hidden) note("lock", "lock ring hidden");
   let full = partial;
-  while (Date.now() - lockStart < 3200) {
+  while (Date.now() - lockStart < 4400) {
     full = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
     if (full && full.lock >= 0.99) break;
     await sleep(30);
@@ -641,7 +659,8 @@ try {
   const lockElapsed = Date.now() - lockStart;
   console.log("lock done", lockElapsed, full && full.lock, "strength", full && full.strength);
   if (!full || full.lock < 0.99) note("lock", `lock did not finish ${JSON.stringify(full)}`);
-  if (lockElapsed < 1100 || lockElapsed > 2600) note("lock", `1.5 s lock took ${lockElapsed} ms`);
+  // Missile Pack lock is 2.2 s since the balance pass (guide: 2-4 s).
+  if (lockElapsed < 1700 || lockElapsed > 4400) note("lock", `2.2 s lock took ${lockElapsed} ms`);
 
   await page.evaluate(() => window.__ZOIDS__.installWeapon("headWeapon", "shockCannon"));
   await page.evaluate(() => window.__ZOIDS__.aimAtEnemy(0.5, -0.04));

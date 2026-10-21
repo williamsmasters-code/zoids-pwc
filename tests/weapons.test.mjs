@@ -31,6 +31,9 @@ const expectDelivery = {
   shockCannon: "ballistic",
   missilePack: "rocket",
   chargedParticle: "charge",
+  doubleBeamCannon: "beam",
+  strikeLaserClaw: "beam",
+  laserBlade: "beam",
 };
 
 const ranges = [];
@@ -47,7 +50,7 @@ assert.equal(WEAPONS.beamCannon.hitscan, true);
 assert.equal(WEAPONS.gatling.hitscan, false);
 assert.equal(WEAPONS.shockCannon.hitscan, false);
 assert.equal(WEAPONS.missilePack.homing, true);
-assert.equal(WEAPONS.missilePack.lockTime, LOCK_TIME);
+assert.ok(WEAPONS.missilePack.lockTime >= LOCK_TIME, "missile lock is at least the base lock time (guide: 2-4 s)");
 assert.equal(WEAPONS.chargedParticle.chargeTime, CHARGE_TIME);
 assert.equal(WEAPONS.chargedParticle.hitscan, true);
 assert.equal(impactDelay(WEAPONS.pulseLaser, 80), 0);

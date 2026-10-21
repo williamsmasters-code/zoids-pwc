@@ -257,7 +257,7 @@ check("eight Zoids have distinct stats and stock weapons fit", () => {
   assert.equal(fits("S", "M"), false);
   assert.equal(fits("XL", "XL"), true);
   assert.ok(STRUCTURES.gunTurret.immobile);
-  assert.equal(Object.keys(WEAPONS).length, 6);
+  assert.equal(Object.keys(WEAPONS).length, 9);
 });
 
 check("launch is blocked by a dead core or by tonnage, and a field loan can repair", () => {
