@@ -104,8 +104,9 @@ WEAPONS
   Charged Particle Cannon  charge     opt 110 m   max 220 m   hold 3 s, then hitscan
 
 FEATURES
-  Eight playable Zoids: Shield Liger, Blade Liger, Command Wolf, Gojulas,
-  Zaber Fang, Iron Kong, Geno Saurer, Death Saurer. Each has its own speed,
+  Thirteen playable Zoids: Shield Liger, Blade Liger, Command Wolf, Gojulas,
+  Zaber Fang, Iron Kong, Geno Saurer, Death Saurer, Gun Sniper, Elephander,
+  Berserk Fuhrer, Molga, Pteras. Each has its own speed,
   turn rate, armor scale, hardpoints, weight, and price.
   Hangar loadout: weapons, per-part armor plating, speed gyros, maneuver
   gyros, and back boosters. Weight and hardpoint size are enforced.
@@ -176,6 +177,11 @@ SKILLS
     Active   Overload. For 6 seconds weapons hit 40% harder, build 50% more
              heat, and incoming damage drops a further 15%.
     Cost     cooldown 10s
+  Gun Sniper      Sniper Optics (+25% radar) / Steady Aim (+30% damage 5 s, cd 12s)
+  Elephander      Elephant Hide (-14% damage taken) / Stampede (30 dmg in 14 m, cd 12s)
+  Berserk Fuhrer  Berserk Drive (+8% speed) / Buster Claw Charge (16 m dash, 36 dmg, cd 8s)
+  Molga           Segmented Armor (brace below 6 m/s) / Ram (14 m charge, 26 dmg, cd 9s)
+  Pteras          Sky Eye (+30% radar) / Bombing Run (4 bombs x 14 dmg, cd 11s)
 
 MODELS
   Command Wolf, Shield Liger, Blade Liger, Iron Kong, and Geno Saurer load
@@ -228,6 +234,10 @@ KNOWN GAPS
   skeleton. Small shards can sit off a limb, and the mane plates are the
   regions that could be separated cleanly.
   Zaber Fang, Gojulas, and Death Saurer are still recognizable mockups.
+  Gun Sniper, Elephander, Berserk Fuhrer, Molga, and Pteras are original
+  procedural models made for this project (no free CC-BY/CC0 model of them
+  was found). Pteras flies at a low fixed height (flyHeight in js/catalog.js).
+  See docs/NEW_ZOIDS_NOTES.txt.
   No multiplayer. Melee is the Blade Liger's laser-blade dash only.
   Weapons have no ammo count. Heat is per weapon, and there is no magazine.
   Beams hit instantly. Cannons and the gatling drop. Missiles need a 1.5 s

@@ -477,6 +477,267 @@ function buildGorilla(visual, def, store, anim, anchors) {
   anim.kind = "gorilla";
 }
 
+
+// ---------------------------------------------------------------------------
+// Original procedural models for the five 2026-10 additions (made for this
+// project, no third-party assets). Each has its own part split and layout.
+// Notes: docs/NEW_ZOIDS_NOTES.txt
+// ---------------------------------------------------------------------------
+const NEW_BUILDS = ["sniper", "elephant", "fuhrer", "molga", "pteras"];
+
+function addEyes(torso, store, c, x, y, z, s = 0.1) {
+  const eyeOpts = { emissive: c.eye, emissiveIntensity: 1.4, metalness: 0.1, roughness: 0.25 };
+  addBox(torso, store, "head", s, s, 0.08, -x, y, z, c.eye, eyeOpts);
+  addBox(torso, store, "head", s, s, 0.08, x, y, z, c.eye, eyeOpts);
+}
+
+function addEyeAnchor(torso, anchors, x, y, z) {
+  const eye = new Group();
+  eye.name = "eye";
+  eye.position.set(x, y, z);
+  torso.add(eye);
+  anchors.eye = eye;
+}
+
+// Gun Sniper: small, lean, forward-leaning raptor. Long sniper rifle runs
+// along the raised tail (backMount), missile pods on the thighs (left/right).
+function buildSniper(visual, def, store, anim, anchors) {
+  const c = def.colors;
+  const thigh = [0.3, 1.05, 0.36], shin = [0.22, 1.0, 0.26], foot = [0.36, 0.18, 0.8];
+  const hipY = thigh[1] + shin[1] + foot[1];
+  buildBipedLegs(visual, store, anim, c, hipY, 0.38, thigh, shin, foot);
+  const torso = new Group();
+  visual.add(torso);
+  anim.torso = torso;
+  const bodyY = hipY + 0.25;
+  addBox(torso, store, "core", 0.82, 0.72, 1.7, 0, bodyY, -0.1, c.primary, { rot: [0.12, 0, 0] });
+  addBox(torso, store, "core", 0.62, 0.42, 0.7, 0, bodyY + 0.1, -0.95, c.secondary);
+  addBox(torso, store, "core", 0.86, 0.12, 1.1, 0, bodyY + 0.42, 0.05, c.plate);
+  // Long neck + slim head far forward.
+  addBox(torso, store, "head", 0.34, 0.34, 0.7, 0, bodyY + 0.45, -1.5, c.secondary, { rot: [-0.45, 0, 0] });
+  const headY = bodyY + 0.78, headZ = -2.05;
+  addBox(torso, store, "head", 0.42, 0.36, 0.85, 0, headY, headZ, c.primary);
+  addBox(torso, store, "head", 0.28, 0.16, 0.5, 0, headY - 0.14, headZ - 0.55, c.secondary);
+  addBox(torso, store, "head", 0.46, 0.08, 0.5, 0, headY + 0.22, headZ + 0.05, c.accent);
+  addEyes(torso, store, c, 0.16, headY + 0.07, headZ - 0.3, 0.08);
+  addBox(torso, store, "headWeapon", 0.16, 0.12, 0.3, 0, headY - 0.25, headZ - 0.45, c.dark);
+  addAnchor(torso, anchors, "headWeapon", 0, headY - 0.25, headZ - 0.7);
+  // Raised tail.
+  const tail = new Group();
+  tail.position.set(0, bodyY + 0.1, 0.75);
+  torso.add(tail);
+  anim.tail = tail;
+  addBox(tail, store, "tail", 0.32, 0.26, 0.9, 0, 0.08, 0.45, c.secondary, { rot: [-0.18, 0, 0] });
+  addBox(tail, store, "tail", 0.22, 0.18, 0.9, 0, 0.28, 1.25, c.dark, { rot: [-0.2, 0, 0] });
+  addBox(tail, store, "tail", 0.14, 0.12, 0.7, 0, 0.42, 1.95, c.primary);
+  // Sniper rifle: mounted on a rail above the hips, barrel running forward
+  // over the back past the head (the real kit carries it on the tail).
+  addBox(torso, store, "backMount", 0.26, 0.24, 1.0, 0, bodyY + 0.62, 0.65, c.dark);
+  addBarrel(torso, store, "backMount", 0.07, 3.0, 0, bodyY + 0.72, 1.1, c.accent, { metalness: 0.85, roughness: 0.2 });
+  addBox(torso, store, "backMount", 0.12, 0.14, 0.4, 0, bodyY + 0.9, 0.4, c.secondary);
+  addAnchor(torso, anchors, "backMount", 0, bodyY + 0.72, -1.9);
+  // Thigh missile pods.
+  for (const side of [-1, 1]) {
+    const id = side < 0 ? "leftWeapon" : "rightWeapon";
+    addBox(torso, store, id, 0.22, 0.42, 0.55, side * 0.62, hipY - 0.25, 0.05, c.secondary);
+    addBox(torso, store, id, 0.18, 0.3, 0.06, side * 0.62, hipY - 0.25, -0.24, c.accent);
+    addAnchor(torso, anchors, id, side * 0.68, hipY - 0.2, -0.3);
+  }
+  addEyeAnchor(torso, anchors, 0, headY + 0.08, headZ + 0.1);
+  anim.kind = "biped";
+}
+
+// Elephander: big, wide quadruped with pillar legs, huge ears, tusks, a
+// trunk claw (headWeapon) and twin back cannons on a turret (backMount).
+function buildElephant(visual, def, store, anim, anchors) {
+  const c = def.colors;
+  const leg = { tw: 0.6, th: 0.95, td: 0.62, sw: 0.52, sh: 0.85, sd: 0.55, knee: 0, fw: 0.72, fh: 0.24, fd: 0.78 };
+  const hipY = leg.th + leg.sh + leg.fh;
+  addLeg(visual, store, anim, "leftFrontLeg", -0.9, hipY, -1.25, leg, c);
+  addLeg(visual, store, anim, "rightFrontLeg", 0.9, hipY, -1.25, leg, c);
+  addLeg(visual, store, anim, "leftRearLeg", -0.9, hipY, 1.25, leg, c);
+  addLeg(visual, store, anim, "rightRearLeg", 0.9, hipY, 1.25, leg, c);
+  const torso = new Group();
+  visual.add(torso);
+  anim.torso = torso;
+  const bodyY = hipY + 0.55;
+  addBox(torso, store, "core", 2.2, 1.55, 3.6, 0, bodyY, 0, c.primary);
+  addBox(torso, store, "core", 2.35, 0.3, 3.2, 0, bodyY + 0.85, 0, c.plate);
+  addBox(torso, store, "core", 2.3, 0.9, 0.25, 0, bodyY - 0.1, -1.85, c.secondary);
+  const headY = bodyY + 0.35, headZ = -2.3;
+  addBox(torso, store, "head", 1.3, 1.15, 1.0, 0, headY, headZ, c.primary);
+  addBox(torso, store, "head", 0.14, 1.25, 1.1, -0.95, headY + 0.05, headZ + 0.25, c.secondary, { rot: [0, 0.35, 0] });
+  addBox(torso, store, "head", 0.14, 1.25, 1.1, 0.95, headY + 0.05, headZ + 0.25, c.secondary, { rot: [0, -0.35, 0] });
+  addConeForward(torso, store, "head", 0.1, 1.0, -0.42, headY - 0.5, headZ - 0.6, c.accent, { metalness: 0.8, roughness: 0.2 });
+  addConeForward(torso, store, "head", 0.1, 1.0, 0.42, headY - 0.5, headZ - 0.6, c.accent, { metalness: 0.8, roughness: 0.2 });
+  addEyes(torso, store, c, 0.38, headY + 0.25, headZ - 0.52, 0.12);
+  // Trunk ending in a claw: the head weapon mount.
+  addBox(torso, store, "headWeapon", 0.34, 0.9, 0.34, 0, headY - 0.7, headZ - 0.45, c.secondary, { rot: [0.25, 0, 0] });
+  addBox(torso, store, "headWeapon", 0.28, 0.7, 0.28, 0, headY - 1.35, headZ - 0.7, c.dark, { rot: [0.5, 0, 0] });
+  addConeForward(torso, store, "headWeapon", 0.18, 0.4, 0, headY - 1.62, headZ - 1.0, c.accent);
+  addAnchor(torso, anchors, "headWeapon", 0, headY - 1.6, headZ - 1.2);
+  // Shoulder guns.
+  for (const side of [-1, 1]) {
+    const id = side < 0 ? "leftWeapon" : "rightWeapon";
+    addBox(torso, store, id, 0.4, 0.45, 0.9, side * 1.3, bodyY + 0.35, -1.0, c.dark);
+    addAnchor(torso, anchors, id, side * 1.35, bodyY + 0.35, -1.55);
+  }
+  // Back cannon turret.
+  addBox(torso, store, "backMount", 1.1, 0.4, 1.2, 0, bodyY + 1.2, 0.3, c.secondary);
+  addBarrel(torso, store, "backMount", 0.13, 1.7, -0.28, bodyY + 1.35, 0.4, c.dark);
+  addBarrel(torso, store, "backMount", 0.13, 1.7, 0.28, bodyY + 1.35, 0.4, c.dark);
+  addAnchor(torso, anchors, "backMount", 0, bodyY + 1.35, -1.3);
+  const tail = new Group();
+  tail.position.set(0, bodyY + 0.3, 1.8);
+  torso.add(tail);
+  anim.tail = tail;
+  addBox(tail, store, "tail", 0.18, 0.18, 0.7, 0, -0.25, 0.3, c.dark, { rot: [0.7, 0, 0] });
+  addEyeAnchor(torso, anchors, 0, headY + 0.3, headZ + 0.1);
+  anim.kind = "quad";
+}
+
+// Berserk Fuhrer: black/red T-rex, upright and compact, two large Buster
+// Claws on back arms reaching forward over the shoulders (left/right), a
+// charged particle cannon in the back (backMount).
+function buildFuhrer(visual, def, store, anim, anchors) {
+  const c = def.colors;
+  const thigh = [0.5, 1.2, 0.58], shin = [0.38, 1.1, 0.42], foot = [0.6, 0.24, 1.05];
+  const hipY = thigh[1] + shin[1] + foot[1];
+  buildBipedLegs(visual, store, anim, c, hipY, 0.6, thigh, shin, foot);
+  const torso = new Group();
+  visual.add(torso);
+  anim.torso = torso;
+  const bodyY = hipY + 0.5;
+  addBox(torso, store, "core", 1.35, 1.25, 2.0, 0, bodyY, 0, c.primary, { rot: [-0.25, 0, 0] });
+  addBox(torso, store, "core", 1.0, 0.8, 0.5, 0, bodyY + 0.3, -1.0, c.secondary);
+  addBox(torso, store, "core", 1.4, 0.16, 1.4, 0, bodyY + 0.7, 0.1, c.accent);
+  const headY = bodyY + 1.05, headZ = -1.55;
+  addBox(torso, store, "head", 0.85, 0.7, 1.3, 0, headY, headZ, c.primary);
+  addBox(torso, store, "head", 0.6, 0.25, 0.8, 0, headY - 0.4, headZ - 0.3, c.secondary);
+  addBox(torso, store, "head", 0.9, 0.12, 0.9, 0, headY + 0.38, headZ + 0.1, c.accent);
+  addEyes(torso, store, c, 0.3, headY + 0.1, headZ - 0.55, 0.12);
+  addBox(torso, store, "headWeapon", 0.3, 0.18, 0.3, 0, headY - 0.3, headZ - 0.72, c.dark);
+  addAnchor(torso, anchors, "headWeapon", 0, headY - 0.3, headZ - 0.95);
+  // Small front arms (core detail).
+  addBox(torso, store, "core", 0.16, 0.5, 0.16, -0.5, bodyY - 0.2, -0.9, c.dark);
+  addBox(torso, store, "core", 0.16, 0.5, 0.16, 0.5, bodyY - 0.2, -0.9, c.dark);
+  // Buster Claws on back arms.
+  for (const side of [-1, 1]) {
+    const id = side < 0 ? "leftWeapon" : "rightWeapon";
+    addBox(torso, store, id, 0.26, 0.26, 1.4, side * 0.95, bodyY + 0.95, 0.1, c.secondary, { rot: [0.35, 0, 0] });
+    addBox(torso, store, id, 0.5, 0.5, 0.8, side * 1.05, bodyY + 1.1, -0.85, c.accent);
+    addConeForward(torso, store, id, 0.22, 0.7, side * 1.05, bodyY + 1.1, -1.55, c.dark, { metalness: 0.85 });
+    addAnchor(torso, anchors, id, side * 1.05, bodyY + 1.1, -1.9);
+  }
+  addBox(torso, store, "backMount", 0.6, 0.45, 1.2, 0, bodyY + 0.95, 0.55, c.dark);
+  addBarrel(torso, store, "backMount", 0.16, 1.1, 0, bodyY + 1.25, 0.85, c.accent, { emissive: c.eye, emissiveIntensity: 0.3 });
+  addAnchor(torso, anchors, "backMount", 0, bodyY + 1.25, -0.4);
+  // Long counter-balance tail with thrusters.
+  const tail = new Group();
+  tail.position.set(0, bodyY - 0.1, 0.95);
+  torso.add(tail);
+  anim.tail = tail;
+  addBox(tail, store, "tail", 0.6, 0.48, 1.1, 0, 0, 0.55, c.primary);
+  addBox(tail, store, "tail", 0.4, 0.32, 1.1, 0, 0.05, 1.55, c.secondary);
+  addBox(tail, store, "tail", 0.24, 0.2, 0.9, 0, 0.1, 2.45, c.accent);
+  addEyeAnchor(torso, anchors, 0, headY + 0.1, headZ + 0.1);
+  anim.kind = "biped";
+}
+
+// Molga: long, low, segmented armoured caterpillar. The four "legs" are the
+// tread pods under the front and rear segment pairs; the ram head carries the
+// head weapon, small guns on the second segment, a top gun on a turret.
+function buildMolga(visual, def, store, anim, anchors) {
+  const c = def.colors;
+  const leg = { tw: 0.34, th: 0.25, td: 0.9, sw: 0.32, sh: 0.2, sd: 0.95, knee: 0, fw: 0.36, fh: 0.12, fd: 1.0 };
+  const hipY = leg.th + leg.sh + leg.fh;
+  addLeg(visual, store, anim, "leftFrontLeg", -0.62, hipY, -1.1, leg, c);
+  addLeg(visual, store, anim, "rightFrontLeg", 0.62, hipY, -1.1, leg, c);
+  addLeg(visual, store, anim, "leftRearLeg", -0.62, hipY, 1.1, leg, c);
+  addLeg(visual, store, anim, "rightRearLeg", 0.62, hipY, 1.1, leg, c);
+  const torso = new Group();
+  visual.add(torso);
+  anim.torso = torso;
+  const bodyY = hipY + 0.32;
+  for (const [z, w] of [[-0.75, 1.25], [0, 1.3], [0.75, 1.25]]) {
+    addBox(torso, store, "core", w, 0.8, 0.7, 0, bodyY, z, c.primary);
+    addBox(torso, store, "core", w * 0.92, 0.16, 0.6, 0, bodyY + 0.45, z, c.plate);
+  }
+  const headY = bodyY + 0.02, headZ = -1.55;
+  addBox(torso, store, "head", 1.1, 0.72, 0.8, 0, headY, headZ, c.secondary);
+  addBox(torso, store, "head", 0.95, 0.55, 0.2, 0, headY, headZ - 0.5, c.accent, { metalness: 0.8 });
+  addEyes(torso, store, c, 0.3, headY + 0.15, headZ - 0.62, 0.1);
+  addBox(torso, store, "headWeapon", 0.5, 0.14, 0.25, 0, headY - 0.25, headZ - 0.65, c.dark);
+  addAnchor(torso, anchors, "headWeapon", 0, headY - 0.25, headZ - 0.85);
+  for (const side of [-1, 1]) {
+    const id = side < 0 ? "leftWeapon" : "rightWeapon";
+    addBarrel(torso, store, id, 0.07, 0.6, side * 0.72, bodyY + 0.1, -0.6, c.dark);
+    addAnchor(torso, anchors, id, side * 0.72, bodyY + 0.1, -1.2);
+  }
+  addBox(torso, store, "backMount", 0.5, 0.25, 0.5, 0, bodyY + 0.65, 0, c.dark);
+  addBarrel(torso, store, "backMount", 0.06, 0.6, 0, bodyY + 0.72, 0, c.accent);
+  addAnchor(torso, anchors, "backMount", 0, bodyY + 0.72, -0.6);
+  const tail = new Group();
+  tail.position.set(0, bodyY - 0.05, 1.1);
+  torso.add(tail);
+  anim.tail = tail;
+  addBox(tail, store, "tail", 1.0, 0.62, 0.6, 0, 0, 0.3, c.secondary);
+  addBox(tail, store, "tail", 0.7, 0.4, 0.4, 0, -0.05, 0.75, c.dark);
+  addEyeAnchor(torso, anchors, 0, headY + 0.3, headZ + 0.1);
+  anim.kind = "quad";
+}
+
+// Pteras: small pterosaur, broad wings (left/right mounts: wing hardpoints),
+// long crested head, missile/bomb rack under the belly (backMount). Rides
+// def.flyHeight above the ground (set in buildUnitModel).
+function buildPteras(visual, def, store, anim, anchors) {
+  const c = def.colors;
+  const thigh = [0.16, 0.45, 0.18], shin = [0.12, 0.42, 0.14], foot = [0.26, 0.1, 0.4];
+  const hipY = thigh[1] + shin[1] + foot[1];
+  buildBipedLegs(visual, store, anim, c, hipY, 0.24, thigh, shin, foot);
+  const torso = new Group();
+  visual.add(torso);
+  anim.torso = torso;
+  const bodyY = hipY + 0.2;
+  addBox(torso, store, "core", 0.6, 0.5, 1.5, 0, bodyY, 0, c.primary);
+  addBox(torso, store, "core", 0.5, 0.14, 1.1, 0, bodyY + 0.3, 0.05, c.plate);
+  const headY = bodyY + 0.3, headZ = -1.25;
+  addBox(torso, store, "head", 0.26, 0.26, 0.6, 0, bodyY + 0.15, -0.85, c.secondary);
+  addBox(torso, store, "head", 0.36, 0.3, 0.7, 0, headY, headZ, c.primary);
+  addConeForward(torso, store, "head", 0.12, 0.9, 0, headY - 0.05, headZ - 0.75, c.secondary);
+  addBox(torso, store, "head", 0.06, 0.3, 0.9, 0, headY + 0.25, headZ + 0.55, c.accent, { rot: [-0.3, 0, 0] });
+  addEyes(torso, store, c, 0.14, headY + 0.06, headZ - 0.25, 0.07);
+  addBox(torso, store, "headWeapon", 0.12, 0.1, 0.2, 0, headY - 0.2, headZ - 0.35, c.dark);
+  addAnchor(torso, anchors, "headWeapon", 0, headY - 0.2, headZ - 0.6);
+  for (const side of [-1, 1]) {
+    const id = side < 0 ? "leftWeapon" : "rightWeapon";
+    const g = new Group();
+    g.position.set(side * 0.3, bodyY + 0.15, -0.15);
+    torso.add(g);
+    anim.wings = anim.wings || {};
+    anim.wings[id] = g;
+    addBox(g, store, id, 2.3, 0.07, 0.95, side * 1.15, 0, 0.1, c.primary, { rot: [0, side * 0.25, 0] });
+    addBox(g, store, id, 1.4, 0.05, 0.6, side * 2.7, 0, 0.45, c.secondary, { rot: [0, side * 0.55, 0] });
+    addBox(g, store, id, 0.18, 0.16, 0.5, side * 1.0, -0.12, -0.25, c.dark);
+    addAnchor(g, anchors, id, side * 1.0, -0.12, -0.5);
+  }
+  addBox(torso, store, "backMount", 0.4, 0.2, 0.7, 0, bodyY - 0.32, 0.05, c.dark);
+  addAnchor(torso, anchors, "backMount", 0, bodyY - 0.4, -0.35);
+  const tail = new Group();
+  tail.position.set(0, bodyY, 0.75);
+  torso.add(tail);
+  anim.tail = tail;
+  addBox(tail, store, "tail", 0.18, 0.12, 0.8, 0, 0, 0.4, c.secondary);
+  addBox(tail, store, "tail", 0.5, 0.05, 0.3, 0, 0, 0.85, c.accent);
+  addEyeAnchor(torso, anchors, 0, headY + 0.08, headZ + 0.1);
+  anim.kind = "biped";
+}
+
+function buildNewZoid(visual, def, store, anim, anchors) {
+  const fn = { sniper: buildSniper, elephant: buildElephant, fuhrer: buildFuhrer, molga: buildMolga, pteras: buildPteras }[def.build];
+  fn(visual, def, store, anim, anchors);
+}
+
 function buildStructure(visual, def, store, anim, anchors) {
   const c = def.colors;
   if (def.build === "turret") {
@@ -605,6 +866,10 @@ function makeWeaponVisual(type) {
       const a = (i / 6) * Math.PI * 2;
       addBarrel(spin, {}, null, 0.035, 0.85, Math.cos(a) * 0.1, Math.sin(a) * 0.1, 0, 0xc8c2b4);
     }
+  } else if (type === "sniperRifle") {
+    addBarrel(g, {}, null, 0.05, 1.8, 0, 0, 0.1, 0xd8dde3, { metalness: 0.85, roughness: 0.2 });
+    addBox(g, {}, null, 0.2, 0.2, 0.5, 0, 0, 0.1, housing);
+    addBox(g, {}, null, 0.08, 0.1, 0.35, 0, 0.15, 0.0, dark);
   } else if (type === "shockCannon") {
     addBarrel(g, {}, null, 0.16, 1.05, 0, 0, 0, 0x4a4038, { radius2: 0.2 });
     addBox(g, {}, null, 0.4, 0.32, 0.4, 0, 0, -0.05, housing);
@@ -791,6 +1056,16 @@ function animateModel(model, time, speedNorm, parts) {
     swing("rightWeapon", 0, 1);
   }
   if (anim.tail) anim.tail.rotation.y = Math.sin(time * 2.2) * 0.2;
+  if (anim.wings) {
+    // Pteras: slow flap, faster when moving; a destroyed wing droops.
+    const flap = Math.sin(time * (3 + moving * 3)) * (0.18 + moving * 0.12);
+    for (const [id, g] of Object.entries(anim.wings)) {
+      const side = id === "leftWeapon" ? -1 : 1;
+      const dead = parts && parts[id] && parts[id].destroyed;
+      g.rotation.z = dead ? side * -0.7 : side * flap;
+    }
+    if (model.def.flyHeight) model.visual.position.y = model.def.flyHeight + Math.sin(time * 1.6) * 0.15;
+  }
   if (anim.torso) {
     anim.torso.position.y = Math.abs(Math.sin(phase)) * 0.045 * moving;
   }
@@ -1078,6 +1353,8 @@ export function buildUnitModel(def, weapons, team = "player") {
     buildGorilla(visual, def, store, anim, anchors);
   } else if (def.build === "raptor" || def.build === "tyrant" || def.build === "death") {
     buildTheropod(visual, def, store, anim, anchors);
+  } else if (NEW_BUILDS.includes(def.build)) {
+    buildNewZoid(visual, def, store, anim, anchors);
   } else {
     buildStructure(visual, def, store, anim, anchors);
   }
@@ -1088,6 +1365,7 @@ export function buildUnitModel(def, weapons, team = "player") {
     });
     iff.name = "iff";
   }
+  if (def.flyHeight) visual.position.y = def.flyHeight;
   const model = { root, visual, partMeshes: store, anim, anchors, muzzles: {}, def, turrets: {} };
   assertModel(root, def, store);
   buildTurretPivots(model);

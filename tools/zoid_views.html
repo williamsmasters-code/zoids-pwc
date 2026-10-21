@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Zoid 4-view</title>
+<style>body{margin:0;background:#1b1f24;color:#ddd;font:14px sans-serif}#lbl{position:absolute;left:8px;top:6px}</style></head>
+<body><div id="lbl"></div><canvas id="c" width="1200" height="800"></canvas>
+<script type="importmap">{"imports":{"three":"../vendor/three.module.js","three/addons/":"../vendor/addons/"}}</script>
+<script type="module">
+// Dev tool: 4-view (side, front, top, three-quarter) of one Zoid model.
+//   tools/zoid_views.html?id=gunSniper
+import * as THREE from "three";
+import { ZOIDS, stockWeaponsFor } from "../js/catalog.js";
+import { buildUnitModel } from "../js/models.js";
+const id = new URLSearchParams(location.search).get("id") || "gunSniper";
+const def = ZOIDS[id];
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("c"), antialias: true });
+renderer.setScissorTest(true);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x2a3038);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404040, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(5, 10, -6); scene.add(sun);
+const grid = new THREE.GridHelper(20, 20, 0x667788, 0x3a4450); scene.add(grid);
+const model = buildUnitModel(def, stockWeaponsFor(def, () => 0.2), "player");
+scene.add(model.root);
+model.root.updateMatrixWorld(true);
+const box = new THREE.Box3().setFromObject(model.root);
+const c = box.getCenter(new THREE.Vector3());
+const r = box.getSize(new THREE.Vector3()).length() * 0.55;
+const views = [
+  ["side (nose right)", new THREE.Vector3(1, 0, 0)],
+  ["front", new THREE.Vector3(0, 0, -1)],
+  ["top (nose up)", new THREE.Vector3(0, 1, 0.0001)],
+  ["three-quarter", new THREE.Vector3(1, 0.6, -1)],
+];
+const W = 600, H = 400;
+views.forEach(([name, dir], i) => {
+  const cam = new THREE.OrthographicCamera(-r * 1.5, r * 1.5, r, -r, 0.1, 200);
+  cam.position.copy(c).addScaledVector(dir.clone().normalize(), 50);
+  if (name.startsWith("top")) cam.up.set(0, 0, -1);
+  cam.lookAt(c);
+  const x = (i % 2) * W, y = (i < 2 ? 1 : 0) * H;
+  renderer.setViewport(x, y, W, H); renderer.setScissor(x, y, W, H);
+  renderer.render(scene, cam);
+});
+document.getElementById("lbl").textContent = `${def.name}: side | front / top | three-quarter`;
+window.__viewsReady = true;
+</script></body></html>

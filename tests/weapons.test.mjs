@@ -29,6 +29,7 @@ const expectDelivery = {
   beamCannon: "beam",
   gatling: "ballistic",
   shockCannon: "ballistic",
+  sniperRifle: "ballistic",
   missilePack: "rocket",
   chargedParticle: "charge",
   doubleBeamCannon: "beam",

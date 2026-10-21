@@ -63,7 +63,7 @@ export function creditsMarkup() {
         <h2>Model credits</h2>
         <button type="button" data-act="close-credits">Close</button>
       </header>
-      <p>Five Zoids use meshes from Sketchfab under ${LICENSE_NAME}. Zaber Fang, Gojulas, and Death Saurer stay procedural mocks. Add <code>?mock=1</code> to the page address to force every Zoid back to the mock.</p>
+      <p>Five Zoids use meshes from Sketchfab under ${LICENSE_NAME}. Zaber Fang, Gojulas, and Death Saurer stay procedural mocks. Gun Sniper, Elephander, Berserk Fuhrer, Molga, and Pteras are original procedural models made for this project. Add <code>?mock=1</code> to the page address to force every Zoid back to the mock.</p>
       ${blocks}
     </div>
   `;

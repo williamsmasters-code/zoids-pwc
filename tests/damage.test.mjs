@@ -236,10 +236,10 @@ check("condition round-trips and armor level raises the max", () => {
   assert.ok(plated.core.maxArmor > createParts(ZOIDS.genoSaurer).core.maxArmor);
 });
 
-check("eight Zoids have distinct stats and stock weapons fit", () => {
-  assert.equal(ZOID_ORDER.length, 8);
+check("thirteen Zoids have distinct stats and stock weapons fit", () => {
+  assert.equal(ZOID_ORDER.length, 13);
   const speeds = new Set(ZOID_ORDER.map((id) => ZOIDS[id].speed));
-  assert.equal(speeds.size, 8);
+  assert.equal(speeds.size, 13);
   for (const id of ZOID_ORDER) {
     const def = ZOIDS[id];
     assert.ok(def.price > 0);
@@ -257,7 +257,7 @@ check("eight Zoids have distinct stats and stock weapons fit", () => {
   assert.equal(fits("S", "M"), false);
   assert.equal(fits("XL", "XL"), true);
   assert.ok(STRUCTURES.gunTurret.immobile);
-  assert.equal(Object.keys(WEAPONS).length, 9);
+  assert.equal(Object.keys(WEAPONS).length, 10);
 });
 
 check("launch is blocked by a dead core or by tonnage, and a field loan can repair", () => {

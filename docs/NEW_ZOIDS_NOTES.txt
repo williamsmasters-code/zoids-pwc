@@ -1,0 +1,108 @@
+NEW ZOIDS (Oct 2026): GUN SNIPER, ELEPHANDER, BERSERK FUHRER, MOLGA, PTERAS
+==========================================================================
+
+1. Model sources
+----------------
+Searched 21 Oct 2026, free downloadable models only (CC-BY / CC0). The
+Sketchfab public search API (downloadable=true) was queried for
+"gun sniper", "gunsniper", "elephander", "elefander", "berserk fuhrer",
+"berserk", "molga", "pteras", "pteranodon", "zoids". No result is one of
+these five Zoids. Closest hits (not used, they are not Zoids):
+  - Pteranodon (Animated), oscar.lopez.riviello, CC Attribution
+    https://sketchfab.com/3d-models/7d7683df41d1405283f160e81a5dff1b
+  - Pteranodon, TimFallas, CC Attribution
+    https://sketchfab.com/3d-models/938b45dc7b6848e7a6707add99d39f16
+  - "Gun Sniper - Game Ready", hemelbrayan, CC Attribution (a rifle prop,
+    not the Zoid) https://sketchfab.com/3d-models/699f05f969074087ac5278921d9fee73
+  - Pteranodon, kenchoo, "Free Standard" licence (not CC; not usable)
+Poly Haven has no creature/mech models of this kind, and nothing for these
+names was found on OpenGameArt. Sketchfab downloads also need a login.
+
+So all five are ORIGINAL procedural models made for this project
+(js/models.js: buildSniper, buildElephant, buildFuhrer, buildMolga,
+buildPteras), in the same box/cone/cylinder style as the Zaber Fang,
+Gojulas and Death Saurer mocks. No third-party assets. They face -Z, stand
+on y = 0 (Pteras hovers), and use their own part split:
+
+  Gun Sniper      biped. Lean forward-leaning raptor, long neck and slim head.
+                  backMount = sniper rifle on a rail over the hips/tail,
+                  barrel running forward past the head (90 deg turret).
+                  left/rightWeapon = thigh missile pods. tail raised.
+  Elephander      quad. Wide body, pillar legs, big ears, tusks (head).
+                  headWeapon = trunk with a claw. left/right = shoulder
+                  guns. backMount = twin back cannon turret (270 deg).
+  Berserk Fuhrer  biped. Black/red T-rex, small front arms on the core,
+                  left/rightWeapon = the two Buster Claws on back arms
+                  reaching over the shoulders. backMount = charged particle
+                  cannon (fixed, braced like Geno). Long tail.
+  Molga           quad layout used for a caterpillar: three armoured body
+                  segments = core, the four "legs" are the tread pods under
+                  the front and rear segments, ram head = head/headWeapon,
+                  small side guns = left/right, top gun = 360 deg turret.
+  Pteras          biped. Small body and legs, broad wings = left/right
+                  mounts (wing guns), crested head, belly rack = backMount.
+
+Sizes (stock, before the enemy IFF beacon): Molga and Pteras are the small
+ones (Molga ~1.5 m wide, 4.4 m long; Pteras body ~3.8 m long with ~6.8 m
+wingspan), Elephander the largest four-legged frame (scale 1.55).
+
+Hangar preview: the camera now also backs off by the model's real bounding
+size (js/hangar.js), so big frames like Elephander fit the stage.
+
+Pteras flight: ZOIDS.pteras.flyHeight = 3.2 (js/catalog.js). Only the model
+is raised (visual.position.y) with a slow bob and wing flap; movement,
+collision and terrain-following are the ground rules. Hits are mesh
+raycasts and the lock aims at the core meshes, so shots land on the raised
+body. Raise or lower flyHeight to tune; 0 makes it a ground walker. Its
+body is light (armorScale 0.66, baseWeight 20, maxTonnage 36).
+
+2. Stats (js/catalog.js) and stock loadouts
+-------------------------------------------
+New weapon: Sniper Rifle (ballistic, L, 40 dmg, 0.55/s, opt 140 m, max
+230 m, 220 m/s flat shell, spread 0.004, 7 t, 98,000 C). Ballistic, so
+x1.3 vs armour plating.
+
+zoid            role               speed turn  armor  base/max t  price      stock
+gunSniper       Long-range sniper  25    1.45  0.80   30/52       420,000    sniper rifle (tail turret), missile pack, pulse laser
+elephander      Heavy assault      11    0.60  1.80   110/160     1,250,000  trunk claw, shock cannon, pulse laser, double beam turret
+berserkFuhrer   Agile duelist      22    1.50  1.18   60/90       1,050,000  2x laser blade (Buster Claws), charged particle, pulse laser
+molga           Armoured transport 10    0.85  1.40   44/66       180,000    ram claw, pulse laser, gatling top turret
+pteras          Air raider         30    1.70  0.66   20/36       290,000    2x wing pulse laser, belly missile pack
+
+Turrets: Gun Sniper tail rifle 90 deg (1.9 rad/s), Elephander back cannons
+270 deg (1.2 rad/s), Molga top gun 360 deg (2.0 rad/s). They follow the
+existing rule: fire only at the locked target.
+
+Skills (js/skills.js, existing skill kinds only):
+  Gun Sniper      Sniper Optics +25% radar / Steady Aim +30% damage 5 s
+  Elephander      Elephant Hide -14% damage / Stampede 30 dmg in 14 m
+  Berserk Fuhrer  Berserk Drive +8% speed / Buster Claw Charge 16 m dash 36 dmg
+  Molga           Segmented Armor brace / Ram 14 m charge 26 dmg
+  Pteras          Sky Eye +30% radar / Bombing Run 4 x 14 dmg
+
+Balance (tools/balance_report.mjs, docs/balance_report_new_zoids.txt),
+effective DPS at 10 / 60 / 120 m and core EHP:
+  gunSniper       40.7 / 39.5 / 26.0   EHP  68.8  best at 120 m with Geno
+  elephander      60.2 / 46.1 /  6.9   EHP 154.8  slow tank, strong mid range
+  berserkFuhrer   66.4 / 23.4 / 12.6   EHP 101.5  claw brawler + braced CPC
+  molga           40.6 / 24.3 /  0.0   EHP 120.4  tough, weak guns
+  pteras          38.4 / 36.0 / 11.7   EHP  56.8  fastest, thinnest
+First-pass tweaks: rifle 34 -> 40 dmg (sniper was not ahead at 120 m),
+Elephander right gatling -> pulse laser (was top DPS at 60 m on top of the
+second-biggest EHP), Molga lost a second pulse laser (transport, not a
+gunboat).
+
+3. Enemy / difficulty pools (js/difficulty.js)
+----------------------------------------------
+  D1 + Molga, Pteras      D2 + Pteras, Gun Sniper, Molga
+  D3 + Gun Sniper         D4 + Berserk Fuhrer, Elephander
+  D5 + Berserk Fuhrer, Elephander
+
+4. Tests and screenshots
+------------------------
+tests/new_zoids.test.mjs (in npm test): builds each, every damage part,
+feet on y = 0 (Pteras at flyHeight), centred, turret pivots, stock fits,
+skill present, in an enemy pool, relative sizes vs Shield Liger / Iron Kong.
+tests/new_zoids_browser.mjs: 4-view (tools/zoid_views.html), hangar and
+in-game shot each, no page errors, mission selfTest ok. Output:
+screenshots/new-zoids/<id>-views.png, -hangar.png, -ingame.png.

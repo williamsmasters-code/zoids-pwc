@@ -13,6 +13,7 @@ import {
   SRGBColorSpace,
   ACESFilmicToneMapping,
   Vector3,
+  Box3,
 } from "three";
 import {
   ZOIDS,
@@ -568,7 +569,12 @@ function createPreview(canvas) {
       fwd.normalize();
       const right = new Vector3().crossVectors(fwd, UP);
       // Pulled in ~20% now the stage has the whole centre column to itself.
-      const dist = (8 + (model.def.scale || 1) * 4.2) * 0.8;
+      // Big frames (Elephander) also back the camera off by their real size.
+      if (!model.frameSize) {
+        const size = new Box3().setFromObject(model.visual).getSize(new Vector3());
+        model.frameSize = Math.max(size.x, size.y, size.z);
+      }
+      const dist = Math.max((8 + (model.def.scale || 1) * 4.2) * 0.8, model.frameSize * 1.75);
       camera.position.copy(model.root.position)
         .addScaledVector(fwd, -dist)
         .addScaledVector(right, dist * 0.38)

@@ -186,7 +186,7 @@ try {
   console.log("screenshot screenshots/hangar-skills.png");
 
   const ids = await page.$$eval("#zoid-select option", (els) => els.map((el) => el.value));
-  if (ids.length !== 8) note("hangar", `expected 8 Zoids in the dropdown, saw ${ids.length}`);
+  if (ids.length !== 13) note("hangar", `expected 13 Zoids in the dropdown, saw ${ids.length}`);
   // Hangar rework: no roster column, compact contract buttons, banded tonnage bar.
   const layout = await page.evaluate(() => {
     const canvas = document.querySelector("#preview-canvas").getBoundingClientRect();
@@ -232,7 +232,7 @@ try {
     }
     seenSkills.push(skill.active);
   }
-  if (new Set(seenSkills).size !== 8) note("skills", `active names ${seenSkills.join(", ")}`);
+  if (new Set(seenSkills).size !== 13) note("skills", `active names ${seenSkills.join(", ")}`);
   await page.select("#zoid-select", "shieldLiger");
   const viewState = await page.evaluate(() => ({
     banner: document.querySelector("#view-banner")?.dataset.state || "",
@@ -646,7 +646,7 @@ try {
   await page.screenshot({ path: path.join(shots, "hangar-ranges.png") });
   console.log("screenshot screenshots/hangar-ranges.png");
   console.log("ranges", hangarRanges.key.map((row) => `${row.id}:${row.delivery}:${row.range}`).join(" "));
-  if (hangarRanges.key.length !== 9) note("ranges", `catalog strip has ${hangarRanges.key.length}`);
+  if (hangarRanges.key.length !== 10) note("ranges", `catalog strip has ${hangarRanges.key.length}`);
   const rangeSet = new Set(hangarRanges.key.map((row) => row.range));
   if (rangeSet.size !== hangarRanges.key.length) note("ranges", `ranges collide ${[...rangeSet].join(",")}`);
   for (const row of hangarRanges.key) {

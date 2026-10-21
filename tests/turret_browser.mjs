@@ -102,7 +102,7 @@ async function centerLuma(file) {
   return { avg: sum / count, darkFrac: dark / count };
 }
 
-function pilotSave() {
+function pilotSave(seed = 1001) {
   const ids = ["commandWolf", "zaberFang", "shieldLiger", "bladeLiger", "ironKong", "genoSaurer", "gojulas", "deathSaurer"];
   const hangar = {};
   for (const zoidId of ids) {
@@ -118,7 +118,7 @@ function pilotSave() {
   hangar.commandWolf.equipped.backMount = "w2";
   return {
     version: 1, money: 185000, selected: "commandWolf", missionsDone: 0, wins: 0, reputation: 0,
-    contractSeed: 1001, nextUid: 3,
+    contractSeed: seed, nextUid: 3,
     inventory: [
       { uid: "w1", type: "pulseLaser", group: 1 },
       { uid: "w2", type: "doubleBeamCannon", group: 3 },
@@ -171,15 +171,21 @@ try {
   const page = await browser.newPage();
   page.on("dialog", (dialog) => dialog.accept());
   page.on("pageerror", (err) => note("pageerror", err.stack || err.message));
-  await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.evaluate((save) => localStorage.setItem("zoidMercs.save.v1", JSON.stringify(save)), pilotSave());
-  await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.ready && window.__ZOIDS__.screen === "hangar", { timeout: 60000 });
-  await page.evaluate(() => { window.__ZOIDS__.pacifyOnStart = true; });
-  await page.click(".contract-btn");
-  await page.click("#launch-go");
-  await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission", { timeout: 60000 });
-  await page.evaluate(() => window.__ZOIDS__.holdSim(true));
+  // Pick the first contract seed whose opening enemies include a turreted
+  // AI Zoid, so step 5 (AI turrets) always has something to check.
+  for (let seed = 1001; seed < 1013; seed++) {
+    await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.evaluate((save) => localStorage.setItem("zoidMercs.save.v1", JSON.stringify(save)), pilotSave(seed));
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.ready && window.__ZOIDS__.screen === "hangar", { timeout: 60000 });
+    await page.evaluate(() => { window.__ZOIDS__.pacifyOnStart = true; });
+    await page.click(".contract-btn");
+    await page.click("#launch-go");
+    await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission", { timeout: 60000 });
+    await page.evaluate(() => window.__ZOIDS__.holdSim(true));
+    const probe = await page.evaluate(() => window.__ZOIDS__.turretDebug());
+    if (probe.enemies.some((e) => e.turrets.length)) { console.log("contract seed", seed); break; }
+  }
   const info = await page.evaluate(() => window.__ZOIDS__.turretDebug());
   if (!info.turrets.length) throw new Error("no turret on the Command Wolf");
   if (!info.enemies.length) throw new Error("no enemies to lock");
@@ -270,7 +276,9 @@ try {
   await page.screenshot({ path: path.join(shots, "command-wolf-turret-no-lock-rest.png") });
 
   // 5) AI Zoids use their own turrets on their own lock target.
-  const ai = (await page.evaluate(() => window.__ZOIDS__.turretDebug())).enemies.filter((e) => e.turrets.length);
+  const allEnemies = (await page.evaluate(() => window.__ZOIDS__.turretDebug())).enemies;
+  console.log("enemies", allEnemies.map((e) => `${e.zoid}:${e.turrets.length}`).join(" "));
+  const ai = allEnemies.filter((e) => e.turrets.length);
   if (ai.length) {
     await page.evaluate(() => window.__ZOIDS__.setPacified(false));
     const aiStart = Object.fromEntries(ai.map((e) => [e.id, e.turrets[0].fired]));
@@ -289,7 +297,7 @@ try {
     }
     await page.evaluate(() => window.__ZOIDS__.setPacified(true));
   } else {
-    console.log("ai turret: no turreted enemy in this contract");
+    note("ai", "no turreted enemy in this contract (pick a contractSeed whose first contract has one)");
   }
 } finally {
   await browser.close();

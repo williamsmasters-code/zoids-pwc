@@ -50,4 +50,9 @@ Iron Kong - Zoids
   to face forward; part split rebalanced; per-part grey/orange colour added
 
 Zaber Fang, Gojulas, and Death Saurer use the built-in procedural mocks.
+
+Gun Sniper, Elephander, Berserk Fuhrer, Molga, and Pteras are original
+procedural models built for this project (js/models.js). No third-party
+assets were used for them. No free CC-BY or CC0 model of these Zoids was
+found on Sketchfab, Poly Haven or OpenGameArt (searched 21 Oct 2026).
 Open the game with ?mock=1 to force the mocks for every Zoid.
