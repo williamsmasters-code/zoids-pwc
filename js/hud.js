@@ -112,7 +112,7 @@ export function createHUD(root) {
         <li>Cannons, autocannons, and shell guns are ballistic. The shell travels and drops. The barrel lifts so the arc meets the crosshair point when the gun can reach it. The HUD marks that impact, the drop of an uncompensated shot, and a lead bracket on the target.</li>
         <li>Missiles need a 1.5 s lock on the enemy under the crosshair, or on the targeted enemy if it sits within a few degrees of the crosshair. The ring around the crosshair fills as the lock builds. A still target locks in 1.5 s. Faster targets lock slower, and anything at 30 m/s or more breaks the lock. Missiles cannot fire until the lock completes. They launch upward, then arc down onto the target. Lock strength sets how hard they can turn.</li>
         <li>The Charged Particle Cannon fires only after you hold its button for 3 seconds while stationary (under 0.75 m/s). Moving or releasing early clears the charge bar and does not fire. A full charge fires on its own at full damage. Geno Saurer's Q skill is a separate instant bolt.</li>
-        <li>Each weapon has its own max range, listed in the hangar and on the dock. Damage is full inside the optimal range, fades to 30% at the max, and stops past it. The dock and the crosshair mark a target that is out of range. That is separate from OUT OF SENSOR RANGE.</li>
+        <li>Range bands: every weapon has an IDEAL band, then LONG and EXTREME out to its max range (the hangar lists them). Beams lose power fast past ideal but stay accurate. Cannons, gatlings and the sniper rifle keep their punch but spread more and more. Missiles keep their damage but lock slower. Claws, blades and rams hit only in melee reach. The sniper rifle and the particle cannon are weaker at SHORT range. The dock shows each group's band on the locked target and the crosshair is tinted by group 1: green ideal, yellow long, orange extreme or short, red out of range. That is separate from OUT OF SENSOR RANGE.</li>
         <li>Q — active skill. The skill panel shows the name, the key, and heat or cooldown. The Shield Liger's energy shield blocks weapons while it is up.</li>
         <li>V — first person / third person. Tab — cycle target. R — nearest hostile.</li>
         <li>H — this list. Esc — pause and release the mouse.</li>
@@ -171,7 +171,11 @@ export function createHUD(root) {
         root.querySelector("#stall").textContent = data.flight.stalled ? "STALL" : data.flight.airborne ? "" : "LANDED";
       }
       root.querySelector("#heat-bar").style.width = `${Math.max(0, Math.min(100, data.heat))}%`;
-      root.querySelector(".reticle").classList.toggle("oor", !!data.outOfRange);
+      const reticle = root.querySelector(".reticle");
+      reticle.classList.toggle("oor", !!data.outOfRange);
+      // Reticle tint: range band of weapon group 1 on the locked target.
+      const g1 = (data.weapons || []).find((row) => row.group === 1 && row.band);
+      reticle.dataset.band = g1 ? g1.band : "";
       const ring = root.querySelector("#lock-ring");
       const lock = data.lock;
       const showLock = !!(lock && (lock.tracking || lock.value > 0.01));
@@ -239,14 +243,17 @@ export function createHUD(root) {
           const hot = row.overheated ? "hot" : "";
           return `<span title="${row.name}"><em class="${hot}" style="width:${Math.max(0, Math.min(100, row.heat))}%"></em></span>`;
         }).join("");
-        const rangeLabel = weapon.maxRange
-          ? (weapon.far ? "OUT OF RANGE" : `${weapon.maxRange} m`)
-          : "";
-        return `<div class="wep ${klass} ${far}" data-group="${weapon.group}" data-state="${state}" data-heat="${Math.round(weapon.heat || 0)}" data-range="${weapon.maxRange || ""}" data-delivery="${weapon.delivery || ""}">
+        const BAND_LABEL = { ideal: "IDEAL", long: "LONG", extreme: "EXTREME", short: "SHORT", out: "OUT OF RANGE" };
+        const rangeLabel = weapon.band
+          ? BAND_LABEL[weapon.band]
+          : weapon.maxRange
+            ? (weapon.far ? "OUT OF RANGE" : `${weapon.maxRange} m`)
+            : "";
+        return `<div class="wep ${klass} ${far}" data-group="${weapon.group}" data-state="${state}" data-heat="${Math.round(weapon.heat || 0)}" data-range="${weapon.maxRange || ""}" data-delivery="${weapon.delivery || ""}" data-band="${weapon.band || ""}">
           <b>${weapon.group}</b>
           <span>${weapon.name}</span>
           <small>${state}</small>
-          ${rangeLabel ? `<em class="rng">${rangeLabel}</em>` : ""}
+          ${rangeLabel ? `<em class="rng band-${weapon.band || "none"}">${rangeLabel}</em>` : ""}
           <div class="heat-pips">${pips}</div>
           <i style="width:${Math.max(0, Math.min(100, pct))}%; background:#${color}"></i>
         </div>`;

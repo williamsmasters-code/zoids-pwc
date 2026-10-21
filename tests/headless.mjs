@@ -653,8 +653,8 @@ try {
     if (!row.delivery || !row.range) note("ranges", `blank ${row.id}`);
     if (!row.text.includes(String(row.range))) note("ranges", `strip text ${row.text}`);
   }
-  if (!hangarRanges.shop.some((line) => /max \d+ m/.test(line))) note("ranges", "shop rows omit max range");
-  if (!/beam/.test(hangarRanges.heat) || !/max \d+ m/.test(hangarRanges.heat)) {
+  if (!hangarRanges.shop.some((line) => /ideal \d+-\d+ .*-\d+ m/.test(line))) note("ranges", "shop rows omit range bands");
+  if (!/beam/.test(hangarRanges.heat) || !/ideal \d+-\d+ .*-\d+ m/.test(hangarRanges.heat)) {
     note("ranges", `equipped readout ${hangarRanges.heat}`);
   }
 

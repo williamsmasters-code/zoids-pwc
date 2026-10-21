@@ -22,7 +22,16 @@ const VS = cat.DAMAGE_VS_ARMOR || {};
 const classOf = cat.damageClassOf || (() => null);
 const mulOf = (w, key) => (VS[classOf(w)] ? VS[classOf(w)][key] : 1);
 const HIT = { beam: 0.85, ballistic: 0.65, rocket: 0.9, charge: 0.9, melee: 0.75 };
-const RANGES = [10, 60, 120];
+const RANGES = [10, 30, 60, 120, 200];
+// Range bands (js/rangebands.js) when the catalog has them; otherwise the old
+// linear falloff (full to optimal, 30% at max) so older catalogs still compare.
+const bands = cat.RANGE_PROFILES ? await import(new URL("../js/rangebands.js", import.meta.url).href) : null;
+function rangeFactor(w, r) {
+  if (r > w.range) return 0;
+  if (bands && w.longRange != null) return bands.rangeDamageMul(w, r) * bands.hitChanceMul(w, r);
+  if (w.minRange && r < w.minRange) return 0;
+  return r <= w.optimal ? 1 : 1 - 0.7 * (r - w.optimal) / (w.range - w.optimal);
+}
 
 function weaponStats(w) {
   const vol = w.volley || 1;
@@ -47,9 +56,8 @@ function zoidStats(id) {
   const vsInternal = {};
   for (const r of RANGES) {
     const sum = (key) => loadout.reduce((acc, w) => {
-      if (w.range < r || (w.minRange && r < w.minRange)) return acc;
       const st = weaponStats(w);
-      const fall = r <= w.optimal ? 1 : 1 - 0.7 * (r - w.optimal) / (w.range - w.optimal);
+      const fall = rangeFactor(w, r);
       return acc + st.sustain * st.hit * fall * mulOf(w, key);
     }, 0);
     vsArmor[r] = sum("armor");
@@ -57,9 +65,8 @@ function zoidStats(id) {
   }
   for (const r of RANGES) {
     byRange[r] = loadout.reduce((sum, w) => {
-      if (w.range < r || (w.minRange && r < w.minRange)) return sum;
       const s = weaponStats(w);
-      const fall = r <= w.optimal ? 1 : 1 - 0.7 * (r - w.optimal) / (w.range - w.optimal);
+      const fall = rangeFactor(w, r);
       return sum + s.sustain * s.hit * fall;
     }, 0);
   }
@@ -85,10 +92,18 @@ for (const [id, w] of Object.entries(WEAPONS)) {
   const s = weaponStats(w);
   console.log(pad(id, 20) + num(w.damage, 4, 0) + num(w.volley || 1, 5, 0) + num(w.rate, 6, 2) + num(s.burst, 10) + num(s.heatPerSec, 8) + num(w.cooling || 12, 6, 0) + num(s.sustain, 9) + num(w.optimal, 5, 0) + num(w.range, 7, 0) + num(w.speed || 0, 7, 0) + num(w.lockTime || 0, 5, 1));
 }
-console.log("\nZOIDS (stock loadout; effective DPS = sustained x hit factor x falloff, at 10 / 60 / 120 m)");
-console.log(pad("zoid", 14) + "speed  coreEHP  burst  eff@10  eff@60  eff@120  maxRange  loadout");
+if (bands) {
+  console.log("\nPER-WEAPON EFFECTIVE DPS by range (sustained x class hit x band damage x band hit chance)");
+  console.log(pad("weapon", 20) + pad("class", 10) + RANGES.map((r) => pad(`@${r}`, 8)).join("") + "  bands");
+  for (const [id, w] of Object.entries(WEAPONS)) {
+    const st = weaponStats(w);
+    console.log(pad(id, 20) + pad(bands.rangeClassOf(w), 10) + RANGES.map((r) => pad((st.sustain * st.hit * rangeFactor(w, r)).toFixed(1), 8)).join("") + "  " + bands.bandText(w));
+  }
+}
+console.log(`\nZOIDS (stock loadout; effective DPS = sustained x hit factor x range factor, at ${RANGES.join(" / ")} m)`);
+console.log(pad("zoid", 14) + "speed  coreEHP  burst" + RANGES.map((r) => pad(`  eff@${r}`, 9)).join("") + "  maxRange  loadout");
 for (const r of rows) {
-  console.log(pad(r.id, 14) + num(r.def.speed, 5, 0) + num(r.core, 9) + num(r.burst, 7) + num(r.byRange[10], 8) + num(r.byRange[60], 8) + num(r.byRange[120], 9) + num(r.maxRange, 10, 0) + "  " + r.loadout.map((w) => w.id + (w.turret ? "(T)" : "")).join(", "));
+  console.log(pad(r.id, 14) + num(r.def.speed, 5, 0) + num(r.core, 9) + num(r.burst, 7) + RANGES.map((x) => num(r.byRange[x], 9)).join("") + num(r.maxRange, 10, 0) + "  " + r.loadout.map((w) => w.id + (w.turret ? "(T)" : "")).join(", "));
 }
 console.log("\nDAMAGE CLASS vs ARMOUR (armour x / component x)");
 for (const [id, w] of Object.entries(WEAPONS)) {

@@ -57,6 +57,7 @@ import { createHUD, headingOf } from "./hud.js";
 import { createBrain, updateBrain } from "./ai.js";
 import { aiTuning, difficultySpec } from "./difficulty.js";
 import { escortLayout } from "./escort.js";
+import { bandOf, rangeDamageMul, rangeSpreadMul, rangeAimMul, rangeLockMul } from "./rangebands.js";
 import { flightSpec, createFlight, stepFlight, floorAt, shouldFall, meleeReaches } from "./flight.js";
 import {
   addWeaponHeat,
@@ -935,6 +936,19 @@ export function startMission(state, contract, hooks) {
     }
     const muzzle = new Vector3();
     muzzleObj.getWorldPosition(muzzle);
+    // Range bands: 3D distance to the aim point picks the band.
+    const shotDist = muzzle.distanceTo(point);
+    if (unit.brain && unit !== player) {
+      // AI aim error grows with the band (ballistics most), on top of the
+      // pilot's base scatter (aimError m per 100 m).
+      const extra = (unit.brain.aimError || 0) * (shotDist / 100) * (rangeAimMul(weapon, shotDist) - 1);
+      if (extra > 0) {
+        point = point.clone();
+        point.x += (rng() * 2 - 1) * extra;
+        point.y += (rng() * 2 - 1) * extra * 0.5;
+        point.z += (rng() * 2 - 1) * extra;
+      }
+    }
     if (unit.model && unit.model.anim && unit.model.anim.kind === "skinned") {
       unit.model.anim.firePulse = true;
     }
@@ -963,7 +977,7 @@ export function startMission(state, contract, hooks) {
     const volley = weapon.volley || 1;
     for (let i = 0; i < volley; i++) {
       const shotDir = dir.clone();
-      const spread = (weapon.spread || 0) * spreadMul(unit);
+      const spread = (weapon.spread || 0) * spreadMul(unit) * rangeSpreadMul(weapon, shotDist);
       if (spread) {
         shotDir.x += (rng() - 0.5) * spread * (volley > 1 ? 2 : 1);
         shotDir.y += (rng() - 0.5) * spread;
@@ -1006,7 +1020,7 @@ export function startMission(state, contract, hooks) {
     const victim = units.find((u) => u.id === hit.object.userData.ownerId);
     if (!victim || !victim.alive) return;
     const dist = origin.distanceTo(hit.point);
-    const amount = weapon.damage * damageMul(unit) * rangeFalloff(dist, weapon.optimal, weapon.range);
+    const amount = weapon.damage * damageMul(unit) * rangeDamageMul(weapon, dist);
     if (amount <= 0) return;
     applyDamage(victim, hit.object.userData.partId, amount, unit, damageCtxFor(weapon));
     flash(hit.point, weapon.color, 0.4);
@@ -1033,6 +1047,7 @@ export function startMission(state, contract, hooks) {
     const vz = rocket ? dir.z * speed * 0.22 : dir.z * speed;
     projectiles.push({
       dmgCtx: damageCtxFor(weapon),
+      weaponRef: weapon,
       x: origin.x,
       y: origin.y,
       z: origin.z,
@@ -1098,7 +1113,7 @@ export function startMission(state, contract, hooks) {
             const attacker = units.find((u) => u.id === shot.ownerId);
             if (victim && victim.alive && attacker) {
               const dist = Math.hypot(hit.point.x - shot.ox, hit.point.y - shot.oy, hit.point.z - shot.oz);
-              const amount = shot.damage * rangeFalloff(dist, shot.optimal, shot.range);
+              const amount = shot.damage * rangeDamageMul(shot.weaponRef, dist);
               if (amount > 0) applyDamage(victim, hit.object.userData.partId, amount, attacker, shot.dmgCtx);
             }
             flash(hit.point, shot.color, 0.55);
@@ -1781,7 +1796,14 @@ export function startMission(state, contract, hooks) {
       const dist = unit.aiTarget.model.root.position.distanceTo(unit.model.root.position);
       if (dist <= maxRange) track = { id: unit.aiTarget.id, speed: planarSpeed(unit.aiTarget) };
     }
-    const stepped = stepLock(unit.rocketLock || 0, dt, track ? track.speed : 0, !!track, lockTime);
+    // Missiles: the further the band, the longer the lock (homing does the
+    // accuracy; spread does not grow).
+    let bandLock = lockTime;
+    if (track) {
+      const tu = units.find((u) => u.id === track.id);
+      if (tu) bandLock = lockTime * rangeLockMul(rockets[0], tu.model.root.position.distanceTo(unit.model.root.position));
+    }
+    const stepped = stepLock(unit.rocketLock || 0, dt, track ? track.speed : 0, !!track, bandLock);
     unit.rocketLock = stepped.lock;
     unit.rocketStrength = track ? stepped.strength : 0;
     unit.rocketTracking = !!track;
@@ -1841,6 +1863,17 @@ export function startMission(state, contract, hooks) {
     return lastAimMarkers;
   }
 
+  const BAND_RANK = { ideal: 4, long: 3, short: 2, extreme: 1, out: 0 };
+  function bestBand(list, dist) {
+    let best = "out";
+    for (const weapon of list) {
+      if (!mountUsable(player, weapon)) continue;
+      const b = bandOf(weapon, dist);
+      if (BAND_RANK[b] > BAND_RANK[best]) best = b;
+    }
+    return best;
+  }
+
   function groupRows() {
     const rows = [];
     const target = currentTarget();
@@ -1868,6 +1901,8 @@ export function startMission(state, contract, hooks) {
         maxRange,
         delivery: lead.delivery || "",
         far: dist != null && dist > maxRange,
+        // Best range band any weapon in the group has on the target.
+        band: dist == null ? null : bestBand(list, dist),
       });
     }
     return rows;

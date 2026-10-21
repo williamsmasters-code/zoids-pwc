@@ -498,3 +498,12 @@ button:disabled { opacity: 0.45; cursor: default; }
 .flight-row { display: flex; gap: 6px; align-items: baseline; font-size: 12px; color: #9fe6ff; }
 .flight-row.hidden { display: none; }
 .flight-row em { color: #ff6655; font-style: normal; font-weight: bold; }
+/* Range bands (js/rangebands.js): dock labels and reticle tint. */
+.wep .rng.band-ideal { color: #5dff9a; }
+.wep .rng.band-long { color: #ffd35a; }
+.wep .rng.band-extreme, .wep .rng.band-short { color: #ff9a3c; }
+.wep .rng.band-out { color: #ff5566; }
+.reticle[data-band="ideal"] { border-color: #5dff9a; }
+.reticle[data-band="long"] { border-color: #ffd35a; }
+.reticle[data-band="extreme"], .reticle[data-band="short"] { border-color: #ff9a3c; }
+.reticle[data-band="out"] { border-color: #ff5566; }

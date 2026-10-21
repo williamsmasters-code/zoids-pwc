@@ -239,3 +239,66 @@ Liger, Command Wolf) take longer to open a fresh Zoid (e.g. Command Wolf vs
 Shield Liger 2.9 s -> 3.2 s, Geno vs Shield 3.3 -> 4.2 s); kinetic loadouts
 (Iron Kong, Gojulas, Death Saurer) open plating faster (Iron Kong vs Shield
 3.4 -> 2.9 s). Once plating is gone the numbers are unchanged.
+
+==============================================================
+RANGE BANDS (replaces the linear optimal->max falloff)
+==============================================================
+Every weapon in js/catalog.js WEAPONS carries minRange, optimal, longRange
+and range. Bands: SHORT (< minRange), IDEAL (minRange..optimal),
+LONG (optimal..longRange), EXTREME (longRange..range), OUT (> range).
+Distance is the 3D muzzle-to-target distance, so flyers count height.
+The same rules apply to the player and the AI.
+
+weapon            short   ideal     long      extreme   (m)
+pulseLaser        -       0-55      55-75     75-90
+beamCannon        -       0-95      95-130    130-160
+doubleBeamCannon  -       0-70      70-95     95-120
+missilePack       -       0-90      90-150    150-200
+gatling           -       0-35      35-65     65-100
+sniperRifle       0-60    60-140    140-190   190-230
+shockCannon       -       0-45      45-75     75-105
+chargedParticle   0-50    50-130    130-185   185-240
+strikeLaserClaw   -       0-12 (melee: full damage, zero beyond)
+laserBlade        -       0-14 (melee: full damage, zero beyond)
+
+Multipliers per class (short / ideal / long / extreme), RANGE_PROFILES:
+  beam      damage .75/1/.5/.2    spread 1/1/1.1/1.25   AI aim same as spread
+  ballistic damage .85/1/.9/.75   spread 2/1/2.5/5      AI aim 1.5/1/2/3.5
+  missile   damage 1/1/.95/.85    spread 1              lock time 1/1/1.3/1.8
+  melee     damage 1 in reach, 0 beyond
+Energy weapons lose power fast but stay accurate. Shells keep their
+punch but scatter. Missiles: I kept them homing at full accuracy, losing
+little damage, but the lock takes 30%/80% longer in long/extreme. Their
+cost is the long lock and the travel time, which gives the target time to
+break line of sight. They stay the all-range weapon with no burst.
+The short penalty applies only to the sniper rifle and the CPC (x0.75 and
+x0.85 inside their minRange), so a brawler that closes in has the edge.
+The band multiplier is applied once, in place of the old falloff (no
+double counting). It multiplies with the armour class (beam x0.7 /
+ballistic x1.3 vs plating). AI pilots get extra scatter of
+aimError*dist/100*(aimMul-1) on top of their base error.
+
+Hit-chance model for the report: hit = 1/spreadMul^0.6, so x2.5 gives
+~58% and x5 ~38%. Effective DPS = DPS * damageMul * hit.
+
+Per-weapon effective DPS @10/30/60/120/200 m:
+  pulseLaser 12/12/5.7/0/0       beamCannon 17.9/17.9/17.9/8.4/0
+  doubleBeam 22.9/22.9/22.9/4/0  missilePack 14.4/14.4/14.4/13.7/12.2
+  gatling 18.4/18.4/9.5/0/0      sniperRifle 8/8/14.3/14.3/4.1
+  shockCannon 15/15/7.8/0/0      chargedParticle 9.5/9.5/12.6/12.6/2.2
+  strikeLaserClaw 15.8/0/0/0/0   laserBlade 20.9/0/0/0/0
+Sweet spots: lasers/gatling/shock under 35-55 m, beam cannons 0-95 m,
+sniper/CPC 60-140 m, missiles everywhere but never top DPS, melee in reach.
+
+Zoid effective DPS, bands vs old falloff @10/30/60/120/200 m:
+  commandWolf   69.1/53.4/38.2/4/0   (old 63.6/53.4/47.2/6.9/0)
+  bladeLiger    65.8/24/11.4/0/0     (old @60 21.6)
+  berserkFuhrer 63.3/21.5/18.3/12.6/2.2
+  gunSniper     34.4/34.4/34.4/28/16.3
+  molga @60 15.2 (old 24.3)   elephander @60 36.4 (old 46.1)
+  pteras @60 25.8 (old 36)
+Melee Zoids keep the top DPS once they close in (65.8 and 63.3 at 10 m vs
+34.4 for the Gun Sniper), and they get there under fire. That fire is now
+weaker, because ranged builds lose 20-40% at 60 m and the sniper/CPC lose
+damage inside their minimum range. The Blade Liger's 60 m gap is the
+intended trade. Full output: docs/balance_report_range_bands.txt.

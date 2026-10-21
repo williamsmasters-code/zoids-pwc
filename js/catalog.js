@@ -109,6 +109,24 @@ export function damageClassOf(weapon) {
   return null;
 }
 
+// Range increments per weapon class (js/rangebands.js). Each band scales
+// damage, spread (accuracy) and, for the AI, aim error; missiles scale lock
+// time instead of spread (they home). This REPLACES the old linear falloff
+// (full to optimal, 30% at max); nothing else applies distance to damage.
+//   short    below minRange (only weapons that set one: sniper rifle and
+//            charged particle cannon). Mild penalty, see BALANCE_NOTES.txt.
+//   ideal    minRange..optimal. Full damage, base spread.
+//   long     optimal..longRange.
+//   extreme  longRange..range. Past range nothing fires / hits.
+// beam: power drops hard, accuracy holds. ballistic: power holds, accuracy
+// collapses. missile: power holds, lock takes longer. melee: ideal only.
+export const RANGE_PROFILES = {
+  beam:      { damage: { short: 0.75, ideal: 1, long: 0.5, extreme: 0.2 },  spread: { short: 1, ideal: 1, long: 1.1, extreme: 1.25 }, aim: { short: 1, ideal: 1, long: 1.1, extreme: 1.25 }, lock: null },
+  ballistic: { damage: { short: 0.85, ideal: 1, long: 0.9, extreme: 0.75 }, spread: { short: 2, ideal: 1, long: 2.5, extreme: 5 },     aim: { short: 1.5, ideal: 1, long: 2, extreme: 3.5 },  lock: null },
+  missile:   { damage: { short: 1, ideal: 1, long: 0.95, extreme: 0.85 },   spread: { short: 1, ideal: 1, long: 1, extreme: 1 },        aim: { short: 1, ideal: 1, long: 1, extreme: 1 },      lock: { short: 1, ideal: 1, long: 1.3, extreme: 1.8 } },
+  melee:     { damage: { short: 1, ideal: 1, long: 0, extreme: 0 },         spread: { short: 1, ideal: 1, long: 1, extreme: 1 },        aim: { short: 1, ideal: 1, long: 1, extreme: 1 },      lock: null },
+};
+
 export const WEAPONS = {
   pulseLaser: {
     // Guide: standard gun / beam. Beams are faster than shells, a little weaker.
@@ -121,6 +139,10 @@ export const WEAPONS = {
     rate: 7.5,
     optimal: 55,
     range: 90,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 0,
+    longRange: 75,
     heat: 7,
     cooling: 22,
     weight: 2,
@@ -140,6 +162,10 @@ export const WEAPONS = {
     rate: 1.4,
     optimal: 95,
     range: 160,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 0,
+    longRange: 130,
     heat: 12,
     cooling: 14,
     weight: 5.5,
@@ -161,6 +187,10 @@ export const WEAPONS = {
     rate: 1.5,
     optimal: 70,
     range: 120,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 0,
+    longRange: 95,
     heat: 10,
     cooling: 15,
     weight: 5.5,
@@ -183,6 +213,10 @@ export const WEAPONS = {
     rate: 0.4,
     optimal: 90,
     range: 200,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 0,
+    longRange: 150,
     heat: 12,
     cooling: 10,
     weight: 6,
@@ -206,6 +240,10 @@ export const WEAPONS = {
     rate: 16,
     optimal: 35,
     range: 100,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 0,
+    longRange: 65,
     heat: 1.4,
     cooling: 18,
     weight: 5,
@@ -229,6 +267,10 @@ export const WEAPONS = {
     rate: 0.55,
     optimal: 140,
     range: 230,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 60,
+    longRange: 190,
     heat: 14,
     cooling: 10,
     weight: 7,
@@ -252,6 +294,10 @@ export const WEAPONS = {
     rate: 0.5,
     optimal: 45,
     range: 105,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 0,
+    longRange: 75,
     heat: 20,
     cooling: 10,
     weight: 8,
@@ -275,6 +321,10 @@ export const WEAPONS = {
     rate: 0.18,
     optimal: 130,
     range: 240,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 50,
+    longRange: 185,
     heat: 55,
     cooling: 8,
     weight: 16,
@@ -296,6 +346,10 @@ export const WEAPONS = {
     rate: 1.5,
     optimal: 8,
     range: 12,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 0,
+    longRange: 12,
     heat: 9,
     cooling: 16,
     weight: 1.5,
@@ -316,6 +370,10 @@ export const WEAPONS = {
     rate: 1.2,
     optimal: 10,
     range: 14,
+    // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
+    // < long <= longRange < extreme <= range (max).
+    minRange: 0,
+    longRange: 14,
     heat: 14,
     cooling: 15,
     weight: 4,

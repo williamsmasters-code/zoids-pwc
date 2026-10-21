@@ -31,9 +31,10 @@ import { repairCost } from "./damage.js";
 import { TONNAGE_ZONES, TONNAGE_CEILING } from "./tonnage.js";
 import { skillBlock } from "./skills.js";
 import { creditsMarkup } from "./credits.js";
+import { bandText } from "./rangebands.js";
 
 function weaponFacts(spec) {
-  return `${spec.delivery} · opt ${spec.optimal} m · max ${spec.range} m · ${spec.heat} heat/shot · cool ${spec.cooling}/s`;
+  return `${spec.delivery} · ${bandText(spec)} · ${spec.heat} heat/shot · cool ${spec.cooling}/s`;
 }
 import { diagramSVG } from "./hud.js";
 import { buildUnitModel, disposeTree } from "./models.js";
