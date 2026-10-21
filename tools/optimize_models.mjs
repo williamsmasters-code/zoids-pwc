@@ -105,6 +105,42 @@ function targetsFor(slug) {
   if (slug === "shield-liger") {
     quad.push({ part: "leftFrontLeg", u: 0.1, v: 0.55, w: 0.32, su: 0.14, sv: 0.28, sw: 0.2 });
   }
+  if (slug === "blade-liger") {
+    // Lion: head and jaw forward, chest and back, folding blades on each
+    // flank (left/rightWeapon), back gun pods (backMount), four legs, and a
+    // long tail that rises from the hips (lowered later in POST).
+    return [
+      { part: "head", u: 0.5, v: 0.58, w: 0.08, su: 0.16, sv: 0.16, sw: 0.09 },
+      { part: "headWeapon", u: 0.5, v: 0.4, w: 0.02, su: 0.12, sv: 0.08, sw: 0.04 },
+      { part: "core", u: 0.5, v: 0.55, w: 0.45, su: 0.14, sv: 0.16, sw: 0.18 },
+      { part: "backMount", u: 0.5, v: 0.78, w: 0.42, su: 0.1, sv: 0.1, sw: 0.16 },
+      { part: "tail", u: 0.5, v: 0.75, w: 0.92, su: 0.12, sv: 0.35, sw: 0.16 },
+      { part: "leftWeapon", u: 0.06, v: 0.68, w: 0.45, su: 0.14, sv: 0.25, sw: 0.3 },
+      { part: "rightWeapon", u: 0.94, v: 0.68, w: 0.45, su: 0.14, sv: 0.25, sw: 0.3 },
+      { part: "leftFrontLeg", u: 0.36, v: 0.2, w: 0.28, su: 0.1, sv: 0.2, sw: 0.12 },
+      { part: "rightFrontLeg", u: 0.64, v: 0.2, w: 0.28, su: 0.1, sv: 0.2, sw: 0.12 },
+      { part: "leftRearLeg", u: 0.36, v: 0.2, w: 0.62, su: 0.1, sv: 0.2, sw: 0.12 },
+      { part: "rightRearLeg", u: 0.64, v: 0.2, w: 0.62, su: 0.1, sv: 0.2, sw: 0.12 },
+    ];
+  }
+  if (slug === "command-wolf") {
+    // Smaller wolf: long snout and jaw, slim body, side armour plates as
+    // flank mounts, the long twin-barrel cannon on top of the back
+    // (backMount), four thin legs, and a low tail.
+    return [
+      { part: "head", u: 0.5, v: 0.55, w: 0.1, su: 0.3, sv: 0.18, sw: 0.1 },
+      { part: "headWeapon", u: 0.5, v: 0.4, w: 0.03, su: 0.2, sv: 0.08, sw: 0.04 },
+      { part: "core", u: 0.5, v: 0.66, w: 0.45, su: 0.22, sv: 0.12, sw: 0.18 },
+      { part: "backMount", u: 0.5, v: 0.92, w: 0.45, su: 0.25, sv: 0.08, sw: 0.4 },
+      { part: "tail", u: 0.5, v: 0.55, w: 0.9, su: 0.2, sv: 0.15, sw: 0.12 },
+      { part: "leftWeapon", u: 0.08, v: 0.68, w: 0.32, su: 0.1, sv: 0.12, sw: 0.12 },
+      { part: "rightWeapon", u: 0.92, v: 0.68, w: 0.32, su: 0.1, sv: 0.12, sw: 0.12 },
+      { part: "leftFrontLeg", u: 0.25, v: 0.22, w: 0.36, su: 0.15, sv: 0.22, sw: 0.1 },
+      { part: "rightFrontLeg", u: 0.75, v: 0.22, w: 0.36, su: 0.15, sv: 0.22, sw: 0.1 },
+      { part: "leftRearLeg", u: 0.25, v: 0.22, w: 0.66, su: 0.15, sv: 0.22, sw: 0.1 },
+      { part: "rightRearLeg", u: 0.75, v: 0.22, w: 0.66, su: 0.15, sv: 0.22, sw: 0.1 },
+    ];
+  }
   if (slug === "geno-saurer") {
     // Raptor stance after the upright fix: head and jaw far forward, two big
     // hind legs mid-body, tiny clawed arms under the chest, a long tail behind
@@ -476,7 +512,7 @@ function centroid(v) {
 
 // These layouts score by distance only; the generic quad bonuses below were
 // tuned for lions and pulled the raptor arms and the gorilla split apart.
-const CUSTOM_SPLIT = new Set(["geno-saurer", "iron-kong"]);
+const CUSTOM_SPLIT = new Set(["geno-saurer", "iron-kong", "blade-liger", "command-wolf"]);
 
 function legPart(part) {
   return part.endsWith("Leg");
@@ -682,6 +718,19 @@ const POST = {
   },
 };
 
+// POST edits (tail pitch, head scale) can shift the footprint; put the
+// pivot back at the XZ centre and the feet back on y = 0.
+function recenterXZ(slug, buckets) {
+  const all = Object.values(buckets).flat();
+  const b = boundsOf(all);
+  const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2, y0 = b.min[1];
+  if (Math.abs(cx) < 1e-3 && Math.abs(cz) < 1e-3 && Math.abs(y0) < 1e-3) return;
+  for (const tri of all) {
+    for (let i = 0; i < 9; i += 3) { tri.v[i] -= cx; tri.v[i + 1] -= y0; tri.v[i + 2] -= cz; }
+  }
+  console.log(`  recentred pivot by ${(-cx).toFixed(2)}, ${(-y0).toFixed(2)}, ${(-cz).toFixed(2)}`);
+}
+
 function postProcess(slug, buckets) {
   const cfg = POST[slug];
   if (!cfg) return;
@@ -853,6 +902,7 @@ async function main() {
       console.log(`  ${part.padEnd(16)} ${String(list.length).padStart(6)}  center ${c.map((n) => Number.isFinite(n) ? n.toFixed(2) : "nan").join(", ")}`);
     }
     postProcess(slug, buckets);
+    recenterXZ(slug, buckets);
     writeSide(slug, buckets);
     assertParts(slug, buckets);
     const finalDoc = writeDoc(buckets, api);

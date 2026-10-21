@@ -31,3 +31,24 @@ Known limits
 
 Screenshots: screenshots/model-fixes/{before,after}/<slug>-{hangar,ingame,4view}.png
 (4view = front, right side, back, top; from a throwaway three.js viewer.)
+
+FOLLOW-UP: Blade Liger and Command Wolf splits, 2026-10-20
+
+- Both now have their own targets and use CUSTOM_SPLIT (distance only, no
+  shared quad bonuses).
+  Blade Liger: head/jaw forward, folding flank blades = left/rightWeapon
+  (410 -> ~946 tris each), back gun pods = backMount, four legs, tail.
+  Command Wolf: longer snout head (4671 -> 6127), jaw, side armour plates =
+  flank mounts, twin back cannon = backMount (10751 -> 5181, now just the
+  cannon instead of half the back), four legs, low tail.
+- Alignment checked: both face -Z, feet on y = 0, mirrored X not needed.
+- New recenterXZ() after POST puts the pivot back at the XZ centre and feet
+  on y = 0. It moved Blade Liger by z -0.17 (tail pitch had shifted the
+  footprint) and Geno Saurer by z +0.31 (enlarged head). Iron Kong and
+  Command Wolf did not move.
+- Shield Liger and shield-liger-anim.glb untouched. No new assets used.
+- Screenshots: screenshots/model-fixes/{before,after}/<slug>-split-{hangar,
+  ingame,parts}.png and before/command-wolf-split-4view.png,
+  before/blade-liger-split-4view.png. "parts" = part-coloured splats
+  (side, front, top; orange head, grey core, blues legs, purple/pink flank
+  weapons, yellow backMount, green tail, red jaw).
