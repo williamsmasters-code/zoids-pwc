@@ -106,29 +106,36 @@ function targetsFor(slug) {
     quad.push({ part: "leftFrontLeg", u: 0.1, v: 0.55, w: 0.32, su: 0.14, sv: 0.28, sw: 0.2 });
   }
   if (slug === "geno-saurer") {
+    // Raptor stance after the upright fix: head and jaw far forward, two big
+    // hind legs mid-body, tiny clawed arms under the chest, a long tail behind
+    // and the twin back cannons / charged particle cannon mount on top.
     return [
-      { part: "head", u: 0.5, v: 0.84, w: 0.16, su: 0.2, sv: 0.14, sw: 0.14 },
-      { part: "headWeapon", u: 0.5, v: 0.62, w: 0.04, su: 0.16, sv: 0.14, sw: 0.08 },
-      { part: "core", u: 0.5, v: 0.55, w: 0.42, su: 0.2, sv: 0.18, sw: 0.18 },
-      { part: "tail", u: 0.5, v: 0.42, w: 0.9, su: 0.18, sv: 0.2, sw: 0.14 },
-      { part: "backMount", u: 0.5, v: 0.78, w: 0.4, su: 0.18, sv: 0.12, sw: 0.16 },
-      { part: "leftWeapon", u: 0.12, v: 0.5, w: 0.36, su: 0.12, sv: 0.18, sw: 0.16 },
-      { part: "rightWeapon", u: 0.88, v: 0.5, w: 0.36, su: 0.12, sv: 0.18, sw: 0.16 },
-      { part: "leftLeg", u: 0.34, v: 0.16, w: 0.5, su: 0.14, sv: 0.16, sw: 0.18 },
-      { part: "rightLeg", u: 0.66, v: 0.16, w: 0.5, su: 0.14, sv: 0.16, sw: 0.18 },
+      { part: "head", u: 0.5, v: 0.76, w: 0.08, su: 0.24, sv: 0.18, sw: 0.13 },
+      { part: "headWeapon", u: 0.5, v: 0.66, w: 0.02, su: 0.16, sv: 0.1, sw: 0.04 },
+      { part: "core", u: 0.5, v: 0.6, w: 0.38, su: 0.28, sv: 0.2, sw: 0.14 },
+      { part: "tail", u: 0.5, v: 0.6, w: 0.82, su: 0.3, sv: 0.3, sw: 0.18 },
+      { part: "backMount", u: 0.5, v: 0.95, w: 0.4, su: 0.24, sv: 0.1, sw: 0.22 },
+      { part: "leftWeapon", u: 0.3, v: 0.5, w: 0.2, su: 0.12, sv: 0.12, sw: 0.08 },
+      { part: "rightWeapon", u: 0.7, v: 0.5, w: 0.2, su: 0.12, sv: 0.12, sw: 0.08 },
+      { part: "leftLeg", u: 0.22, v: 0.2, w: 0.45, su: 0.18, sv: 0.2, sw: 0.2 },
+      { part: "rightLeg", u: 0.78, v: 0.2, w: 0.45, su: 0.18, sv: 0.2, sw: 0.2 },
     ];
   }
   if (slug === "iron-kong") {
+    // Upright gorilla: head and brow up front, broad chest, long arms
+    // reaching to the ground on each side, short legs under the hips, and the
+    // shoulder missile pack across the upper back. "tail" is the rear hip
+    // armour (Iron Kong has no tail), kept small.
     return [
-      { part: "head", u: 0.5, v: 0.86, w: 0.22, su: 0.2, sv: 0.12, sw: 0.16 },
-      { part: "headWeapon", u: 0.5, v: 0.7, w: 0.06, su: 0.16, sv: 0.12, sw: 0.1 },
-      { part: "core", u: 0.5, v: 0.55, w: 0.45, su: 0.18, sv: 0.16, sw: 0.18 },
-      { part: "tail", u: 0.5, v: 0.4, w: 0.9, su: 0.16, sv: 0.16, sw: 0.12 },
-      { part: "backMount", u: 0.5, v: 0.78, w: 0.58, su: 0.2, sv: 0.12, sw: 0.16 },
-      { part: "leftWeapon", u: 0.08, v: 0.4, w: 0.4, su: 0.12, sv: 0.22, sw: 0.22 },
-      { part: "rightWeapon", u: 0.92, v: 0.4, w: 0.4, su: 0.12, sv: 0.22, sw: 0.22 },
-      { part: "leftLeg", u: 0.36, v: 0.12, w: 0.55, su: 0.12, sv: 0.14, sw: 0.16 },
-      { part: "rightLeg", u: 0.64, v: 0.12, w: 0.55, su: 0.12, sv: 0.14, sw: 0.16 },
+      { part: "head", u: 0.5, v: 0.82, w: 0.12, su: 0.2, sv: 0.15, sw: 0.16 },
+      { part: "headWeapon", u: 0.5, v: 0.76, w: 0.06, su: 0.12, sv: 0.08, sw: 0.05 },
+      { part: "core", u: 0.5, v: 0.6, w: 0.38, su: 0.2, sv: 0.18, sw: 0.18 },
+      { part: "tail", u: 0.5, v: 0.38, w: 0.8, su: 0.14, sv: 0.12, sw: 0.12 },
+      { part: "backMount", u: 0.5, v: 0.92, w: 0.55, su: 0.24, sv: 0.12, sw: 0.22 },
+      { part: "leftWeapon", u: 0.1, v: 0.45, w: 0.35, su: 0.12, sv: 0.4, sw: 0.4 },
+      { part: "rightWeapon", u: 0.9, v: 0.45, w: 0.35, su: 0.12, sv: 0.4, sw: 0.4 },
+      { part: "leftLeg", u: 0.3, v: 0.16, w: 0.7, su: 0.14, sv: 0.18, sw: 0.2 },
+      { part: "rightLeg", u: 0.7, v: 0.16, w: 0.7, su: 0.14, sv: 0.18, sw: 0.2 },
     ];
   }
   return quad;
@@ -170,6 +177,32 @@ function transformPoint(m, x, y, z) {
     m[1] * x + m[5] * y + m[9] * z + m[13],
     m[2] * x + m[6] * y + m[10] * z + m[14],
   ];
+}
+
+// Some sources are not authored Y-up. These rotations (radians, applied X then
+// Y then Z, before the facing yaw) stand them upright on their feet.
+const PRE_ROT = {
+  "blade-liger": [0, 0, 0],
+  "shield-liger": [0, 0, 0],
+  "command-wolf": [0, 0, 0],
+  "geno-saurer": [-Math.PI / 2, 0, 0],
+  "iron-kong": [-Math.PI / 2, -Math.PI / 2, 0],
+};
+
+function preRotFor(slug) {
+  const env = process.env[`PREROT_${slug.replace(/-/g, "_").toUpperCase()}`];
+  if (env) return env.split(",").map((n) => Number(n) * Math.PI / 180);
+  return PRE_ROT[slug];
+}
+
+function eulerPoint(x, y, z, [ax, ay, az]) {
+  let c = Math.cos(ax), s = Math.sin(ax);
+  [y, z] = [y * c - z * s, y * s + z * c];
+  c = Math.cos(ay); s = Math.sin(ay);
+  [x, z] = [x * c + z * s, -x * s + z * c];
+  c = Math.cos(az); s = Math.sin(az);
+  [x, y] = [x * c - y * s, x * s + y * c];
+  return [x, y, z];
 }
 
 function yawPoint(x, y, z, angle) {
@@ -357,6 +390,18 @@ async function simplifyGroups(groups, target, api) {
 
 function normalize(tris, slug) {
   const yaw = FACING_YAW[slug];
+  const pre = preRotFor(slug);
+  if (pre.some((a) => a !== 0)) {
+    for (const tri of tris) {
+      for (let i = 0; i < 9; i += 3) {
+        const p = eulerPoint(tri.v[i], tri.v[i + 1], tri.v[i + 2], pre);
+        tri.v[i] = p[0];
+        tri.v[i + 1] = p[1];
+        tri.v[i + 2] = p[2];
+      }
+    }
+    console.log(`  pre-rotation xyz ${pre.map((a) => (a * 180 / Math.PI).toFixed(0)).join(" ")} deg`);
+  }
   for (const tri of tris) {
     for (let i = 0; i < 9; i += 3) {
       const p = yawPoint(tri.v[i], tri.v[i + 1], tri.v[i + 2], yaw);
@@ -429,6 +474,10 @@ function centroid(v) {
   ];
 }
 
+// These layouts score by distance only; the generic quad bonuses below were
+// tuned for lions and pulled the raptor arms and the gorilla split apart.
+const CUSTOM_SPLIT = new Set(["geno-saurer", "iron-kong"]);
+
 function legPart(part) {
   return part.endsWith("Leg");
 }
@@ -439,6 +488,10 @@ function scoreAt(slug, part, u, v, w, targets) {
     if (t.part !== part) continue;
     const d = ((u - t.u) / t.su) ** 2 + ((v - t.v) / t.sv) ** 2 + ((w - t.w) / t.sw) ** 2;
     let score = -d;
+    if (CUSTOM_SPLIT.has(slug)) {
+      if (score > best) best = score;
+      continue;
+    }
     if (legPart(part) && v < 0.36) score += 2.4;
     if (legPart(part) && v > 0.52) score -= 3.2;
     if (part === "head" && w < 0.28 && v > 0.42) score += 1.3;
@@ -601,6 +654,80 @@ function writeDoc(buckets, api) {
   return doc;
 }
 
+// Per-Zoid fixes applied after the split.
+//   tint:     base colour per part (the Geno and Kong sources are untextured
+//             single white materials and read as bleached in game).
+//   scale:    grow a part about its rear attachment point.
+//   pitch:    rotate a part about its front root (radians, + tips the free end down).
+const POST = {
+  "geno-saurer": {
+    tint: {
+      head: [0.42, 0.05, 0.05], core: [0.38, 0.05, 0.05], tail: [0.36, 0.05, 0.05],
+      leftLeg: [0.3, 0.05, 0.05], rightLeg: [0.3, 0.05, 0.05],
+      leftWeapon: [0.2, 0.2, 0.22], rightWeapon: [0.2, 0.2, 0.22],
+      backMount: [0.24, 0.24, 0.26], headWeapon: [0.12, 0.12, 0.13],
+    },
+    scale: { head: 1.45, headWeapon: 1.45 },
+  },
+  "iron-kong": {
+    tint: {
+      head: [0.16, 0.16, 0.18], core: [0.13, 0.13, 0.15], tail: [0.13, 0.13, 0.15],
+      leftLeg: [0.18, 0.18, 0.2], rightLeg: [0.18, 0.18, 0.2],
+      leftWeapon: [0.2, 0.2, 0.22], rightWeapon: [0.2, 0.2, 0.22],
+      backMount: [0.5, 0.12, 0.05], headWeapon: [0.55, 0.3, 0.05],
+    },
+  },
+  "blade-liger": {
+    pitch: { tail: 0.5 },
+  },
+};
+
+function postProcess(slug, buckets) {
+  const cfg = POST[slug];
+  if (!cfg) return;
+  const all = Object.values(buckets).flat();
+  const box = boundsOf(all);
+  for (const [part, factor] of Object.entries(cfg.scale || {})) {
+    // Anchor on the head's attachment (rear, lower edge), so it grows forward and up.
+    const b = boundsOf(buckets.head);
+    const ax = (b.min[0] + b.max[0]) / 2, ay = b.min[1] + b.size[1] * 0.3, az = b.max[2];
+    for (const tri of buckets[part]) {
+      for (let i = 0; i < 9; i += 3) {
+        tri.v[i] = ax + (tri.v[i] - ax) * factor;
+        tri.v[i + 1] = ay + (tri.v[i + 1] - ay) * factor;
+        tri.v[i + 2] = az + (tri.v[i + 2] - az) * factor;
+      }
+    }
+    console.log(`  scaled ${part} x${factor}`);
+  }
+  for (const [part, angle] of Object.entries(cfg.pitch || {})) {
+    const b = boundsOf(buckets[part]);
+    // Root = the front-most tail triangles (where it meets the hips).
+    let ry = 0, n = 0;
+    for (const tri of buckets[part]) {
+      const c = centroid(tri.v);
+      if (c[2] < b.min[2] + b.size[2] * 0.08) { ry += c[1]; n += 1; }
+    }
+    ry = n ? ry / n : b.min[1];
+    const rz = b.min[2];
+    const c = Math.cos(angle), s = Math.sin(angle);
+    for (const tri of buckets[part]) {
+      for (let i = 0; i < 9; i += 3) {
+        const dy = tri.v[i + 1] - ry, dz = tri.v[i + 2] - rz;
+        tri.v[i + 1] = ry + dy * c - dz * s;
+        tri.v[i + 2] = rz + dy * s + dz * c;
+      }
+    }
+    const after = boundsOf(buckets[part]);
+    console.log(`  pitched ${part} ${(angle * 180 / Math.PI).toFixed(0)} deg, top ${b.max[1].toFixed(2)} -> ${after.max[1].toFixed(2)} (body top ${box.max[1].toFixed(2)})`);
+  }
+  for (const [part, rgb] of Object.entries(cfg.tint || {})) {
+    for (const tri of buckets[part] || []) {
+      tri.spec = { ...tri.spec, name: `${slug}-${part}`, base: [...rgb, 1], metal: 0.5, rough: 0.5 };
+    }
+  }
+}
+
 function crc32(buf) {
   let c = ~0;
   for (let i = 0; i < buf.length; i++) {
@@ -707,7 +834,9 @@ async function main() {
   };
   mkdirSync(OUT_DIR, { recursive: true });
   const report = [];
+  const only = process.env.ONLY ? process.env.ONLY.split(",") : null;
   for (const [slug, file] of Object.entries(SOURCE)) {
+    if (only && !only.includes(slug)) continue;
     const src = path.join(SRC_DIR, file);
     const before = mb(src);
     console.log(`\n== ${slug}  source ${before.toFixed(2)} MB`);
@@ -723,6 +852,7 @@ async function main() {
       const c = partCenter(list);
       console.log(`  ${part.padEnd(16)} ${String(list.length).padStart(6)}  center ${c.map((n) => Number.isFinite(n) ? n.toFixed(2) : "nan").join(", ")}`);
     }
+    postProcess(slug, buckets);
     writeSide(slug, buckets);
     assertParts(slug, buckets);
     const finalDoc = writeDoc(buckets, api);

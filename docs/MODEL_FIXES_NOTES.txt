@@ -1,0 +1,33 @@
+MODEL FIXES (Geno Saurer, Iron Kong, Blade Liger), 2026-10-20
+
+All changes live in tools/optimize_models.mjs and are baked into
+assets/models/{geno-saurer,iron-kong,blade-liger}.glb. Rebuild only these:
+  ONLY=geno-saurer,iron-kong,blade-liger node tools/optimize_models.mjs
+(ONLY is new; without it all five are rebuilt. Shield Liger and Command Wolf
+were left untouched on purpose; shield-liger-anim.glb is not produced here.)
+
+New in the optimizer
+- PRE_ROT: per-model X/Y/Z rotation before the facing yaw.
+  Geno Saurer [-90,0,0]: the source lay on its back (tail pointing up).
+  Iron Kong [-90,-90,0]: the source lay on its back facing sideways.
+  Override for experiments: PREROT_IRON_KONG="x,y,z" (degrees).
+- CUSTOM_SPLIT + new targets for Geno (raptor: big head/jaw forward, small
+  arms under the chest, hind legs, long tail, back cannons as backMount) and
+  Kong (gorilla: head/brow, chest, long arms as left/rightWeapon, short legs,
+  missile pack as backMount, rear hip armour as "tail").
+- POST: per-part tint (Geno dark red body, grey guns; Kong dark grey body,
+  orange missile pack/brow), Geno head and jaw scaled 1.45x about the neck,
+  Blade Liger tail pitched down 0.5 rad about its root (top 3.64 -> 2.42).
+
+Sizes in game (largest dim x catalog scale): Command Wolf ~4.5 long / 2.1
+tall, Blade Liger ~6.7 long, Geno ~7.3 long / 4.5 tall, Iron Kong ~5.3 tall.
+Hitbox radius and weapon anchors are per Zoid (catalog radius, anchors from
+the GLB part bounds), so they follow the new splits.
+
+Known limits
+- Shield Liger, Command Wolf, Blade Liger quad splits were not re-tuned.
+- Iron Kong source pose is a crouched knuckle-walk; it is not re-posed.
+- Geno head scaling can overlap the neck slightly.
+
+Screenshots: screenshots/model-fixes/{before,after}/<slug>-{hangar,ingame,4view}.png
+(4view = front, right side, back, top; from a throwaway three.js viewer.)

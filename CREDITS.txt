@@ -10,7 +10,7 @@ Zoids Blade Liger
   Author page: https://sketchfab.com/guntuy3
   Model: https://sketchfab.com/3d-models/zoids-blade-liger-d4caf50b3c934b2ba29fd2f25d730f28
   License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
-  Changes: scaled/split/optimized/stripped helper nodes
+  Changes: scaled/split/optimized/stripped helper nodes; tail pitched down 29 degrees
 
 Shield Liger WIP
   Author: hdbanks1
@@ -27,9 +27,12 @@ Shield Liger WIP
 Genosaurer Zoids (free)
   Author: Anderson455
   Author page: https://sketchfab.com/pablo.gabriel87
+  (Name and page as embedded in the downloaded file. Sketchfab now lists the
+  model under Anderson123, https://sketchfab.com/Mr_Anderson123)
   Model: https://sketchfab.com/3d-models/genosaurer-zoids-free-3b7075f3b14a4022ad3996e0eda8ca88
   License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
-  Changes: scaled/split/optimized/stripped helper nodes
+  Changes: scaled/split/optimized/stripped helper nodes; rotated upright (source lay
+  on its back); per-part red/grey colour added; head enlarged 1.45x
 
 Command Wolf
   Author: Warner's Digital Art
@@ -43,7 +46,8 @@ Iron Kong - Zoids
   Author page: https://sketchfab.com/Mr_Anderson123
   Model: https://sketchfab.com/3d-models/iron-kong-zoids-74a45b6ead5f4f21bc6df68c9ca9bd9a
   License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
-  Changes: scaled/split/optimized/stripped helper nodes
+  Changes: scaled/split/optimized/stripped helper nodes; rotated upright and turned
+  to face forward; part split rebalanced; per-part grey/orange colour added
 
 Zaber Fang, Gojulas, and Death Saurer use the built-in procedural mocks.
 Open the game with ?mock=1 to force the mocks for every Zoid.
