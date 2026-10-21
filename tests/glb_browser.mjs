@@ -193,7 +193,7 @@ try {
   }
 
   async function view(id) {
-    await page.click(`button[data-act="view"][data-id="${id}"]`);
+    await page.select("#zoid-select", id);
     await sleep(450);
   }
 

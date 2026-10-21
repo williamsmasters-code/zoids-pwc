@@ -185,13 +185,39 @@ try {
   await page.screenshot({ path: path.join(shots, "hangar-skills.png") });
   console.log("screenshot screenshots/hangar-skills.png");
 
-  const ids = await page.$$eval(".zoid-card", (els) => els.map((el) => el.dataset.id));
-  if (ids.length !== 8) note("hangar", `expected 8 Zoid cards, saw ${ids.length}`);
+  const ids = await page.$$eval("#zoid-select option", (els) => els.map((el) => el.value));
+  if (ids.length !== 8) note("hangar", `expected 8 Zoids in the dropdown, saw ${ids.length}`);
+  // Hangar rework: no roster column, compact contract buttons, banded tonnage bar.
+  const layout = await page.evaluate(() => {
+    const canvas = document.querySelector("#preview-canvas").getBoundingClientRect();
+    const dossier = document.querySelector("#dossier").getBoundingClientRect();
+    return {
+      roster: !!document.querySelector("#roster, .zoid-card"),
+      contractBtns: document.querySelectorAll("button.contract-btn.launch").length,
+      longBrief: !!document.querySelector(".contract-card"),
+      bands: [...document.querySelectorAll("#tonnage .band")].map((el) => el.dataset.zone),
+      zoneLabel: document.querySelector("#tonnage .zone-label")?.textContent || "",
+      effect: document.querySelector("#tonnage-effect")?.textContent || "",
+      overlap: canvas.bottom > dossier.top + 1,
+      canvasH: canvas.height,
+      chip: document.querySelector("#active-chip")?.textContent || "",
+      banner: document.querySelector("#view-banner")?.dataset.state || "",
+      credits: !!document.querySelector('button[data-act="credits"]'),
+    };
+  });
+  console.log("hangar layout", JSON.stringify(layout));
+  if (layout.roster) note("hangar", "old roster column still present");
+  if (layout.contractBtns !== 3 || layout.longBrief) note("hangar", `contract buttons ${layout.contractBtns}`);
+  if (layout.bands.join() !== "light,loaded,overloaded,critical") note("tonnage", `bands ${layout.bands}`);
+  if (!layout.zoneLabel || !/km\/h/.test(layout.effect) || !/turn/.test(layout.effect)) note("tonnage", `label ${layout.zoneLabel} ${layout.effect}`);
+  if (layout.overlap || layout.canvasH < 120) note("hangar", `dossier covers the model ${JSON.stringify(layout)}`);
+  if (!/Active:/.test(layout.chip) || layout.banner !== "active") note("active", `chip ${layout.chip} banner ${layout.banner}`);
+  if (!layout.credits) note("credits", "hangar credits button missing");
   const seenSkills = [];
   for (const id of ids) {
-    await page.click(`.zoid-card[data-id="${id}"]`);
+    await page.select("#zoid-select", id);
     await page.waitForFunction(
-      (zoidId) => document.querySelector(`.zoid-card[data-id="${zoidId}"]`)?.classList.contains("viewing"),
+      (zoidId) => document.querySelector("#zoid-select")?.value === zoidId && document.querySelector("#skill-list")?.dataset.zoid === zoidId,
       { timeout: 5000 },
       id,
     );
@@ -207,16 +233,23 @@ try {
     seenSkills.push(skill.active);
   }
   if (new Set(seenSkills).size !== 8) note("skills", `active names ${seenSkills.join(", ")}`);
-  await page.click('.zoid-card[data-id="shieldLiger"]');
+  await page.select("#zoid-select", "shieldLiger");
+  const viewState = await page.evaluate(() => ({
+    banner: document.querySelector("#view-banner")?.dataset.state || "",
+    text: document.querySelector("#view-banner")?.innerText || "",
+    contracts: document.querySelector("#contracts header p")?.innerText || "",
+  }));
+  console.log("viewing vs active", JSON.stringify(viewState));
+  if (viewState.banner === "active" && !/Launches with Shield Liger/.test(viewState.contracts)) note("active", "banner says active for a non-active Zoid");
   const heatLine = await page.$eval("#weapon-heat", (el) => el.innerText);
   if (!/heat\/shot/.test(heatLine) || !/cool /.test(heatLine)) note("heat", `hangar heat line ${heatLine}`);
   const shopLine = await page.$eval(".shop-row", (el) => el.innerText);
   if (!/heat\/shot/.test(shopLine) || !/cool /.test(shopLine)) note("heat", `shop row ${shopLine}`);
-  const freshTitles = await page.$$eval(".contract-card h4", (els) => els.map((el) => el.textContent));
+  const freshTitles = await page.$$eval(".contract-btn .c-name", (els) => els.map((el) => el.textContent));
   const moneyBefore = await page.$eval("#money", (el) => el.textContent);
   console.log("hangar money", moneyBefore);
 
-  await page.click(".contract-card .launch");
+  await page.click(".contract-btn.launch");
   await page.waitForFunction(
     () => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission" && typeof window.__ZOIDS__.selfTest === "function",
     { timeout: 60000 },
@@ -397,11 +430,15 @@ try {
   await page.evaluate(() => window.__ZOIDS__.setGroup("leftWeapon", 2));
   await fireGroup("MouseRight", 1);
 
+  // Drive the sim in fixed steps so the overheat check does not depend on the
+  // box's frame rate (swiftshader under load left heat hovering ~86-91).
+  await page.evaluate(() => window.__ZOIDS__.holdSim(true));
   await page.keyboard.down("Digit1");
   let heatSample = null;
-  const heatDeadline = Date.now() + 8000;
+  const heatDeadline = Date.now() + 15000;
   while (Date.now() < heatDeadline) {
     heatSample = await page.evaluate(() => {
+      for (let i = 0; i < 30; i++) { window.__ZOIDS__.stepSim(1 / 60); if (window.__ZOIDS__.weaponHeat().some((w) => w.overheated)) break; }
       const rows = window.__ZOIDS__.weaponHeat();
       const dock = [...document.querySelectorAll("#weapon-dock .wep")].map((el) => ({
         group: el.dataset.group,
@@ -417,6 +454,7 @@ try {
     await sleep(40);
   }
   await page.keyboard.up("Digit1");
+  await page.evaluate(() => window.__ZOIDS__.holdSim(false));
   console.log("weapon heat", JSON.stringify(heatSample));
   const group1 = heatSample && heatSample.rows.find((row) => row.group === 1);
   const group2 = heatSample && heatSample.rows.find((row) => row.group === 2);
@@ -527,7 +565,7 @@ try {
   const dirty = await page.evaluate(() => ({
     money: document.querySelector("#money")?.textContent || "",
     record: document.querySelector("#record")?.textContent || "",
-    wolf: document.querySelector('.zoid-card[data-id="commandWolf"] small')?.textContent || "",
+    wolf: document.querySelector('#zoid-select option[value="commandWolf"]')?.textContent || "",
   }));
   console.log("dirty company", dirty.money, dirty.record, dirty.wolf);
   if (!dirty.money.includes("1,234")) note("reset", `dirty money is ${dirty.money}`);
@@ -543,9 +581,9 @@ try {
   const reset = await page.evaluate(() => ({
     money: document.querySelector("#money")?.textContent || "",
     record: document.querySelector("#record")?.textContent || "",
-    wolf: document.querySelector('.zoid-card[data-id="commandWolf"] small')?.textContent || "",
+    wolf: document.querySelector('#zoid-select option[value="commandWolf"]')?.textContent || "",
     groups: [...document.querySelectorAll('button[data-act="group"]')].map((el) => el.textContent),
-    titles: [...document.querySelectorAll(".contract-card h4")].map((el) => el.textContent),
+    titles: [...document.querySelectorAll(".contract-btn .c-name")].map((el) => el.textContent),
     save: localStorage.getItem("zoidMercs.save.v1"),
     other: localStorage.getItem("zoidMercs.other"),
     screen: window.__ZOIDS__ && window.__ZOIDS__.screen,
@@ -600,7 +638,7 @@ try {
   await page.evaluate(() => {
     window.__ZOIDS__.pacifyOnStart = true;
   });
-  await page.click('.contract-card[data-type="recon"] .launch');
+  await page.click('.contract-btn.launch[data-type="recon"]');
   await page.waitForFunction(
     () => window.__ZOIDS__ && window.__ZOIDS__.screen === "mission" && window.__ZOIDS__.contractType === "recon",
     { timeout: 60000 },

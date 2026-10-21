@@ -342,7 +342,7 @@ try {
   await page.evaluate(() => localStorage.removeItem("zoidMercs.save.v1"));
   await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForFunction(() => window.__ZOIDS__ && window.__ZOIDS__.ready, { timeout: 60000 });
-  await page.click('button[data-act="view"][data-id="shieldLiger"]');
+  await page.select("#zoid-select", "shieldLiger");
   await sleep(300);
   const mockPreview = await page.evaluate(() => window.__ZOIDS__.previewParts());
   console.log("mock fallback", JSON.stringify(mockPreview));

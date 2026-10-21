@@ -1,3 +1,4 @@
+import { tonnageZone, TONNAGE_CEILING } from "./tonnage.js";
 import {
   ZOIDS,
   ZOID_ORDER,
@@ -193,8 +194,28 @@ export function launchBlockReason(state) {
   if (!hangar || !hangar.owned) return "No active Zoid.";
   const parts = partsFor(state, id);
   if (parts.core.destroyed || parts.core.structure <= 0) return "Core destroyed. Repair before launch.";
-  if (totalWeight(state, id) > ZOIDS[id].maxTonnage + 0.01) return "Over tonnage. Remove gear before launch.";
+  if (tonnageZone(totalWeight(state, id), ZOIDS[id].maxTonnage).blocked) {
+    return `Over the ${Math.round(TONNAGE_CEILING * 100)}% tonnage ceiling. Remove gear before launch.`;
+  }
   return null;
+}
+
+// Would this loadout break the fitting ceiling? Used before every change that adds weight.
+function overCeiling(state, zoidId, { equipped, armorLevel, mods } = {}) {
+  const def = ZOIDS[zoidId];
+  const hangar = state.hangar[zoidId];
+  const eq = equipped || hangar.equipped;
+  const weapons = [];
+  for (const [mount, uid] of Object.entries(eq)) {
+    const item = uid && state.inventory.find((w) => w.uid === uid);
+    if (item) weapons.push({ uid: item.uid, type: item.type, group: item.group || 1, mount });
+  }
+  const weight = weightOf(def, weapons, armorLevel || hangar.armorLevel, mods || hangar.mods);
+  return tonnageZone(weight, def.maxTonnage).blocked;
+}
+
+function ceilingFail() {
+  return fail(`Over the ${Math.round(TONNAGE_CEILING * 100)}% tonnage ceiling. Remove gear first.`);
 }
 
 function fail(reason) {
@@ -286,6 +307,7 @@ export function equip(state, zoidId, mount, uid) {
   const hardpoint = def.hardpoints.find((h) => h.id === mount);
   if (!hardpoint) return fail("No such hardpoint.");
   if (!fits(hardpoint.size, WEAPONS[item.type].size)) return fail("Too large for that hardpoint.");
+  if (overCeiling(state, zoidId, { equipped: { ...hangar.equipped, [mount]: uid } })) return ceilingFail();
   for (const other of Object.values(state.hangar)) {
     for (const key of Object.keys(other.equipped)) {
       if (other.equipped[key] === uid) other.equipped[key] = null;
@@ -304,6 +326,7 @@ export function changeArmor(state, zoidId, partId, dir) {
   const current = hangar.armorLevel[partId];
   const next = current + dir;
   if (next < 0 || next > MAX_ARMOR_LEVEL) return fail("Plating limit reached.");
+  if (dir > 0 && overCeiling(state, zoidId, { armorLevel: { ...hangar.armorLevel, [partId]: next } })) return ceilingFail();
   if (dir > 0) {
     const cost = armorUpgradeCost(partId, current, def.armorScale);
     if (state.money < cost) return fail("Not enough C-bills.");
@@ -343,6 +366,7 @@ export function changeMod(state, zoidId, key, dir) {
   const current = hangar.mods[key] || 0;
   const next = current + dir;
   if (next < 0 || next > spec.max) return fail("Mod limit reached.");
+  if (dir > 0 && overCeiling(state, zoidId, { mods: { ...hangar.mods, [key]: next } })) return ceilingFail();
   if (dir > 0) {
     const cost = spec.costs[current];
     if (state.money < cost) return fail("Not enough C-bills.");

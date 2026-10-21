@@ -8,6 +8,8 @@ import {
   partListFor,
 } from "./catalog.js";
 
+import { tonnageZone } from "./tonnage.js";
+
 export function createParts(def, armorLevels = {}) {
   const parts = {};
   for (const id of partListFor(def)) {
@@ -88,9 +90,10 @@ export function derivePerformance(def, mods, parts, weight) {
   const mobility = mobilityFromParts(parts, def.layout);
   const sensors = sensorsFromHead(parts.head);
   const over = Math.max(0, weight - def.maxTonnage);
-  const overMul = over > 0 ? Math.max(0.4, 1 - over * 0.035) : 1;
-  const speed = def.speed * (1 + 0.08 * ((mods && mods.speed) || 0)) * mobility.speedMul * overMul;
-  const turn = def.turn * (1 + 0.1 * ((mods && mods.maneuver) || 0)) * mobility.turnMul * overMul;
+  const load = tonnageZone(weight || 0, def.maxTonnage);
+  const overMul = load.speedMul;
+  const speed = def.speed * (1 + 0.08 * ((mods && mods.speed) || 0)) * mobility.speedMul * load.speedMul;
+  const turn = def.turn * (1 + 0.1 * ((mods && mods.maneuver) || 0)) * mobility.turnMul * load.turnMul;
   const back = parts.backMount;
   const boosterInstalled = ((mods && mods.booster) || 0) > 0;
   const boosterReady = boosterInstalled && !!back && !back.destroyed && back.structure > 0;
@@ -107,6 +110,9 @@ export function derivePerformance(def, mods, parts, weight) {
     overweight: over > 0,
     overTons: over,
     overMul,
+    load,
+    accelMul: load.accelMul,
+    coolMul: load.coolMul,
   };
 }
 

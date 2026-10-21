@@ -594,8 +594,8 @@ export function startMission(state, contract, hooks) {
     const boost = input.boost && input.forward > 0 && perf.boosterReady;
     const skillMul = skillSpeedMul(player);
     const maxSpeed = perf.speed * (boost ? perf.boostMul : 1) * (input.forward < 0 ? 0.55 : 1) * skillMul;
-    player.speed = approach(player.speed, input.forward * maxSpeed, 34 * dt);
-    player.strafeVel = approach(player.strafeVel, input.strafe * perf.speed * 0.62 * skillMul, 28 * dt);
+    player.speed = approach(player.speed, input.forward * maxSpeed, 34 * perf.accelMul * dt);
+    player.strafeVel = approach(player.strafeVel, input.strafe * perf.speed * 0.62 * skillMul, 28 * perf.accelMul * dt);
     moveChassis(player, dt);
     player.boosting = boost;
   }
@@ -615,8 +615,8 @@ export function startMission(state, contract, hooks) {
     }
     const skillMul = skillSpeedMul(unit);
     const maxSpeed = perf.speed * (cmd.throttle < 0 ? 0.55 : 1) * skillMul;
-    unit.speed = approach(unit.speed, (cmd.throttle || 0) * maxSpeed, 28 * dt);
-    unit.strafeVel = approach(unit.strafeVel, (cmd.strafe || 0) * perf.speed * 0.55 * skillMul, 22 * dt);
+    unit.speed = approach(unit.speed, (cmd.throttle || 0) * maxSpeed, 28 * perf.accelMul * dt);
+    unit.strafeVel = approach(unit.strafeVel, (cmd.strafe || 0) * perf.speed * 0.55 * skillMul, 22 * perf.accelMul * dt);
     moveChassis(unit, dt);
   }
 
@@ -1454,8 +1454,10 @@ export function startMission(state, contract, hooks) {
         pushMessage("Energy shield overheated");
       }
       const coolMul = energyCoolMul(unit);
+      // Overloaded chassis shed heat slower (tonnage zones, js/tonnage.js).
+      const loadCool = (unit.perf && unit.perf.coolMul) || 1;
       for (const weapon of unit.weapons) {
-        const mul = weapon.kind === "energy" ? coolMul : 1;
+        const mul = (weapon.kind === "energy" ? coolMul : 1) * loadCool;
         coolWeapon(weapon, dt * mul, unit.speed);
       }
       const locked = weaponsLocked(unit);

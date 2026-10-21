@@ -1,0 +1,75 @@
+HANGAR REWORK NOTES
+===================
+
+Layout (js/hangar.js, css/style.css)
+- The left roster column is gone. A "Viewing" dropdown (#zoid-select) sits in
+  the top bar. Each entry reads "Name - role - owned | price | owned · ACTIVE".
+  Picking an unowned Zoid shows a Buy button (stage banner and loadout title),
+  so buying still works.
+- The 3D preview has the whole centre column. The dossier is a compact strip
+  under the canvas (name, role, km/h, deg/s, boost, sensors, tonnage bar). The
+  "Details" button opens the blurb, warnings, weapon heat/range lines and
+  skills below the strip. The strip and the details sit in normal flow, so the
+  canvas shrinks instead of being covered. headless.mjs checks that the canvas
+  bottom is above the dossier top.
+- Contracts are three compact buttons (.contract-btn.launch): name, payout,
+  type · location, difficulty dots. One click launches the contract. The full
+  brief is in the hover tooltip (title attribute).
+- The right column (loadout, Set active, Sell, repair, hardpoints, armour,
+  mods, shop, inventory) is unchanged.
+- The "Model credits" button and the CC-BY note are kept in the footer.
+
+Selected (viewing) vs active
+- Not a bug and the logic is unchanged (Daniel confirmed). state.selected is
+  the active Zoid that launches on contracts. Browsing another Zoid only changes
+  what is viewed.
+- To make this clear: the dropdown marks "owned · ACTIVE", the top bar shows
+  "Active: <name>", and a banner over the stage reads either "ACTIVE - this
+  Zoid launches on contracts" or "VIEWING - not active, contracts launch with
+  <active> [Set <name> active]". The contracts header says "Launches with
+  <active> (you are viewing <name>)".
+
+Tonnage zones (js/tonnage.js, one table)
+  load = fitted weight / rated tonnage (def.maxTonnage)
+
+  zone         load         speed       accel       turn        cooling
+  Light        0 - 80%      x1.00       x1.00       x1.00       x1.00
+  Loaded       80 - 100%    1.00->0.90  1.00->0.85  1.00->0.90  x1.00
+  Overloaded   100 - 120%   0.90->0.65  0.85->0.55  0.90->0.65  0.85->0.70
+  Critical     120 - 130%   0.65->0.55  0.55->0.45  0.65->0.55  0.70->0.60
+  Ceiling      above 130%   fitting refused; launch blocked
+
+- Inside a zone the values ease linearly, so there is no cliff at a boundary.
+  The one deliberate step is cooling, which drops to x0.85 the moment the
+  Zoid becomes overloaded.
+- The old hard cap (launch blocked above 100%) is gone. Overloaded and
+  Critical Zoids can launch.
+- Ceiling: equip, armour + and mod + are refused when the result would go
+  over 130% ("Over the 130% tonnage ceiling. Remove gear first."). A legacy
+  save that is already over the ceiling cannot launch until gear is removed.
+- Applied in play: derivePerformance (js/damage.js) multiplies speed and turn
+  and exposes accelMul and coolMul. drivePlayer and driveAI (js/mission.js)
+  scale their approach (acceleration) rates by accelMul. The weapon cooling
+  loop multiplies cooling by coolMul for every unit.
+- Hangar bar: four coloured bands across 0-130%, a white tick at 100% (rated),
+  a fill and pointer for the current load, the zone label, and live effective
+  speed and turn with their multipliers, plus accel and cooling.
+
+Tests
+- New tests/tonnage.test.mjs (7 checks): zone tiling, zone ids, the
+  penalty values, monotonic and continuous multipliers, derivePerformance
+  wiring, overloaded launch allowed, ceiling refusal, legacy over-ceiling
+  launch block. Added to npm test.
+- headless.mjs uses the dropdown and contract buttons and checks the layout
+  (no roster, 3 contract buttons, 4 bands, zone label and effective values,
+  no overlap with the model, active chip and banner, credits button).
+- glb_browser.mjs and shield_anim_browser.mjs pick Zoids with the dropdown.
+- headless.mjs overheat check: this was already flaky at HEAD 019c3b1 (1 of 2
+  runs failed in a clean worktree, heat stuck around 86-96 because sim time
+  depended on swiftshader frame rate). It now drives the sim with stepSim in
+  fixed 1/60 s steps and stops at the overheat.
+
+Screenshots (screenshots/hangar-rework/, tools/hangar_shots.mjs)
+- before-hangar-1024x488.png, before-hangar-1280x800.png
+- after-hangar-1024x488.png, after-hangar-1280x800.png
+  Save: Death Saurer active, viewing Shield Liger (Daniel's case).

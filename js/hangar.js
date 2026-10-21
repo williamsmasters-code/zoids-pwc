@@ -27,6 +27,7 @@ import {
   armorUpgradeCost,
 } from "./catalog.js";
 import { repairCost } from "./damage.js";
+import { TONNAGE_ZONES, TONNAGE_CEILING } from "./tonnage.js";
 import { skillBlock } from "./skills.js";
 import { creditsMarkup } from "./credits.js";
 
@@ -71,6 +72,11 @@ export function showHangar(state, hooks) {
         <strong>ZOID MERCENARIES</strong>
         <span>Rogue Fang Company</span>
       </div>
+      <label class="zoid-pick">
+        <span>Viewing</span>
+        <select id="zoid-select" aria-label="Zoid to view"></select>
+      </label>
+      <span id="active-chip" title="The active Zoid is the one that launches on contracts."></span>
       <div class="top-stats">
         <span id="rank"></span>
         <span id="record"></span>
@@ -79,14 +85,24 @@ export function showHangar(state, hooks) {
       <button type="button" data-act="reset" id="reset-btn">Reset company</button>
     </header>
     <div class="hangar-main">
-      <aside id="roster"></aside>
       <section class="stage">
-        <canvas id="preview-canvas"></canvas>
-        <div class="stage-readout">
-          <h2 id="preview-name"></h2>
-          <p id="preview-role"></p>
-          <div id="stats"></div>
-          <div id="warnings"></div>
+        <div id="view-banner"></div>
+        <div class="stage-view"><canvas id="preview-canvas"></canvas></div>
+        <div class="stage-readout" id="dossier">
+          <div class="dossier-row">
+            <div class="dossier-id">
+              <h2 id="preview-name"></h2>
+              <p id="preview-role"></p>
+            </div>
+            <div id="stats"></div>
+            <button type="button" data-act="toggle-details" id="details-btn">Details</button>
+          </div>
+          <div id="tonnage-slot"></div>
+          <div id="dossier-details" class="hidden">
+            <p id="preview-blurb"></p>
+            <div id="warnings"></div>
+            <div id="detail-weapons"></div>
+          </div>
         </div>
       </section>
       <aside id="loadout"></aside>
@@ -103,6 +119,7 @@ export function showHangar(state, hooks) {
   let viewing = state.selected;
   let picker = null;
   let status = "";
+  let detailsOpen = false;
   const preview = createPreview(root.querySelector("#preview-canvas"));
 
   function flash(result) {
@@ -123,11 +140,14 @@ export function showHangar(state, hooks) {
     root.querySelector("#record").textContent = `${state.wins} wins · rep ${state.reputation}`;
     root.querySelector("#money").textContent = formatC(state.money);
     root.querySelector("#money").classList.toggle("debt", state.money < 0);
+    const activeId = state.selected;
+    const isActive = activeId === viewing;
     root.querySelector("#preview-name").textContent = def.name;
-    root.querySelector("#preview-role").textContent = `${def.role} · ${def.blurb}`;
+    root.querySelector("#preview-role").textContent = `${def.role} · ${hangar.owned ? (isActive ? "ACTIVE" : "owned") : formatC(def.price)}`;
+    root.querySelector("#preview-blurb").textContent = def.blurb;
     const speedKph = Math.round(perf.speed * 3.6);
     const turnDeg = Math.round(perf.turn * (180 / Math.PI));
-    const tonnagePct = Math.min(140, (weight / def.maxTonnage) * 100);
+    const load = perf.load;
     const heatLines = weapons.map((weapon) => {
       const spec = WEAPONS[weapon.type];
       return `<span>${spec.name}: ${weaponFacts(spec)}</span>`;
@@ -141,36 +161,38 @@ export function showHangar(state, hooks) {
       <div class="stat"><b>${turnDeg}</b><span>deg/s</span></div>
       <div class="stat"><b>${perf.boosterReady ? perf.boostMul.toFixed(2) + "x" : "—"}</b><span>boost</span></div>
       <div class="stat"><b>${Math.round(perf.sensors.rangeMul * 100)}%</b><span>sensors</span></div>
-      <div class="tonnage ${weight > def.maxTonnage ? "over" : ""}">
-        <label>Tonnage ${weight.toFixed(1)} / ${def.maxTonnage}</label>
-        <div class="bar"><i style="width:${tonnagePct}%"></i></div>
-      </div>
+    `;
+    root.querySelector("#tonnage-slot").innerHTML = tonnageBar(weight, def, load, speedKph, turnDeg);
+    root.querySelector("#detail-weapons").innerHTML = `
       <div class="weapon-heat" id="weapon-heat">${heatLines || "<span>No weapons fitted.</span>"}</div>
-      <div class="weapon-heat" id="weapon-ranges">${rangeKey}</div>
+      <div class="weapon-heat range-key" id="weapon-ranges">${rangeKey}</div>
     `;
     let skillHost = root.querySelector("#skill-slot");
     if (!skillHost) {
       skillHost = document.createElement("div");
       skillHost.id = "skill-slot";
-      root.querySelector("#warnings").insertAdjacentElement("afterend", skillHost);
+      root.querySelector("#detail-weapons").insertAdjacentElement("afterend", skillHost);
     }
     skillHost.innerHTML = skillBlock(viewing);
     root.querySelector("#warnings").innerHTML = notes.map((note) => `<p>${note}</p>`).join("");
+    root.querySelector("#dossier-details").classList.toggle("hidden", !detailsOpen);
+    root.querySelector("#details-btn").textContent = detailsOpen ? "Hide details" : `Details${notes.length ? " (!)" : ""}`;
 
-    root.querySelector("#roster").innerHTML = ZOID_ORDER.map((id) => {
+    const select = root.querySelector("#zoid-select");
+    select.innerHTML = ZOID_ORDER.map((id) => {
       const z = ZOIDS[id];
       const owned = state.hangar[id].owned;
-      const active = state.selected === id;
-      const swatch = `#${z.colors.primary.toString(16).padStart(6, "0")}`;
-      return `<button type="button" class="zoid-card ${viewing === id ? "viewing" : ""} ${active ? "active" : ""}" data-act="view" data-id="${id}">
-        <i class="swatch" style="background:${swatch}"></i>
-        <span>
-          <strong>${z.name}</strong>
-          <small>${z.role} · ${owned ? "owned" : formatC(z.price)}</small>
-        </span>
-        ${active ? "<em>ACTIVE</em>" : ""}
-      </button>`;
+      const tag = id === activeId ? "owned · ACTIVE" : owned ? "owned" : formatC(z.price);
+      return `<option value="${id}" data-id="${id}" data-owned="${owned}" ${id === viewing ? "selected" : ""}>${z.name} — ${z.role} — ${tag}</option>`;
     }).join("");
+    select.value = viewing;
+    root.querySelector("#active-chip").innerHTML = `Active: <b>${ZOIDS[activeId].name}</b>`;
+    root.querySelector("#view-banner").innerHTML = isActive
+      ? `<span class="tag active">ACTIVE</span> This Zoid launches on contracts.`
+      : hangar.owned
+        ? `<span class="tag">VIEWING</span> Not active. Contracts launch with ${ZOIDS[activeId].name}. <button type="button" data-act="activate" data-id="${viewing}">Set ${def.name} active</button>`
+        : `<span class="tag">NOT OWNED</span> ${formatC(def.price)}. <button type="button" data-act="buy-zoid" data-id="${viewing}">Buy ${def.name}</button>`;
+    root.querySelector("#view-banner").dataset.state = isActive ? "active" : hangar.owned ? "viewing" : "unowned";
 
     const hardpoints = def.hardpoints.map((hp) => {
       const uid = hangar.equipped[hp.id];
@@ -262,19 +284,20 @@ export function showHangar(state, hooks) {
     root.querySelector("#contracts").innerHTML = `
       <header>
         <h3>Contracts</h3>
-        <p>${block ? block : `Active Zoid: ${ZOIDS[state.selected].name}`}</p>
+        <p class="${block ? "blocked" : ""}">${block ? block : `Launches with <b>${ZOIDS[activeId].name}</b>${isActive ? "" : ` (you are viewing ${def.name})`}`}</p>
         <button type="button" data-act="reroll">Reroll 5,000 C</button>
       </header>
       <div class="contract-row">
-        ${contracts.map((contract, index) => `
-          <article class="contract-card" data-type="${contract.type}">
-            <h4>${contract.name}</h4>
-            <p class="meta">${labelType(contract.type)} · ${BIOMES[contract.biome]} · ${"●".repeat(contract.difficulty)}${"○".repeat(5 - contract.difficulty)}</p>
-            <p>${contract.brief}</p>
-            <p class="pay">${formatC(contract.payout)}</p>
-            <button type="button" class="launch" data-act="launch" data-index="${index}" ${block ? "disabled" : ""}>Launch</button>
-          </article>
-        `).join("")}
+        ${contracts.map((contract, index) => {
+          const dots = `${"●".repeat(contract.difficulty)}${"○".repeat(5 - contract.difficulty)}`;
+          const tip = `${contract.name} (${labelType(contract.type)}, ${BIOMES[contract.biome]}, difficulty ${contract.difficulty}/5)\n${contract.brief}\nPays ${formatC(contract.payout)}. Click to launch with ${ZOIDS[activeId].name}.`;
+          return `<button type="button" class="contract-btn launch" data-act="launch" data-index="${index}" data-type="${contract.type}" title="${escapeAttr(tip)}" ${block ? "disabled" : ""}><span class="c-grid">
+            <span class="c-name">${contract.name}</span>
+            <b class="c-pay">${formatC(contract.payout)}</b>
+            <span class="c-meta">${labelType(contract.type)} · ${BIOMES[contract.biome]}</span>
+            <span class="c-diff" aria-label="difficulty ${contract.difficulty} of 5">${dots}</span>
+          </span></button>`;
+        }).join("")}
       </div>
     `;
     root.querySelector("#status").textContent = status;
@@ -295,6 +318,11 @@ export function showHangar(state, hooks) {
     }
     if (act === "close-credits") {
       root.querySelector("#credits-panel").classList.add("hidden");
+      return;
+    }
+    if (act === "toggle-details") {
+      detailsOpen = !detailsOpen;
+      render();
       return;
     }
     if (act === "view") {
@@ -350,6 +378,14 @@ export function showHangar(state, hooks) {
     render();
   }
   root.addEventListener("click", onClick);
+  function onChange(event) {
+    if (event.target.id !== "zoid-select") return;
+    viewing = event.target.value;
+    picker = null;
+    status = "";
+    render();
+  }
+  root.addEventListener("change", onChange);
 
   render();
   window.__ZOIDS__ = window.__ZOIDS__ || {};
@@ -362,8 +398,30 @@ export function showHangar(state, hooks) {
     if (closed) return;
     closed = true;
     root.removeEventListener("click", onClick);
+    root.removeEventListener("change", onChange);
     preview.dispose();
   };
+}
+
+function escapeAttr(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+// Banded tonnage bar: 0..130% of rated tonnage, one band per weight zone.
+function tonnageBar(weight, def, load, speedKph, turnDeg) {
+  const scale = TONNAGE_CEILING * 100;
+  const bands = TONNAGE_ZONES.map((z) => `<i class="band" data-zone="${z.id}" style="left:${(z.min * 100 / scale) * 100}%;width:${((z.max - z.min) * 100 / scale) * 100}%;background:${z.color}" title="${z.label} ${Math.round(z.min * 100)}–${Math.round(z.max * 100)}%"></i>`).join("");
+  const pct = load.ratio * 100;
+  const fill = Math.min(100, (pct / scale) * 100);
+  const mul = (v) => `×${v.toFixed(2)}`;
+  return `<div class="tonnage" data-zone="${load.zone}" id="tonnage">
+    <div class="tonnage-head">
+      <label>Tonnage ${weight.toFixed(1)} / ${def.maxTonnage} t · ${Math.round(pct)}%</label>
+      <b class="zone-label" style="color:${load.color}">${load.label}</b>
+      <span class="eff" id="tonnage-effect">speed ${speedKph} km/h ${mul(load.speedMul)} · turn ${turnDeg}°/s ${mul(load.turnMul)} · accel ${mul(load.accelMul)} · cooling ${mul(load.coolMul)}</span>
+    </div>
+    <div class="zone-bar">${bands}<i class="rated" style="left:${(100 / scale) * 100}%" title="Rated tonnage"></i><i class="fill" style="width:${fill}%"></i><i class="pointer" style="left:${fill}%"></i></div>
+  </div>`;
 }
 
 function labelType(type) {
@@ -438,7 +496,8 @@ function createPreview(canvas) {
       fwd.y = 0;
       fwd.normalize();
       const right = new Vector3().crossVectors(fwd, UP);
-      const dist = 8 + (model.def.scale || 1) * 4.2;
+      // Pulled in ~20% now the stage has the whole centre column to itself.
+      const dist = (8 + (model.def.scale || 1) * 4.2) * 0.8;
       camera.position.copy(model.root.position)
         .addScaledVector(fwd, -dist)
         .addScaledVector(right, dist * 0.38)
