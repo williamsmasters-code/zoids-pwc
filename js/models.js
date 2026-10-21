@@ -689,7 +689,7 @@ function buildMolga(visual, def, store, anim, anchors) {
 
 // Pteras: small pterosaur, broad wings (left/right mounts: wing hardpoints),
 // long crested head, missile/bomb rack under the belly (backMount). Rides
-// def.flyHeight above the ground (set in buildUnitModel).
+// js/flight.js gives it real altitude in the mission (physics, not a model offset).
 function buildPteras(visual, def, store, anim, anchors) {
   const c = def.colors;
   const thigh = [0.16, 0.45, 0.18], shin = [0.12, 0.42, 0.14], foot = [0.26, 0.1, 0.4];
@@ -1064,7 +1064,6 @@ function animateModel(model, time, speedNorm, parts) {
       const dead = parts && parts[id] && parts[id].destroyed;
       g.rotation.z = dead ? side * -0.7 : side * flap;
     }
-    if (model.def.flyHeight) model.visual.position.y = model.def.flyHeight + Math.sin(time * 1.6) * 0.15;
   }
   if (anim.torso) {
     anim.torso.position.y = Math.abs(Math.sin(phase)) * 0.045 * moving;
@@ -1365,7 +1364,6 @@ export function buildUnitModel(def, weapons, team = "player") {
     });
     iff.name = "iff";
   }
-  if (def.flyHeight) visual.position.y = def.flyHeight;
   const model = { root, visual, partMeshes: store, anim, anchors, muzzles: {}, def, turrets: {} };
   assertModel(root, def, store);
   buildTurretPivots(model);

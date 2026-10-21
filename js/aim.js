@@ -55,3 +55,21 @@ export function selectAimHit(hits, ignoreOwnerId) {
   }
   return null;
 }
+
+// AI barrel clamp: the horizontal swing is limited to maxYaw around the
+// chassis forward; elevation is kept (up to maxPitch) so ground Zoids can
+// shoot up at flyers and flyers can shoot down. Plain {x,y,z} in and out.
+export function clampAimYawPitch(forward, dir, maxYaw, maxPitch = 1.3) {
+  const d = normalize3(dir);
+  const horiz = Math.hypot(d.x, d.z);
+  const pitch = Math.max(-maxPitch, Math.min(maxPitch, Math.atan2(d.y, horiz)));
+  const fYaw = Math.atan2(-forward.x, -forward.z);
+  let dYaw = horiz > 1e-6 ? Math.atan2(-d.x, -d.z) : fYaw;
+  let rel = dYaw - fYaw;
+  while (rel > Math.PI) rel -= Math.PI * 2;
+  while (rel < -Math.PI) rel += Math.PI * 2;
+  rel = Math.max(-maxYaw, Math.min(maxYaw, rel));
+  const yaw = fYaw + rel;
+  const c = Math.cos(pitch);
+  return { x: -Math.sin(yaw) * c, y: Math.sin(pitch), z: -Math.cos(yaw) * c };
+}

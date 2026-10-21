@@ -139,7 +139,22 @@ export function updateBrain(unit, brain, ctx, dt) {
     throttle = 0;
     strafe = 0;
   }
-  const face = yawToFace(tx - x, tz - z);
+  let face = yawToFace(tx - x, tz - z);
+  let climb = 0;
+  if (unit.flight) {
+    // Flyer pilot: never hover (keep airspeed over the stall), hold a
+    // cruise altitude, dive to attack height on the run in, and break off
+    // past the target, then swing back for another strafing pass.
+    const agl = unit.flight.agl || 0;
+    const closing = dist > brain.preferred * 0.6;
+    if (!closing) brain.breakT = 2.2;
+    brain.breakT = Math.max(0, (brain.breakT || 0) - dt);
+    const want = brain.breakT > 0 ? 24 : closing && dist > brain.preferred * 1.4 ? 22 : 13;
+    climb = Math.max(-1, Math.min(1, (want - agl) / 6));
+    throttle = 1;
+    strafe = 0;
+    if (brain.breakT > 0) face += brain.flank * 1.1;
+  }
   const skill = unit.skill;
   const skillReady = !!(skill && skill.cooldown <= 0 && !skill.overheated && !skill.active);
   const inSkillRange = dist < Math.min(48, Math.max(28, maxRange));
@@ -165,6 +180,7 @@ export function updateBrain(unit, brain, ctx, dt) {
     throttle,
     strafe,
     yaw: face,
+    climb,
     fire: dist < maxRange * 0.98,
     skill: useSkill,
     aim: {

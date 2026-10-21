@@ -57,6 +57,7 @@ import { createHUD, headingOf } from "./hud.js";
 import { createBrain, updateBrain } from "./ai.js";
 import { aiTuning, difficultySpec } from "./difficulty.js";
 import { escortLayout } from "./escort.js";
+import { flightSpec, createFlight, stepFlight, floorAt, shouldFall, meleeReaches } from "./flight.js";
 import {
   addWeaponHeat,
   coolWeapon,
@@ -101,6 +102,7 @@ import {
   aimPointAlongRay,
   directionToPoint,
   selectAimHit,
+  clampAimYawPitch,
 } from "./aim.js";
 
 const UP = new Vector3(0, 1, 0);
@@ -417,6 +419,10 @@ export function startMission(state, contract, hooks) {
       scripted: !!opts.scripted,
       radius: def.radius || 2,
       perf: null,
+      flightSpec: flightSpec(def),
+      flight: flightSpec(def) ? createFlight(model.root.position.y) : null,
+      climbCmd: 0,
+      vel3: { x: 0, y: 0, z: 0 },
     };
     units.push(unit);
     return unit;
@@ -569,9 +575,47 @@ export function startMission(state, contract, hooks) {
     pos.y = map.heightAt(pos.x, pos.z);
   }
 
+  // Obstacle tops (world y), measured once from their meshes, so flyers can
+  // pass over rocks and buildings.
+  const topBox = new Box3();
+  function obstacleTops() {
+    for (const o of obstacles) {
+      if (o.top != null || !o.mesh) continue;
+      o.mesh.updateMatrixWorld(true);
+      o.top = topBox.setFromObject(o.mesh).max.y;
+    }
+    return obstacles;
+  }
+
+  // Generic flyer step (js/flight.js). Physics altitude lives in
+  // root.position.y; pitch and bank tilt only the visual group.
+  function flyUnit(unit, dt) {
+    const spec = unit.flightSpec;
+    const st = unit.flight;
+    const pos = unit.model.root.position;
+    st.y = pos.y;
+    const ground = map.heightAt(pos.x, pos.z);
+    const floor = floorAt(pos.x, pos.z, ground, obstacleTops(), unit.radius);
+    if (st.y < floor - 0.5 && !st.airborne) st.y = floor;
+    const yaw = unit.model.root.rotation.y;
+    const turnRate = dt > 0 ? wrapAngle(yaw - (unit.prevYaw ?? yaw)) / dt : 0;
+    unit.prevYaw = yaw;
+    const falling = !unit.alive || shouldFall(unit.parts);
+    stepFlight(st, spec, { climb: unit.climbCmd || 0, airspeed: Math.max(0, unit.speed), turnRate }, floor, ground, dt, falling);
+    pos.y = st.y;
+    unit.model.visual.rotation.set(st.pitch, 0, st.bank);
+    if (st.crashed && unit.alive && !unit.crashApplied) {
+      unit.crashApplied = true;
+      if (unit === player) pushMessage("Wings gone. Crashed!");
+      killUnit(unit, unit.provokedBy || null);
+    }
+  }
+
   function resolveObstacles(unit) {
     const pos = unit.model.root.position;
     for (const obstacle of obstacles) {
+      // Flyers above an obstacle's top pass over it.
+      if (unit.flight && obstacle.top != null && pos.y >= obstacle.top - 0.3) continue;
       if (obstacle.shape === "circle") {
         const dx = pos.x - obstacle.x;
         const dz = pos.z - obstacle.z;
@@ -606,6 +650,7 @@ export function startMission(state, contract, hooks) {
         const a = units[i];
         const b = units[j];
         if (!a.alive || !b.alive) continue;
+        if (Math.abs(b.model.root.position.y - a.model.root.position.y) > 5) continue;
         const dx = b.model.root.position.x - a.model.root.position.x;
         const dz = b.model.root.position.z - a.model.root.position.z;
         const dist = Math.hypot(dx, dz) || 0.0001;
@@ -668,7 +713,14 @@ export function startMission(state, contract, hooks) {
     const boost = input.boost && input.forward > 0 && perf.boosterReady;
     const skillMul = skillSpeedMul(player);
     const maxSpeed = perf.speed * (boost ? perf.boostMul : 1) * (input.forward < 0 ? 0.55 : 1) * skillMul;
-    player.speed = approach(player.speed, input.forward * maxSpeed, 34 * perf.accelMul * dt);
+    if (player.flight && player.flight.airborne) {
+      // In the air W/S trim airspeed (no reverse); it keeps what it has.
+      const goal = input.forward > 0 ? maxSpeed : input.forward < 0 ? 0 : player.speed;
+      player.speed = approach(player.speed, goal, 14 * perf.accelMul * dt);
+    } else {
+      player.speed = approach(player.speed, input.forward * maxSpeed, 34 * perf.accelMul * dt);
+    }
+    player.climbCmd = input.climb || 0;
     player.strafeVel = approach(player.strafeVel, input.strafe * perf.speed * 0.62 * skillMul, 28 * perf.accelMul * dt);
     moveChassis(player, dt);
     player.boosting = boost;
@@ -690,6 +742,7 @@ export function startMission(state, contract, hooks) {
     const skillMul = skillSpeedMul(unit);
     const maxSpeed = perf.speed * (cmd.throttle < 0 ? 0.55 : 1) * skillMul;
     unit.speed = approach(unit.speed, (cmd.throttle || 0) * maxSpeed, 28 * perf.accelMul * dt);
+    unit.climbCmd = cmd.climb || 0;
     unit.strafeVel = approach(unit.strafeVel, (cmd.strafe || 0) * perf.speed * 0.55 * skillMul, 22 * perf.accelMul * dt);
     moveChassis(unit, dt);
   }
@@ -702,6 +755,14 @@ export function startMission(state, contract, hooks) {
     parent.getWorldQuaternion(parentQ);
     const worldQ = new Quaternion().setFromUnitVectors(NEG_Z, dirWorld.clone().normalize());
     object.quaternion.copy(parentQ.invert()).multiply(worldQ);
+  }
+
+  // AI barrels: clamp only the horizontal swing to the chassis; elevation
+  // is free up to ~75 degrees so ground Zoids can shoot up at flyers and
+  // flyers can shoot down.
+  function clampAimYaw(forward, dir, maxYaw) {
+    const r = clampAimYawPitch(forward, dir, maxYaw);
+    return new Vector3(r.x, r.y, r.z);
   }
 
   function clampAim(forward, dir, maxAngle) {
@@ -743,6 +804,10 @@ export function startMission(state, contract, hooks) {
   // camera behind the hull still aims at the point the crosshair covers.
   function cameraAimPoint() {
     if (autopilot && autoTarget && autoTarget.alive) return lockAimPoint(autoTarget);
+    if (forcedAimId) {
+      const t = units.find((u) => u.id === forcedAimId && u.alive);
+      if (t) return lockAimPoint(t);
+    }
     camera.updateMatrixWorld(true);
     raycaster.setFromCamera(screenCenterNdc, camera);
     const origin = raycaster.ray.origin.clone();
@@ -765,7 +830,7 @@ export function startMission(state, contract, hooks) {
     if (dir.lengthSq() < 1e-8) facingDirection(unit.model.root, dir);
     if (unit !== player) {
       const chassisFwd = facingDirection(unit.model.root, new Vector3());
-      dir = clampAim(chassisFwd, dir, 0.6);
+      dir = clampAimYaw(chassisFwd, dir, 0.6);
     }
     if (anchor) aimNegZ(anchor, dir);
     return dir;
@@ -793,7 +858,7 @@ export function startMission(state, contract, hooks) {
     if (dir.lengthSq() < 1e-8) facingDirection(unit.model.root, dir);
     if (unit !== player) {
       const chassisFwd = facingDirection(unit.model.root, new Vector3());
-      dir = clampAim(chassisFwd, dir, 0.6);
+      dir = clampAimYaw(chassisFwd, dir, 0.6);
     }
     const anchor = unit.model.anchors[weapon.mount];
     if (anchor) aimNegZ(anchor, dir);
@@ -849,7 +914,18 @@ export function startMission(state, contract, hooks) {
     if (!muzzleObj) return;
     let point = aimPoint;
     if (!point) {
-      if (unit.cmd && unit.cmd.aim) point = new Vector3(unit.cmd.aim.x, unit.cmd.aim.y, unit.cmd.aim.z);
+      if (unit.cmd && unit.cmd.aim) {
+        point = new Vector3(unit.cmd.aim.x, unit.cmd.aim.y, unit.cmd.aim.z);
+        // AI leads moving targets with travelling shots (3D, so it leads
+        // climbing / diving flyers too). Hitscan needs no lead.
+        const tgt = unit.aiTarget;
+        if (tgt && tgt.alive && !weapon.hitscan && weapon.delivery !== "rocket" && weapon.speed) {
+          const from = new Vector3();
+          muzzleObj.getWorldPosition(from);
+          const led = leadPoint(from, point, tgt.vel3, weapon.speed).point;
+          point.set(led.x, led.y, led.z);
+        }
+      }
       else {
         const fwd = facingDirection(unit.model.root, new Vector3());
         const origin = new Vector3();
@@ -1252,7 +1328,7 @@ export function startMission(state, contract, hooks) {
       if (lock) {
         const tp = lock.model.root.position;
         bearing = relativeBearing(root.rotation.y, root.position.x, root.position.z, tp.x, tp.z);
-        dist = Math.hypot(tp.x - root.position.x, tp.z - root.position.z);
+        dist = Math.hypot(tp.x - root.position.x, tp.y - root.position.y, tp.z - root.position.z);
       }
       const result = stepTurret(weapon.turretState, weapon.turret, bearing, dt);
       setTurretYaw(unit.model, weapon.mount, weapon.turretState.yaw);
@@ -1404,6 +1480,13 @@ export function startMission(state, contract, hooks) {
       if (camera.position.y < minY) camera.position.y = minY;
       camera.lookAt(lookTarget);
     }
+    const spec = spectateId ? units.find((u) => u.id === spectateId && u.alive) : null;
+    if (spec) {
+      const sp = spec.model.root.position;
+      const away = sp.clone().sub(player.model.root.position).setY(0).normalize();
+      camera.position.copy(sp).addScaledVector(away, 14).add(new Vector3(0, 4, 0));
+      camera.lookAt(player.model.root.position.clone().lerp(sp, 0.35));
+    }
     // The eye sits inside the head and the shield plate. Hide those body meshes
     // while the view is first person. Raycasts ignore visibility, so hits still land.
     const showBody = cameraMode !== "fps";
@@ -1487,12 +1570,23 @@ export function startMission(state, contract, hooks) {
     return facingDirection(unit.model.root, new Vector3());
   }
 
+  // Test hooks (browser flight test): scripted input, forced aim target and
+  // a spectator camera on another unit looking at the player.
+  let forcedInput = null;
+  let forcedAimId = null;
+  let spectateId = null;
+
   function simulate(dt) {
     missionTime += dt;
     const input = paused ? {
       forward: 0, strafe: 0, turn: 0, boost: false, groups: [false, false, false, false],
       dx: 0, dy: 0, tab: false, nearest: false, camera: false, help: false, skill: false,
+    } : forcedInput ? {
+      forward: 0, strafe: 0, turn: 0, boost: false, groups: [false, false, false, false],
+      dx: 0, dy: 0, tab: false, nearest: false, camera: false, help: false, skill: false, climb: 0,
+      ...forcedInput,
     } : autopilot ? autopilotInput() : inputDevice.read();
+    if (forcedInput) forcedInput = { ...forcedInput, camera: false, tab: false, nearest: false, skill: false };
     lastGroups = input.groups.slice();
     if (input.help) helpOn = !helpOn;
     if (input.camera) cameraMode = cameraMode === "fps" ? "tps" : "fps";
@@ -1521,9 +1615,19 @@ export function startMission(state, contract, hooks) {
       separateUnits();
     }
     for (const unit of units) {
-      if (!unit.alive) continue;
+      if (!unit.alive) {
+        continue;
+      }
+      const p0 = unit.model.root.position;
       resolveObstacles(unit);
-      plant(unit);
+      if (unit.flight) flyUnit(unit, dt);
+      else plant(unit);
+      if (dt > 0 && unit.prevPos) {
+        unit.vel3.x = (p0.x - unit.prevPos.x) / dt;
+        unit.vel3.y = (p0.y - unit.prevPos.y) / dt;
+        unit.vel3.z = (p0.z - unit.prevPos.z) / dt;
+      }
+      unit.prevPos = { x: p0.x, y: p0.y, z: p0.z };
     }
 
     for (const unit of units) {
@@ -1726,7 +1830,7 @@ export function startMission(state, contract, hooks) {
         y: pos.y + (target.radius || 2) * 0.45,
         z: pos.z,
       };
-      const leadWorld = leadPoint(origin, aimAt, unitPlanarVelocity(target), speed).point;
+      const leadWorld = leadPoint(origin, aimAt, target.vel3 || unitPlanarVelocity(target), speed).point;
       lead = projectHudPoint(leadWorld.x, leadWorld.y, leadWorld.z);
     }
     lastAimMarkers = {
@@ -1898,6 +2002,9 @@ export function startMission(state, contract, hooks) {
       for (const other of units) {
         if (!other.alive || other === unit || other.team === unit.team) continue;
         const rel = other.model.root.position.clone().sub(unit.model.root.position);
+        // Melee cannot reach a flyer above meleeHeight (or a flyer swing at
+        // the ground unless it swoops low).
+        if (!meleeReaches(unit.model.root.position.y, other.model.root.position.y, unit.flightSpec || other.flightSpec)) continue;
         rel.y = 0;
         const dist = rel.length();
         if (dist > reach || dist < 0.01) continue;
@@ -1997,6 +2104,7 @@ export function startMission(state, contract, hooks) {
         z: unit.model.root.position.z,
         color: unit.team === "enemy" ? "#ff4455" : "#7dffb2",
         r: unit.def.immobile ? 4 : 3,
+        air: !!(unit.flight && unit.flight.airborne),
       });
     }
     for (const marker of markers) {
@@ -2021,6 +2129,13 @@ export function startMission(state, contract, hooks) {
       parts: player.parts,
       speed: Math.abs(player.speed),
       speedPct: (Math.abs(player.speed) / Math.max(0.1, perf.speed)) * 100,
+      flight: player.flight ? {
+        alt: player.flight.agl,
+        airspeed: Math.max(0, player.speed) * 3.6,
+        stalled: player.flight.stalled && player.flight.airborne,
+        airborne: player.flight.airborne,
+        ceiling: player.flightSpec.ceiling,
+      } : null,
       heat: peak,
       shutdown: player.shutdown,
       boosting: player.boosting,
@@ -2632,10 +2747,23 @@ export function startMission(state, contract, hooks) {
     player.lockId = id || null;
     return player.lockId;
   };
-  window.__ZOIDS__.placeUnit = (id, x, z, yaw) => {
+  window.__ZOIDS__.simInput = (inp) => { forcedInput = inp ? { ...inp } : null; return !!forcedInput; };
+  window.__ZOIDS__.forceAim = (id) => { forcedAimId = id || null; return forcedAimId; };
+  window.__ZOIDS__.spectate = (id) => { spectateId = id || null; return spectateId; };
+  window.__ZOIDS__.obstacleList = () => obstacleTops().map((o) => ({ shape: o.shape, x: o.x, z: o.z, r: o.r, hw: o.hw, hd: o.hd, top: o.top, ground: map.heightAt(o.x, o.z) }));
+  window.__ZOIDS__.flightInfo = (id) => {
+    const u = id ? units.find((x) => x.id === id) : player;
+    if (!u || !u.flight) return null;
+    const p = u.model.root.position;
+    return { id: u.id, x: p.x, y: p.y, z: p.z, agl: u.flight.agl, airborne: u.flight.airborne, stalled: u.flight.stalled,
+      pitch: u.flight.pitch, bank: u.flight.bank, speed: u.speed, alive: u.alive, ground: map.heightAt(p.x, p.z),
+      armor: Object.values(u.parts).reduce((sum, part) => sum + part.armor + part.structure, 0) };
+  };
+  window.__ZOIDS__.placeUnit = (id, x, z, yaw, alt) => {
     const unit = units.find((u) => u.id === id);
     if (!unit) return null;
-    unit.model.root.position.set(x, map.heightAt(x, z), z);
+    unit.model.root.position.set(x, map.heightAt(x, z) + (unit.flight && alt ? alt : 0), z);
+    if (unit.flight && alt) { unit.flight.airborne = true; unit.flight.y = unit.model.root.position.y; unit.prevPos = null; }
     if (yaw != null) unit.model.root.rotation.y = yaw;
     unit.model.root.updateMatrixWorld(true);
     return { x, z };

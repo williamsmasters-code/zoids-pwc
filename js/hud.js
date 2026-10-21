@@ -87,6 +87,7 @@ export function createHUD(root) {
       <div class="speed-row"><span id="speed">0</span><small>SPD</small><div class="bar"><i id="speed-bar"></i></div></div>
       <div class="heat-row">PEAK <div class="bar heat"><i id="heat-bar"></i></div></div>
       <div id="boost-flag"></div>
+      <div class="flight-row hidden" id="flight-row"><span id="alt">0</span><small>ALT m</small> <span id="airspeed">0</span><small>AIR km/h</small> <em id="stall"></em></div>
     </section>
     <section class="panel target-panel">
       <header id="target-name">No target</header>
@@ -97,13 +98,14 @@ export function createHUD(root) {
     <section class="weapon-dock" id="weapon-dock"></section>
     <canvas id="minimap" width="150" height="150"></canvas>
     <div class="log" id="log"></div>
-    <div class="strip" id="strip">WASD move · Mouse aim · LMB/RMB/1-4 weapons · Q skill · Shift boost · V camera · Tab target · R nearest · H help · Esc pause</div>
+    <div class="strip" id="strip">WASD move · Space/C climb/dive (flyers) · Mouse aim · LMB/RMB/1-4 weapons · Q skill · Shift boost · V camera · Tab target · R nearest · H help · Esc pause</div>
     <div class="help hidden" id="help">
       <h2>Controls</h2>
       <ul>
         <li>Click the field to capture the mouse.</li>
         <li>W / S or arrow up / down — throttle. A / D — strafe.</li>
         <li>Mouse, or arrow left / right — look. The chassis turns to follow, slower as legs take damage.</li>
+        <li>Flyers (Pteras): Space — climb, C — descend. W builds airspeed, S slows it (no reverse in the air). Below the stall speed it cannot climb and sinks; slow down on the ground to land and walk. Ceiling 70 m above the terrain. It flies over rocks and buildings. The HUD shows ALT and AIR speed.</li>
         <li>Shift — boost, if back boosters are fitted and the back mount still stands.</li>
         <li>Left mouse or 1 — weapon group 1. Right mouse or 2 — group 2. 3 and 4 — the other groups.</li>
         <li>Beams (pulse laser, beam cannon) hit instantly along the crosshair. A short tracer shows the shot.</li>
@@ -161,6 +163,13 @@ export function createHUD(root) {
       root.querySelector("#player-diagram").innerHTML = diagramSVG(data.layout, data.parts);
       root.querySelector("#speed").textContent = String(Math.round(data.speed));
       root.querySelector("#speed-bar").style.width = `${Math.max(0, Math.min(100, data.speedPct))}%`;
+      const fr = root.querySelector("#flight-row");
+      fr.classList.toggle("hidden", !data.flight);
+      if (data.flight) {
+        root.querySelector("#alt").textContent = String(Math.round(data.flight.alt));
+        root.querySelector("#airspeed").textContent = String(Math.round(data.flight.airspeed));
+        root.querySelector("#stall").textContent = data.flight.stalled ? "STALL" : data.flight.airborne ? "" : "LANDED";
+      }
       root.querySelector("#heat-bar").style.width = `${Math.max(0, Math.min(100, data.heat))}%`;
       root.querySelector(".reticle").classList.toggle("oor", !!data.outOfRange);
       const ring = root.querySelector("#lock-ring");
@@ -285,6 +294,13 @@ function drawMini(ctx, mini) {
       ctx.beginPath();
       ctx.arc(p.x, p.y, mark.r || 3, 0, Math.PI * 2);
       ctx.fill();
+      if (mark.air) {
+        // Airborne contact: an open ring around the dot.
+        ctx.strokeStyle = mark.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, (mark.r || 3) + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
   ctx.fillStyle = "#e8f6ff";

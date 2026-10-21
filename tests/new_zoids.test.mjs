@@ -1,5 +1,5 @@
 // Load check for the five Zoids added in Oct 2026: each builds, has every
-// damage part, stands on the ground (Pteras hovers at flyHeight), faces -Z,
+// damage part, stands on the ground (Pteras too; it flies in missions via js/flight.js), faces -Z,
 // is roughly centred, has the expected relative size, a turret pivot where
 // its back mount is turreted, a stock loadout that fits, a skill, and shows
 // up in the difficulty enemy pools.
@@ -30,8 +30,7 @@ for (const id of NEW) {
   model.root.updateMatrixWorld(true);
   for (const part of partListFor(def)) assert.ok(model.partMeshes[part]?.length, `${id} ${part}`);
   const b = box(model.visual);
-  const ground = (def.flyHeight || 0) * (def.scale || 1);
-  assert.ok(Math.abs(b.min.y - (def.flyHeight || 0)) < 0.2 || Math.abs(b.min.y - ground) < 0.2, `${id} min y ${b.min.y.toFixed(2)}`);
+  assert.ok(Math.abs(b.min.y) < 0.2, `${id} min y ${b.min.y.toFixed(2)}`);
   const c = b.getCenter(new Vector3());
   assert.ok(Math.abs(c.x) < 0.3, `${id} centred x ${c.x.toFixed(2)}`);
   assert.ok(Math.abs(c.z) < 1.2, `${id} centred z ${c.z.toFixed(2)}`);

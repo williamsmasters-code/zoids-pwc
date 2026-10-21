@@ -495,3 +495,6 @@ button:disabled { opacity: 0.45; cursor: default; }
   .topbar { gap: 10px; }
   .strip { display: none; }
 }
+.flight-row { display: flex; gap: 6px; align-items: baseline; font-size: 12px; color: #9fe6ff; }
+.flight-row.hidden { display: none; }
+.flight-row em { color: #ff6655; font-style: normal; font-weight: bold; }

@@ -622,10 +622,9 @@ export const ZOIDS = {
     price: 290000,
     scale: 0.9,
     radius: 2.4,
-    // Flies at a low fixed height above the ground (metres, before scale).
-    // Movement, collision and hits work as for ground Zoids; only the model
-    // is raised. Tunable here. See docs/NEW_ZOIDS_NOTES.txt.
-    flyHeight: 3.2,
+    // Real flight (js/flight.js "flyer" mode). Altitude is physics, not a
+    // model offset. Tunable here; see docs/NEW_ZOIDS_NOTES.txt.
+    flight: { ceiling: 70, stallSpeed: 9, takeoffSpeed: 9, climbRate: 10, stallSink: 7, meleeHeight: 4 },
     blurb: "Light red pterosaur. Flies low and fast, bombs and missiles under the wings, thin armour.",
     colors: { primary: 0xb8322e, secondary: 0xe8e2d6, accent: 0xf0b030, dark: 0x2a1a18, eye: 0x66eeff, plate: 0xd8d0c0 },
     hardpoints: [

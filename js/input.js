@@ -82,6 +82,8 @@ export function createInput() {
         strafe: (down.has("KeyD") ? 1 : 0) - (down.has("KeyA") ? 1 : 0),
         turn: (down.has("ArrowRight") ? 1 : 0) - (down.has("ArrowLeft") ? 1 : 0),
         boost: down.has("ShiftLeft") || down.has("ShiftRight"),
+        // Flyers only: Space climbs, C descends.
+        climb: (down.has("Space") ? 1 : 0) - (down.has("KeyC") ? 1 : 0),
         groups: [
           down.has("Digit1") || lmb,
           down.has("Digit2") || rmb,

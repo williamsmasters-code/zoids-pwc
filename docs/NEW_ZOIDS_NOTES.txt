@@ -41,6 +41,7 @@ on y = 0 (Pteras hovers), and use their own part split:
                   small side guns = left/right, top gun = 360 deg turret.
   Pteras          biped. Small body and legs, broad wings = left/right
                   mounts (wing guns), crested head, belly rack = backMount.
+                  Flies for real (section 5).
 
 Sizes (stock, before the enemy IFF beacon): Molga and Pteras are the small
 ones (Molga ~1.5 m wide, 4.4 m long; Pteras body ~3.8 m long with ~6.8 m
@@ -49,12 +50,8 @@ wingspan), Elephander the largest four-legged frame (scale 1.55).
 Hangar preview: the camera now also backs off by the model's real bounding
 size (js/hangar.js), so big frames like Elephander fit the stage.
 
-Pteras flight: ZOIDS.pteras.flyHeight = 3.2 (js/catalog.js). Only the model
-is raised (visual.position.y) with a slow bob and wing flap; movement,
-collision and terrain-following are the ground rules. Hits are mesh
-raycasts and the lock aims at the core meshes, so shots land on the raised
-body. Raise or lower flyHeight to tune; 0 makes it a ground walker. Its
-body is light (armorScale 0.66, baseWeight 20, maxTonnage 36).
+Pteras flight: replaced by real flight, see section 5. (The earlier
+flyHeight model offset is gone.)
 
 2. Stats (js/catalog.js) and stock loadouts
 -------------------------------------------
@@ -101,8 +98,87 @@ gunboat).
 4. Tests and screenshots
 ------------------------
 tests/new_zoids.test.mjs (in npm test): builds each, every damage part,
-feet on y = 0 (Pteras at flyHeight), centred, turret pivots, stock fits,
+feet on y = 0, centred, turret pivots, stock fits,
 skill present, in an enemy pool, relative sizes vs Shield Liger / Iron Kong.
 tests/new_zoids_browser.mjs: 4-view (tools/zoid_views.html), hangar and
 in-game shot each, no page errors, mission selfTest ok. Output:
 screenshots/new-zoids/<id>-views.png, -hangar.png, -ingame.png.
+
+5. Real flight: generic "flyer" movement mode (js/flight.js)
+-----------------------------------------------------------
+Any Zoid with a `flight` block in js/catalog.js flies; Pteras is the first
+(flight: ceiling 70, stallSpeed 9, takeoffSpeed 9, climbRate 10,
+stallSink 7, meleeHeight 4). Raynos / Storm Sworder can reuse it by adding
+the same block. The physics position has a true altitude
+(root.position.y); hit meshes, parts, the lock aim point and the camera all
+move with it in 3D. Pitch and bank tilt only the model, the physics frame
+stays upright.
+
+Controls (player flyer; help screen H and the control strip updated):
+  W / S      airspeed up / down. In the air S only slows, no reverse.
+  Space      climb.            C      descend.
+  Mouse / arrows  turn (the model banks into the turn).
+  Shift boost, Q skill (Bombing Run: 4 bombs at the aim point), V camera,
+  Tab / R lock, as before. Space and C were unbound; Ctrl was avoided
+  because Ctrl+W closes the browser tab.
+
+Flight rules:
+  - Minimum airspeed, no hover. Below 9 m/s in the air it stalls: climb
+    input is ignored and it sinks at up to 7 m/s until it speeds up or
+    lands. On the ground it walks like a small biped; it lifts off once
+    airspeed reaches 9 m/s and Space is held.
+  - Climb / descend at up to 10 m/s, eased. No input holds altitude.
+  - Pitch follows the climb (atan(vertical / airspeed), max 0.5 rad).
+  - Ceiling: 70 m above the terrain under it.
+  - Floor: the terrain, or the top of any rock or building under its
+    footprint. It cannot go below the floor. Fast, it skims the floor;
+    slow (under stall speed), it lands. Obstacles below its altitude do not
+    block it (resolveObstacles skips them); it cannot fly through the side
+    of an obstacle taller than its altitude. Unit separation ignores pairs
+    more than 5 m apart vertically.
+  - Crash: losing both wings (left/right mounts) or both legs makes it
+    fall (gravity 18 m/s2); hitting the floor faster than 6 m/s kills it.
+    Losing the core kills it as for any Zoid.
+  - Melee (dash skills: Buster Claw Charge, Laser Blade, Ram) needs the
+    two units within 4 m vertically, so ground melee cannot reach a flyer
+    above that and a flyer must swoop low to melee. Claw / blade weapons
+    are short-range hitscan, so their 8-14 m reach is already 3D.
+
+Combat both ways:
+  - AI barrels are still clamped to +-0.6 rad of yaw around the chassis,
+    but elevation is now free up to 1.3 rad (aim.js clampAimYawPitch), so
+    ground Zoids aim up at flyers and flyers aim down.
+  - AI leads moving targets with travelling shots using the target's 3D
+    velocity (climbs and dives included); hitscan beams need no lead. The
+    player's ballistic LEAD bracket also uses 3D velocity.
+  - Missiles lock and home onto air targets (3D homing was already there).
+  - Turrets elevate to the lock (already 3D); their range check is now 3D.
+    Lock-only turret rule unchanged.
+  - Bombing Run (Q) drops bombs at the aim point; the belly missile pack
+    fires at the lock.
+
+AI flyers (js/ai.js): full throttle (never stall), cruise at ~22 m above
+the floor when far, dive to ~13 m on the run in, break off past the target
+(climb to ~24 m and turn away for 2.2 s), then swing back for another pass.
+Ground AI targets and leads air targets like any other.
+
+HUD: an ALT (m above the floor) / AIR (km/h) row under the speed bar, with
+STALL or LANDED flags. Minimap: airborne contacts get an open ring around
+their dot. Chase and first-person cameras follow the true altitude.
+
+Balance: unchanged numbers on paper (balance report has no altitude term):
+Pteras keeps the thinnest core (EHP 56.8) and 36 DPS at 60 m; it pays for
+height with stall and crash rules and can be shot from the ground.
+
+Tests:
+  tests/flight.test.mjs (npm test): take-off needs airspeed, climb above
+  20 m, level hold, 70 m ceiling, stall sinks and lands (no hover),
+  terrain/obstacle floor and skimming, banking, crash rule, melee height,
+  and ground fire maths (AI clamp keeps elevation, beam ray passes through
+  a flyer 30 m up, a led shell meets a moving flyer).
+  tests/pteras_flight_browser.mjs (npm test): in a real mission Pteras takes
+  off and climbs above 20 m, the HUD shows ALT, it flies over the tallest
+  obstacle without being pushed aside, damages a ground Molga from 22 m up,
+  and a live ground Molga hits it at 18 m. Screenshots:
+  screenshots/pteras-flight/pteras-airborne-chase.png,
+  pteras-airborne-first-person.png, ground-zoid-shooting-up.png.
