@@ -93,7 +93,7 @@ export function showHangar(state, hooks) {
     <div class="hangar-main">
       <section class="stage">
         <div id="view-banner"></div>
-        <div class="stage-view"><canvas id="preview-canvas"></canvas></div>
+        <div class="stage-view"><canvas id="preview-canvas" title="Drag to rotate · scroll or pinch to zoom · double-click to reset"></canvas><button type="button" id="view-reset" class="view-reset" title="Reset view">⟲</button></div>
         <div class="stage-readout" id="dossier">
           <div class="dossier-row">
             <div class="dossier-id">
@@ -490,6 +490,7 @@ export function showHangar(state, hooks) {
   window.__ZOIDS__.screen = "hangar";
   window.__ZOIDS__.ready = true;
   window.__ZOIDS__.previewParts = () => preview.parts();
+  window.__ZOIDS__.previewView = () => preview.viewState();
   window.__ZOIDS__.installMode = installMode;
 
   let closed = false;
@@ -560,8 +561,106 @@ function createPreview(canvas) {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
   let model = null;
-  let spin = Math.PI - 0.55;
+  const SPIN0 = Math.PI - 0.55;
+  const LIFT0 = 0.32;
+  let spin = SPIN0;
   let running = true;
+
+  // Showcase controls (custom; three's OrbitControls isn't vendored).
+  // Drag = rotate (yaw) and tilt (camera lift), wheel / pinch = zoom within
+  // limits scaled by the Zoid's size, double-click / double-tap / reset button
+  // = default view. Auto-spin pauses while interacting, resumes after 3 s.
+  const ZOOM_MIN = 0.55;
+  const ZOOM_MAX = 1.8;
+  const LIFT_MIN = -0.05;
+  const LIFT_MAX = 1.1;
+  const RESUME_MS = 3000;
+  const view = { yaw: 0, zoom: 1, lift: LIFT0, lastInput: -Infinity, dragging: false };
+  const pointers = new Map();
+  let pinchDist = 0;
+  let lastTap = 0;
+  let tapX = 0;
+  let tapY = 0;
+  let justReset = false;
+  const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+  const touch = () => { view.lastInput = performance.now(); };
+  function resetView() {
+    spin = SPIN0;
+    view.yaw = 0;
+    view.zoom = 1;
+    view.lift = LIFT0;
+    view.lastInput = -Infinity;
+  }
+  function zoomBy(factor) {
+    view.zoom = clampN(view.zoom * factor, ZOOM_MIN, ZOOM_MAX);
+    touch();
+  }
+  function onDown(e) {
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic or already released */ }
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    view.dragging = true;
+    touch();
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+    if (pointers.size === 1) {
+      // Double-tap / double-click (own detection so touch and mouse match).
+      const now = performance.now();
+      if (now - lastTap < 320 && Math.hypot(e.clientX - tapX, e.clientY - tapY) < 24) {
+        resetView();
+        justReset = true;
+        lastTap = 0;
+      } else {
+        lastTap = now;
+      }
+      tapX = e.clientX;
+      tapY = e.clientY;
+    }
+  }
+  function onMove(e) {
+    const prev = pointers.get(e.pointerId);
+    if (!prev) return;
+    e.preventDefault();
+    if (justReset) return;
+    const cur = { x: e.clientX, y: e.clientY };
+    pointers.set(e.pointerId, cur);
+    if (pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinchDist > 0 && d > 0) zoomBy(pinchDist / d);
+      pinchDist = d;
+      return;
+    }
+    view.yaw -= (cur.x - prev.x) * 0.01;
+    view.lift = clampN(view.lift + (cur.y - prev.y) * 0.004, LIFT_MIN, LIFT_MAX);
+    touch();
+  }
+  function onUp(e) {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinchDist = 0;
+    view.dragging = pointers.size > 0;
+    if (justReset) { justReset = false; return; }
+    touch();
+  }
+  function onWheel(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    zoomBy(Math.exp(clampN(e.deltaY, -200, 200) * 0.0015));
+  }
+  function onDbl(e) { e.preventDefault(); resetView(); }
+  canvas.style.touchAction = "none";
+  canvas.addEventListener("pointerdown", onDown);
+  canvas.addEventListener("pointermove", onMove);
+  canvas.addEventListener("pointerup", onUp);
+  canvas.addEventListener("pointercancel", onUp);
+  canvas.addEventListener("wheel", onWheel, { passive: false });
+  canvas.addEventListener("dblclick", onDbl);
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  const resetBtn = canvas.parentElement && canvas.parentElement.querySelector("#view-reset");
+  const onResetBtn = (e) => { e.stopPropagation(); resetView(); };
+  if (resetBtn) resetBtn.addEventListener("click", onResetBtn);
 
   function resize() {
     const w = canvas.clientWidth || 640;
@@ -591,7 +690,8 @@ function createPreview(canvas) {
     if (!running) return;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    spin += dt * 0.35;
+    const idle = !view.dragging && now - view.lastInput > RESUME_MS;
+    if (idle) spin += dt * 0.35;
     if (model) {
       // The face is local -Z. Object3D.getWorldDirection is the tail (+Z).
       // Sitting on -tail keeps the nose pointed at the camera while the model spins.
@@ -602,6 +702,8 @@ function createPreview(canvas) {
       model.root.getWorldDirection(fwd);
       fwd.y = 0;
       fwd.normalize();
+      // User orbit: swing the camera around the Zoid by view.yaw.
+      fwd.applyAxisAngle(UP, view.yaw);
       const right = new Vector3().crossVectors(fwd, UP);
       // Pulled in ~20% now the stage has the whole centre column to itself.
       // Big frames (Elephander) also back the camera off by their real size.
@@ -609,11 +711,13 @@ function createPreview(canvas) {
         const size = new Box3().setFromObject(model.visual).getSize(new Vector3());
         model.frameSize = Math.max(size.x, size.y, size.z);
       }
-      const dist = Math.max((8 + (model.def.scale || 1) * 4.2) * 0.8, model.frameSize * 1.75);
+      // Zoom limits follow the Zoid's size because dist does.
+      const dist = Math.max((8 + (model.def.scale || 1) * 4.2) * 0.8, model.frameSize * 1.75) * view.zoom;
+      view.dist = dist;
       camera.position.copy(model.root.position)
         .addScaledVector(fwd, -dist)
         .addScaledVector(right, dist * 0.38)
-        .add(new Vector3(0, dist * 0.32, 0));
+        .add(new Vector3(0, dist * view.lift, 0));
       camera.lookAt(0, 1.6 * (model.def.scale || 1), 0);
     }
     resize();
@@ -624,6 +728,11 @@ function createPreview(canvas) {
 
   return {
     show,
+    viewState() {
+      return { spin, yaw: view.yaw, zoom: view.zoom, lift: view.lift, dist: view.dist || 0, dragging: view.dragging,
+        autoSpin: !view.dragging && performance.now() - view.lastInput > RESUME_MS, zoomMin: ZOOM_MIN, zoomMax: ZOOM_MAX };
+    },
+    resetView,
     parts() {
       if (!model) return null;
       const counts = {};
@@ -636,6 +745,13 @@ function createPreview(canvas) {
     },
     dispose() {
       running = false;
+      canvas.removeEventListener("pointerdown", onDown);
+      canvas.removeEventListener("pointermove", onMove);
+      canvas.removeEventListener("pointerup", onUp);
+      canvas.removeEventListener("pointercancel", onUp);
+      canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("dblclick", onDbl);
+      if (resetBtn) resetBtn.removeEventListener("click", onResetBtn);
       if (model) disposeTree(model.root);
       disposeTree(floor);
       renderer.dispose();

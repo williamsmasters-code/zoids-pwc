@@ -73,3 +73,26 @@ Screenshots (screenshots/hangar-rework/, tools/hangar_shots.mjs)
 - before-hangar-1024x488.png, before-hangar-1280x800.png
 - after-hangar-1024x488.png, after-hangar-1280x800.png
   Save: Death Saurer active, viewing Shield Liger (Daniel's case).
+
+HANGAR SHOWCASE VIEWER CONTROLS
+===============================
+The Zoid preview in the hangar can now be inspected by hand.
+- Drag (mouse or one finger): orbit the camera around the Zoid; dragging up
+  or down tilts the view (low angle to almost top-down).
+- Scroll wheel or two-finger pinch: zoom in and out. Limits are 0.55x to 1.8x
+  of the default framing distance, and the default distance already scales
+  with the Zoid's real size, so a Molga and an Elephander both stay framed.
+- Double-click / double-tap, or the small reset button at the bottom right of
+  the stage: back to the default view.
+- The idle auto-spin pauses while you interact and resumes 3 seconds after
+  the last input (straight away after a reset).
+- The canvas uses touch-action none and stops wheel events, so dragging or
+  scrolling over the Zoid doesn't scroll the page or touch other controls.
+- Three.js OrbitControls isn't vendored, so this is a small custom handler in
+  createPreview() in js/hangar.js (no new dependency).
+- Test: tests/hangar_viewer_browser.mjs (rotate, tilt, wheel zoom clamps,
+  pinch, double-click reset, reset button, auto-spin pause/resume, no page
+  scroll, credits button still works). Screenshots in screenshots/hangar-viewer/.
+- Note: before this change the auto-spin turned the camera together with the
+  Zoid, so the Zoid always faced the camera. That is unchanged; dragging now
+  gives the real side and rear views.
