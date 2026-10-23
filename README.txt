@@ -253,3 +253,6 @@ KNOWN GAPS
   are decorative. The first-person view is a camera at the head, not a
   cockpit interior.
   Friendly fire is possible. The convoy trucks do not fight.
+
+Speed: canon-relative top speeds, 3 Speed Booster levels (full set = canon top speed), per-Zoid acceleration, KM/H / MPH toggle. See docs/SPEED_NOTES.txt.
+Install: hangar "Add to Home Screen" button; see docs/HOME_SCREEN_NOTES.txt.

@@ -31,6 +31,7 @@ import { repairCost } from "./damage.js";
 import { TONNAGE_ZONES, TONNAGE_CEILING } from "./tonnage.js";
 import { skillBlock } from "./skills.js";
 import { creditsMarkup } from "./credits.js";
+import { displaySpeed, displayKph, unitLabel, toggleSpeedUnit, getSpeedUnit, zeroTo100 } from "./units.js";
 import { installMode, runInstallPrompt, installHelpMarkup, onInstallChange } from "./install.js";
 import { bandText } from "./rangebands.js";
 
@@ -161,7 +162,9 @@ export function showHangar(state, hooks) {
     root.querySelector("#preview-name").textContent = def.name;
     root.querySelector("#preview-role").textContent = `${def.role} · ${hangar.owned ? (isActive ? "ACTIVE" : "owned") : formatC(def.price)}`;
     root.querySelector("#preview-blurb").textContent = def.blurb;
-    const speedKph = Math.round(perf.speed * 3.6);
+    const speedKph = displaySpeed(perf.speed);
+    const maxKph = displayKph(def.canonKph || 0);
+    const uLabel = unitLabel();
     const turnDeg = Math.round(perf.turn * (180 / Math.PI));
     const load = perf.load;
     const heatLines = weapons.map((weapon) => {
@@ -173,7 +176,8 @@ export function showHangar(state, hooks) {
       return `<span data-weapon="${spec.id}" data-delivery="${spec.delivery}" data-range="${spec.range}">${spec.name} ${spec.delivery} ${spec.range}m</span>`;
     }).join("");
     root.querySelector("#stats").innerHTML = `
-      <div class="stat"><b>${speedKph}</b><span>km/h</span></div>
+      <div class="stat speed-stat" title="Current top speed / canon top speed (all 3 Speed Boosters)"><b><em id="stat-speed">${speedKph}</em><small> / <em id="stat-maxspeed">${maxKph}</em></small></b><span>${uLabel} <button type="button" data-act="speed-unit" id="speed-unit-btn" class="unit-btn" title="Switch km/h / mph">${getSpeedUnit() === "mph" ? "MPH" : "KM/H"}</button></span></div>
+      <div class="stat" title="0-100 km/h (canon-equivalent) at this load"><b id="stat-accel">${zeroTo100(perf).toFixed(1)}s</b><span>0-100</span></div>
       <div class="stat"><b>${turnDeg}</b><span>deg/s</span></div>
       <div class="stat"><b>${perf.boosterReady ? perf.boostMul.toFixed(2) + "x" : "—"}</b><span>boost</span></div>
       <div class="stat"><b>${Math.round(perf.sensors.rangeMul * 100)}%</b><span>sensors</span></div>
@@ -379,6 +383,11 @@ export function showHangar(state, hooks) {
       panel.classList.remove("hidden");
       return;
     }
+    if (act === "speed-unit") {
+      toggleSpeedUnit();
+      render();
+      return;
+    }
     if (act === "install") {
       const mode = installMode();
       const pop = root.querySelector("#install-pop");
@@ -516,7 +525,7 @@ function tonnageBar(weight, def, load, speedKph, turnDeg) {
     <div class="tonnage-head">
       <label>Tonnage ${weight.toFixed(1)} / ${def.maxTonnage} t · ${Math.round(pct)}%</label>
       <b class="zone-label" style="color:${load.color}">${load.label}</b>
-      <span class="eff" id="tonnage-effect">speed ${speedKph} km/h ${mul(load.speedMul)} · turn ${turnDeg}°/s ${mul(load.turnMul)} · accel ${mul(load.accelMul)} · cooling ${mul(load.coolMul)}</span>
+      <span class="eff" id="tonnage-effect">speed ${speedKph} ${unitLabel()} ${mul(load.speedMul)} · turn ${turnDeg}°/s ${mul(load.turnMul)} · accel ${mul(load.accelMul)} · cooling ${mul(load.coolMul)}</span>
     </div>
     <div class="zone-bar">${bands}<i class="rated" style="left:${(100 / scale) * 100}%" title="Rated tonnage"></i><i class="fill" style="width:${fill}%"></i><i class="pointer" style="left:${fill}%"></i></div>
   </div>`;

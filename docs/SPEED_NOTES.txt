@@ -1,0 +1,98 @@
+SPEED NOTES (speed rework)
+==========================
+
+Rules
+-----
+- Each Zoid's canon top speed comes from the Zoids Wiki (zoids.fandom.com),
+  infobox "Speed" field, read 22 Oct 2026. Sources per Zoid are listed below.
+- One scale for everything: 1 canon km/h = 0.11 m/s in game (SPEED_SCALE in
+  js/catalog.js). Maps are metre-scale but small, so real speeds would cross a
+  map in seconds; this keeps relative speeds exactly canon while playable.
+  The HUD and hangar show the canon-equivalent figure (game m/s / 0.11).
+- Standard (stock) speed = half canon top speed.
+- Speed Boosters: 3 levels, each +33% of STANDARD speed (additive), capped at
+  2x standard. 0/1/2/3 levels = 1.00x / 1.33x / 1.66x / 2.00x. The 3rd level
+  hits the cap, so the full set is exactly canon top speed. A 4th level can't
+  be bought (MODS.speed.max = 3) and any higher value is clamped to 2x.
+  The shop previously had 2 levels of +8%; it now has 3 levels costing
+  24,000 / 52,000 / 90,000 C (weight 4 t per level, unchanged).
+- Tonnage-zone slowdowns (js/tonnage.js) and leg damage apply after the
+  upgrade multiplier, to both top speed and acceleration/braking.
+
+Acceleration
+------------
+- Each Zoid has accel (m/s^2 when speeding up) and brake (slowing/reversing,
+  1.3x accel). Both are multiplied by the tonnage zone's accel factor and drop
+  with leg damage. AI Zoids use 85% of the same values.
+- Command Wolf and Zaber Fang (saber/tiger type) have the highest acceleration.
+  Everything else is lower, scaled by weight and canon top speed.
+- Pteras: ground accel 24; in the air it uses its flight thrust (14 m/s^2,
+  flight.thrust in the catalog) for gaining airspeed, 1.3x that to slow down.
+- Hangar "0-100" = seconds from rest to 100 km/h-equivalent at the current
+  load (or to the Zoid's top speed if that is lower, e.g. stock Gojulas).
+  Game-scale times are short because game speeds are scaled down too.
+- Zaber Fang is in the catalog already (no new model was built); its values
+  are the ones listed here.
+
+Units
+-----
+- Hangar speed stat shows current top speed / max (canon) speed with a
+  KM/H / MPH toggle. The choice is saved in localStorage
+  (zoidMercs.speedUnit) and the mission HUD uses it (ground and AIR speed).
+
+Table (speeds in canon-equivalent km/h at base weight; game m/s = standard)
+-------------------------------------------------------------------------
+Zoid            Canon                     Stock   +1      +2      Full(3)  m/s std  accel  brake  0-100 s
+Command Wolf    200 km/h                  100     133     166     200      11       34     44.2   0.32
+Zaber Fang      240 km/h                  120     160     199     240      13.2     34     44.2   0.32
+Shield Liger    250 km/h                  125     166     208     250      13.75    27     35.1   0.41
+Blade Liger     305 km/h                  152     203     253     305      16.77    29     37.7   0.38
+Iron Kong       150 km/h                  75      100     125     150      8.25     16     20.8   0.52
+Geno Saurer     260 km/h                  130     173     216     260      14.3     24     31.2   0.46
+Gojulas         75 km/h                   38      50      62      75       4.13     11     14.3   0.38
+Death Saurer    90 km/h                   45      60      75      90       4.95     8      10.4   0.62
+Gun Sniper      200 km/h                  100     133     166     200      11       28     36.4   0.39
+Elephander      130 km/h                  65      86      108     130      7.15     13     16.9   0.55
+Berserk Fuhrer  340 km/h                  170     226     282     340      18.7     30     39     0.37
+Molga           200 km/h                  100     133     166     200      11       15     19.5   0.73
+Pteras          Air: Mach 2 (capped 600)  300     399     498     600      33       24     31.2   0.46
+
+Acceleration ranking: Command Wolf 34, Zaber Fang 34, Berserk Fuhrer 30, Blade Liger 29, Gun Sniper 28, Shield Liger 27, Geno Saurer 24, Pteras 24, Iron Kong 16, Molga 15, Elephander 13, Gojulas 11, Death Saurer 8
+
+Compromises
+-----------
+- Pteras canon is Mach 2 (about 2,450 km/h). That is unplayable on our maps,
+  so it is capped at a 600 km/h-equivalent full speed (stock 300). It is still
+  the fastest Zoid by far.
+- Command Wolf, Gun Sniper and Molga all list 200 km/h, so they share a top
+  speed; acceleration and turning separate them.
+- Command Wolf is now slower than the Ligers on top speed (canon); its edge is
+  the best acceleration.
+- Every Zoid now starts at half its old-scale feel until Speed Boosters are
+  bought. Enemy Zoids have no Speed Boosters, so they run at standard speed.
+- The supply truck (8 m/s) and static structures were left unchanged so the
+  escort mission balance holds.
+
+Sources (Zoids Wiki infobox "Speed")
+------------------------------------
+Command Wolf   https://zoids.fandom.com/wiki/Command_Wolf    200 km/h
+Zaber Fang     https://zoids.fandom.com/wiki/Zaber_Fang      240 km/h
+Shield Liger   https://zoids.fandom.com/wiki/Shield_Liger    250 km/h
+Blade Liger    https://zoids.fandom.com/wiki/Blade_Liger     305 km/h
+Iron Kong      https://zoids.fandom.com/wiki/Iron_Kong       150 km/h
+Geno Saurer    https://zoids.fandom.com/wiki/Geno_Saurer     260 km/h
+Gojulas        https://zoids.fandom.com/wiki/Gojulas         75 km/h
+Death Saurer   https://zoids.fandom.com/wiki/Death_Saurer    90 km/h
+Gun Sniper     https://zoids.fandom.com/wiki/Gun_Sniper      200 km/h
+Elephander     https://zoids.fandom.com/wiki/Elephander      130 km/h
+Berserk Fuhrer https://zoids.fandom.com/wiki/Berserk_Führer  340 km/h
+Molga          https://zoids.fandom.com/wiki/Molga           200 km/h
+Pteras         https://zoids.fandom.com/wiki/Pteras          Air: Mach 2
+
+Tests
+-----
+tests/speed.test.mjs: upgrade multipliers, 4th level blocked, standard = half
+canon and full = canon for every Zoid, canon ordering, tonnage on top,
+acceleration ranking, unit conversion.
+tests/speed_browser.mjs: hangar current/max + 0-100 stat, toggle persists
+across reload, HUD in the chosen unit. Screenshots in screenshots/speed/.

@@ -519,3 +519,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .install-pop h3 { margin: 0; font-size: 15px; color: var(--amber); }
 .install-pop header button { padding: 0 8px; }
 .install-pop p { margin: 4px 0; font-size: 13px; }
+.speed-stat .unit-btn { font-size: 10px; padding: 0 4px; margin-left: 2px; line-height: 14px; }
+.speed-stat b small { font-size: 0.7em; color: var(--muted); }
+.speed-stat > span { white-space: nowrap; }
+.speed-stat b em { font-style: normal; }

@@ -50,13 +50,28 @@ export const PART_BASE = {
 export const ARMOR_LEVEL_BONUS = 0.28;
 export const MAX_ARMOR_LEVEL = 3;
 
+// SPEED SCALE (docs/SPEED_NOTES.txt). Game units are metres; 1 canon km/h
+// = SPEED_SCALE m/s in game, so relative speeds match canon while maps stay
+// playable. Standard (stock) speed is half canon; the 3 Speed Booster levels
+// add +33% of standard each and the full set is capped at exactly 2x = canon.
+// Pteras canon is Mach 2 (~2450 km/h); it is capped at 600 km/h-equivalent.
+export const SPEED_SCALE = 0.11;
+export const SPEED_UPGRADE_STEP = 0.33;
+export const SPEED_UPGRADE_CAP = 2;
+export function standardSpeed(canonKph) { return Math.round(canonKph * SPEED_SCALE * 50) / 100; }
+export function speedUpgradeMul(level) {
+  const lvl = Math.max(0, Math.min(3, Math.floor(level || 0)));
+  if (lvl >= 3) return SPEED_UPGRADE_CAP;
+  return Math.min(SPEED_UPGRADE_CAP, 1 + SPEED_UPGRADE_STEP * lvl);
+}
+
 export const MODS = {
   speed: {
     name: "Speed Boosters",
-    max: 2,
+    max: 3,
     weight: 4,
-    blurb: "+8% top speed per level.",
-    costs: [24000, 52000],
+    blurb: "+33% of standard speed per level; all 3 = 2x standard = canon top speed.",
+    costs: [24000, 52000, 90000],
   },
   maneuver: {
     name: "Maneuver Gyros",
@@ -396,7 +411,10 @@ export const ZOIDS = {
     layout: "quad",
     build: "wolf",
     role: "Light scout",
-    speed: 27,
+    canonKph: 200,
+    speed: standardSpeed(200),
+    accel: 34,
+    brake: 44.2,
     turn: 1.55,
     armorScale: 0.84,
     baseWeight: 28,
@@ -419,7 +437,10 @@ export const ZOIDS = {
     layout: "quad",
     build: "saber",
     role: "Fast attacker",
-    speed: 24,
+    canonKph: 240,
+    speed: standardSpeed(240),
+    accel: 34,
+    brake: 44.2,
     turn: 1.36,
     armorScale: 0.86,
     baseWeight: 34,
@@ -442,7 +463,10 @@ export const ZOIDS = {
     layout: "quad",
     build: "lion",
     role: "Balanced striker",
-    speed: 21,
+    canonKph: 250,
+    speed: standardSpeed(250),
+    accel: 27,
+    brake: 35.1,
     turn: 1.18,
     armorScale: 1,
     baseWeight: 40,
@@ -465,7 +489,10 @@ export const ZOIDS = {
     layout: "quad",
     build: "blade",
     role: "Skirmisher",
-    speed: 23,
+    canonKph: 305,
+    speed: standardSpeed(305),
+    accel: 29,
+    brake: 37.7,
     turn: 1.3,
     armorScale: 0.96,
     baseWeight: 42,
@@ -488,7 +515,10 @@ export const ZOIDS = {
     layout: "biped",
     build: "gorilla",
     role: "Heavy arms",
-    speed: 16,
+    canonKph: 150,
+    speed: standardSpeed(150),
+    accel: 16,
+    brake: 20.8,
     turn: 0.95,
     armorScale: 1.32,
     baseWeight: 62,
@@ -511,7 +541,10 @@ export const ZOIDS = {
     layout: "biped",
     build: "raptor",
     role: "Particle striker",
-    speed: 19,
+    canonKph: 260,
+    speed: standardSpeed(260),
+    accel: 24,
+    brake: 31.2,
     turn: 1.08,
     armorScale: 1.12,
     baseWeight: 58,
@@ -534,7 +567,10 @@ export const ZOIDS = {
     layout: "biped",
     build: "tyrant",
     role: "Siege walker",
-    speed: 13,
+    canonKph: 75,
+    speed: standardSpeed(75),
+    accel: 11,
+    brake: 14.3,
     turn: 0.7,
     armorScale: 1.65,
     baseWeight: 98,
@@ -557,7 +593,10 @@ export const ZOIDS = {
     layout: "biped",
     build: "death",
     role: "Super heavy",
-    speed: 9,
+    canonKph: 90,
+    speed: standardSpeed(90),
+    accel: 8,
+    brake: 10.4,
     turn: 0.48,
     armorScale: 2.15,
     baseWeight: 168,
@@ -580,7 +619,10 @@ export const ZOIDS = {
     layout: "biped",
     build: "sniper",
     role: "Long-range sniper",
-    speed: 25,
+    canonKph: 200,
+    speed: standardSpeed(200),
+    accel: 28,
+    brake: 36.4,
     turn: 1.45,
     armorScale: 0.8,
     baseWeight: 30,
@@ -603,7 +645,10 @@ export const ZOIDS = {
     layout: "quad",
     build: "elephant",
     role: "Heavy assault",
-    speed: 11,
+    canonKph: 130,
+    speed: standardSpeed(130),
+    accel: 13,
+    brake: 16.9,
     turn: 0.6,
     armorScale: 1.8,
     baseWeight: 110,
@@ -626,7 +671,10 @@ export const ZOIDS = {
     layout: "biped",
     build: "fuhrer",
     role: "Agile duelist",
-    speed: 22,
+    canonKph: 340,
+    speed: standardSpeed(340),
+    accel: 30,
+    brake: 39.0,
     turn: 1.5,
     armorScale: 1.18,
     baseWeight: 60,
@@ -649,7 +697,10 @@ export const ZOIDS = {
     layout: "quad",
     build: "molga",
     role: "Armoured transport",
-    speed: 10,
+    canonKph: 200,
+    speed: standardSpeed(200),
+    accel: 15,
+    brake: 19.5,
     turn: 0.85,
     armorScale: 1.4,
     baseWeight: 44,
@@ -672,7 +723,10 @@ export const ZOIDS = {
     layout: "biped",
     build: "pteras",
     role: "Air raider",
-    speed: 30,
+    canonKph: 600,
+    speed: standardSpeed(600),
+    accel: 24,
+    brake: 31.2,
     turn: 1.7,
     armorScale: 0.66,
     baseWeight: 20,
@@ -682,7 +736,7 @@ export const ZOIDS = {
     radius: 2.4,
     // Real flight (js/flight.js "flyer" mode). Altitude is physics, not a
     // model offset. Tunable here; see docs/NEW_ZOIDS_NOTES.txt.
-    flight: { ceiling: 70, stallSpeed: 9, takeoffSpeed: 9, climbRate: 10, stallSink: 7, meleeHeight: 4 },
+    flight: { thrust: 14, ceiling: 70, stallSpeed: 9, takeoffSpeed: 9, climbRate: 10, stallSink: 7, meleeHeight: 4 },
     blurb: "Light red pterosaur. Flies low and fast, bombs and missiles under the wings, thin armour.",
     colors: { primary: 0xb8322e, secondary: 0xe8e2d6, accent: 0xf0b030, dark: 0x2a1a18, eye: 0x66eeff, plate: 0xd8d0c0 },
     hardpoints: [

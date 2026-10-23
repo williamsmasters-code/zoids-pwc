@@ -8,6 +8,8 @@ import {
   partListFor,
   DAMAGE_VS_ARMOR,
   damageClassOf,
+  speedUpgradeMul,
+  SPEED_UPGRADE_CAP,
 } from "./catalog.js";
 
 import { tonnageZone } from "./tonnage.js";
@@ -94,7 +96,7 @@ export function derivePerformance(def, mods, parts, weight) {
   const over = Math.max(0, weight - def.maxTonnage);
   const load = tonnageZone(weight || 0, def.maxTonnage);
   const overMul = load.speedMul;
-  const speed = def.speed * (1 + 0.08 * ((mods && mods.speed) || 0)) * mobility.speedMul * load.speedMul;
+  const speed = def.speed * speedUpgradeMul(mods && mods.speed) * mobility.speedMul * load.speedMul;
   const turn = def.turn * (1 + 0.1 * ((mods && mods.maneuver) || 0)) * mobility.turnMul * load.turnMul;
   const back = parts.backMount;
   const boosterInstalled = ((mods && mods.booster) || 0) > 0;
@@ -114,6 +116,10 @@ export function derivePerformance(def, mods, parts, weight) {
     overMul,
     load,
     accelMul: load.accelMul,
+    // m/s^2 after tonnage zone (and leg damage); brake is the slow-down rate.
+    accel: (def.accel || 28) * load.accelMul * (0.5 + 0.5 * mobility.speedMul),
+    brake: (def.brake || 36) * load.accelMul * (0.5 + 0.5 * mobility.speedMul),
+    maxSpeed: def.speed * SPEED_UPGRADE_CAP,
     coolMul: load.coolMul,
   };
 }

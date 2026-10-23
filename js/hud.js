@@ -84,10 +84,10 @@ export function createHUD(root) {
     <section class="panel player-panel">
       <header id="player-name">Zoid</header>
       <div id="player-diagram"></div>
-      <div class="speed-row"><span id="speed">0</span><small>SPD</small><div class="bar"><i id="speed-bar"></i></div></div>
+      <div class="speed-row"><span id="speed">0</span><small id="speed-unit">km/h</small><div class="bar"><i id="speed-bar"></i></div></div>
       <div class="heat-row">PEAK <div class="bar heat"><i id="heat-bar"></i></div></div>
       <div id="boost-flag"></div>
-      <div class="flight-row hidden" id="flight-row"><span id="alt">0</span><small>ALT m</small> <span id="airspeed">0</span><small>AIR km/h</small> <em id="stall"></em></div>
+      <div class="flight-row hidden" id="flight-row"><span id="alt">0</span><small>ALT m</small> <span id="airspeed">0</span><small id="air-unit">AIR km/h</small> <em id="stall"></em></div>
     </section>
     <section class="panel target-panel">
       <header id="target-name">No target</header>
@@ -162,12 +162,14 @@ export function createHUD(root) {
       root.querySelector("#player-name").textContent = data.playerName;
       root.querySelector("#player-diagram").innerHTML = diagramSVG(data.layout, data.parts);
       root.querySelector("#speed").textContent = String(Math.round(data.speed));
+      if (data.speedUnit) root.querySelector("#speed-unit").textContent = data.speedUnit;
       root.querySelector("#speed-bar").style.width = `${Math.max(0, Math.min(100, data.speedPct))}%`;
       const fr = root.querySelector("#flight-row");
       fr.classList.toggle("hidden", !data.flight);
       if (data.flight) {
         root.querySelector("#alt").textContent = String(Math.round(data.flight.alt));
         root.querySelector("#airspeed").textContent = String(Math.round(data.flight.airspeed));
+        if (data.speedUnit) root.querySelector("#air-unit").textContent = `AIR ${data.speedUnit}`;
         root.querySelector("#stall").textContent = data.flight.stalled ? "STALL" : data.flight.airborne ? "" : "LANDED";
       }
       root.querySelector("#heat-bar").style.width = `${Math.max(0, Math.min(100, data.heat))}%`;

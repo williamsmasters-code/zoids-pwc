@@ -58,6 +58,7 @@ import { createBrain, updateBrain } from "./ai.js";
 import { aiTuning, difficultySpec } from "./difficulty.js";
 import { escortLayout } from "./escort.js";
 import { bandOf, rangeDamageMul, rangeSpreadMul, rangeAimMul, rangeLockMul } from "./rangebands.js";
+import { displaySpeed, unitLabel } from "./units.js";
 import { flightSpec, createFlight, stepFlight, floorAt, shouldFall, meleeReaches } from "./flight.js";
 import {
   addWeaponHeat,
@@ -717,14 +718,21 @@ export function startMission(state, contract, hooks) {
     if (player.flight && player.flight.airborne) {
       // In the air W/S trim airspeed (no reverse); it keeps what it has.
       const goal = input.forward > 0 ? maxSpeed : input.forward < 0 ? 0 : player.speed;
-      player.speed = approach(player.speed, goal, 14 * perf.accelMul * dt);
+      const thrust = ((player.flightSpec && player.flightSpec.thrust) || 14) * perf.accelMul;
+      player.speed = approach(player.speed, goal, (goal > player.speed ? thrust : thrust * 1.3) * dt);
     } else {
-      player.speed = approach(player.speed, input.forward * maxSpeed, 34 * perf.accelMul * dt);
+      player.speed = approach(player.speed, input.forward * maxSpeed, speedRate(player.speed, input.forward * maxSpeed, perf) * dt);
     }
     player.climbCmd = input.climb || 0;
     player.strafeVel = approach(player.strafeVel, input.strafe * perf.speed * 0.62 * skillMul, 28 * perf.accelMul * dt);
     moveChassis(player, dt);
     player.boosting = boost;
+  }
+
+  // Per-Zoid acceleration when speeding up, braking when slowing or reversing.
+  function speedRate(current, goal, perf) {
+    const speedingUp = Math.abs(goal) > Math.abs(current) && Math.sign(goal || 1) === Math.sign(current || goal || 1);
+    return speedingUp ? perf.accel : perf.brake;
   }
 
   function driveAI(unit, dt) {
@@ -742,7 +750,8 @@ export function startMission(state, contract, hooks) {
     }
     const skillMul = skillSpeedMul(unit);
     const maxSpeed = perf.speed * (cmd.throttle < 0 ? 0.55 : 1) * skillMul;
-    unit.speed = approach(unit.speed, (cmd.throttle || 0) * maxSpeed, 28 * perf.accelMul * dt);
+    const goal = (cmd.throttle || 0) * maxSpeed;
+    unit.speed = approach(unit.speed, goal, speedRate(unit.speed, goal, perf) * 0.85 * dt);
     unit.climbCmd = cmd.climb || 0;
     unit.strafeVel = approach(unit.strafeVel, (cmd.strafe || 0) * perf.speed * 0.55 * skillMul, 22 * perf.accelMul * dt);
     moveChassis(unit, dt);
@@ -2162,11 +2171,13 @@ export function startMission(state, contract, hooks) {
       playerName: player.name,
       layout: player.def.layout,
       parts: player.parts,
-      speed: Math.abs(player.speed),
+      speed: displaySpeed(Math.abs(player.speed)),
+      speedRaw: Math.abs(player.speed),
+      speedUnit: unitLabel(),
       speedPct: (Math.abs(player.speed) / Math.max(0.1, perf.speed)) * 100,
       flight: player.flight ? {
         alt: player.flight.agl,
-        airspeed: Math.max(0, player.speed) * 3.6,
+        airspeed: displaySpeed(Math.max(0, player.speed)),
         stalled: player.flight.stalled && player.flight.airborne,
         airborne: player.flight.airborne,
         ceiling: player.flightSpec.ceiling,
