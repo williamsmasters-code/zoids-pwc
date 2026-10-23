@@ -31,6 +31,7 @@ import { repairCost } from "./damage.js";
 import { TONNAGE_ZONES, TONNAGE_CEILING } from "./tonnage.js";
 import { skillBlock } from "./skills.js";
 import { creditsMarkup } from "./credits.js";
+import { installMode, runInstallPrompt, installHelpMarkup, onInstallChange } from "./install.js";
 import { bandText } from "./rangebands.js";
 
 function weaponFacts(spec) {
@@ -114,12 +115,21 @@ export function showHangar(state, hooks) {
     <section id="contracts"></section>
     <footer class="hangar-foot">
       <button type="button" data-act="credits">Model credits</button>
+      <button type="button" data-act="install" id="install-btn" class="install-btn" title="Install the game as an app">Add to Home Screen</button>
       <span class="muted">Sketchfab meshes under CC-BY-4.0. ?mock=1 uses the procedural models.</span>
     </footer>
     <div id="launch-pop" class="launch-pop hidden" role="dialog" aria-label="Launch contract"></div>
     <div id="credits-panel" class="credits hidden"></div>
+    <div id="install-pop" class="install-pop hidden" role="dialog" aria-label="Add to Home Screen"></div>
     <div id="status"></div>
   `;
+
+  function syncInstallBtn() {
+    const btn = root.querySelector("#install-btn");
+    if (btn) btn.classList.toggle("hidden", installMode() === "installed");
+  }
+  syncInstallBtn();
+  const offInstall = onInstallChange(syncInstallBtn);
 
   let viewing = state.selected;
   let picker = null;
@@ -369,6 +379,19 @@ export function showHangar(state, hooks) {
       panel.classList.remove("hidden");
       return;
     }
+    if (act === "install") {
+      const mode = installMode();
+      const pop = root.querySelector("#install-pop");
+      if (mode === "prompt") { runInstallPrompt().then(syncInstallBtn); return; }
+      pop.dataset.mode = mode;
+      pop.innerHTML = installHelpMarkup(mode);
+      pop.classList.remove("hidden");
+      return;
+    }
+    if (act === "close-install") {
+      root.querySelector("#install-pop").classList.add("hidden");
+      return;
+    }
     if (act === "close-credits") {
       root.querySelector("#credits-panel").classList.add("hidden");
       return;
@@ -458,11 +481,13 @@ export function showHangar(state, hooks) {
   window.__ZOIDS__.screen = "hangar";
   window.__ZOIDS__.ready = true;
   window.__ZOIDS__.previewParts = () => preview.parts();
+  window.__ZOIDS__.installMode = installMode;
 
   let closed = false;
   return () => {
     if (closed) return;
     closed = true;
+    offInstall();
     root.removeEventListener("click", onClick);
     root.removeEventListener("change", onChange);
     root.removeEventListener("input", onInput);

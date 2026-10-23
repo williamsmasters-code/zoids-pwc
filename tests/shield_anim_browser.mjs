@@ -324,6 +324,13 @@ try {
   console.log("screenshot", path.relative(root, fireShot));
   await page.keyboard.up("Digit1");
 
+  // The service worker would serve already-cached GLBs and hide the blocked
+  // requests, so bypass and clear it for the fallback checks.
+  await page.setBypassServiceWorker(true);
+  await page.evaluate(async () => {
+    for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister();
+    for (const k of await caches.keys()) await caches.delete(k);
+  });
   page.__blockAnim = true;
   page.on("request", (req) => {
     const url = req.url();

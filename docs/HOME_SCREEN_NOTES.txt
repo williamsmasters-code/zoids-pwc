@@ -1,0 +1,57 @@
+ADD TO HOME SCREEN (INSTALLABLE APP) NOTES
+==========================================
+
+What it is
+----------
+The game is now an installable Progressive Web App. The hangar footer has an
+"Add to Home Screen" button next to "Model credits".
+
+Files
+-----
+manifest.webmanifest   App name "Zoid Mercenaries", short name "Zoids",
+                       start_url and scope "./" (relative, so it works under
+                       /zoids-pwc/ on GitHub Pages), display fullscreen with
+                       standalone fallback, landscape orientation, dark theme.
+assets/icons/          icon-192.png, icon-512.png (manifest) and icon-180.png
+                       (Apple touch icon). Simple original icons made for this
+                       project, no third-party art.
+sw.js                  Service worker. Precaches the app shell (index, CSS,
+                       every js/ module, three.js and the addons we use, icons).
+                       Models (.glb) and images are cached the first time they
+                       load, so after one full play-through the game works offline.
+js/install.js          Registers the service worker, captures the browser's
+                       install prompt, detects iOS and standalone mode.
+index.html             Manifest link, theme colour, Apple web-app meta tags.
+
+How the button behaves
+----------------------
+- Chrome / Edge / Android: clicking opens the browser's own install prompt.
+- iPhone / iPad (Safari): a small popup explains Share, then
+  "Add to Home Screen", then Add.
+- Other browsers (e.g. Firefox desktop): a popup says to look for "Install app"
+  or "Add to Home screen" in the browser menu, noting some browsers lack it.
+- Already running as an installed app: the button is hidden.
+
+Updating the game (important)
+-----------------------------
+The cache is versioned: CACHE_VERSION in sw.js (currently "zoids-v1").
+- Code, CSS and HTML are fetched network-first, so online players get changes
+  straight away even without a bump.
+- Models are cache-first. When a .glb changes, bump CACHE_VERSION (zoids-v2 ...)
+  so the old cache is deleted and the new models download.
+- When you add a new js/ file, add it to the SHELL list in sw.js so it works
+  offline (it still loads online even if you forget).
+
+Testing
+-------
+tests/home_screen_browser.mjs (part of npm test) checks that the button exists
+next to the credits button, the manifest loads with valid fields and icons,
+the service worker registers and caches the shell, the desktop click uses the
+browser prompt (headless Chrome really fires it) and an iPhone user agent
+gets the Share / Add to Home Screen popup.
+Screenshots: screenshots/home-screen/hangar-install-button.png and ios-popup.png
+
+Caveats
+-------
+- The iOS check uses a spoofed user agent in headless Chrome, not a real iPhone.
+- Service workers need HTTPS or localhost; GitHub Pages is HTTPS so it is fine.

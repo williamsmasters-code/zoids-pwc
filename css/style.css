@@ -507,3 +507,15 @@ button:disabled { opacity: 0.45; cursor: default; }
 .reticle[data-band="long"] { border-color: #ffd35a; }
 .reticle[data-band="extreme"], .reticle[data-band="short"] { border-color: #ff9a3c; }
 .reticle[data-band="out"] { border-color: #ff5566; }
+
+/* Add to Home Screen */
+.install-btn { white-space: nowrap; }
+.install-pop {
+  position: fixed; right: 12px; bottom: 56px; width: min(340px, 92vw);
+  background: #0f1820; border: 1px solid var(--cyan); padding: 8px 12px; z-index: 7;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+}
+.install-pop header { display: flex; justify-content: space-between; align-items: center; }
+.install-pop h3 { margin: 0; font-size: 15px; color: var(--amber); }
+.install-pop header button { padding: 0 8px; }
+.install-pop p { margin: 4px 0; font-size: 13px; }

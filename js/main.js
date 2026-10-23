@@ -1,4 +1,7 @@
 import { loadState } from "./state.js";
+import { initInstall } from "./install.js";
+
+initInstall();
 import { showHangar, showDebrief } from "./hangar.js";
 import { startMission } from "./mission.js";
 import { unlockAudio } from "./audio.js";

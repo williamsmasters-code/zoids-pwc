@@ -289,6 +289,13 @@ try {
   }
 
   page.__ignoreGlb = true;
+  // The service worker would serve the already-cached GLBs and hide the
+  // blocked requests, so bypass it for the offline-fallback check.
+  await page.setBypassServiceWorker(true);
+  await page.evaluate(async () => {
+    for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister();
+    for (const k of await caches.keys()) await caches.delete(k);
+  });
   await page.setRequestInterception(true);
   page.on("request", (req) => {
     if (/\.glb(\?|$)/.test(req.url())) req.abort();
