@@ -81,7 +81,10 @@ const SOURCE = {
   // per-colour materials; metadata stripped. Old source kept in zoids_models.
   "geno-saurer": "genosaurer_new.glb",
   "command-wolf": "m_01M542FS7F361CT01EZKCDE8W8.glb",
-  "iron-kong": "m_01M542FS8BC1JVABHG2R5JP24R.glb",
+  // Replaced 2026-10-25 16:56 by Daniel's iron_kong_new.glb: the same
+  // Anderson123 mesh (identical triangles/bounds) re-exported by trimesh with
+  // per-colour materials; metadata stripped. Old source kept in zoids_models.
+  "iron-kong": "iron_kong_new.glb",
   // Supplied by Daniel 2026-10-25 (Anderson455, CC-BY-4.0, see CREDITS.txt).
   "death-saurer": "death_saurer_zoids_free.glb",
   "death-stinger": "death_stinger_zoids_free.glb",
@@ -352,6 +355,7 @@ const GOJ_MEAN = {"frame": [0.0166, 0.0166, 0.0203, 1], "white": [0.6906, 0.6658
 const TEX_MEAN = {
   "gun-sniper": {"frame": [0.0624, 0.0523, 0.0403, 1], "blue": [0.0341, 0.0424, 0.2314, 1], "white": [0.7263, 0.7263, 0.7897, 1], "silver": [0.4819, 0.4934, 0.5656, 1], "canopy": [1.0, 0.2195, 0.0055, 1], "sensor": [0.1011, 0.7519, 0.1166, 1], "yellow": [0.8569, 0.5732, 0.0291, 1], "orange": [0.848, 0.3279, 0.0457, 1], "gold": [0.6023, 0.3642, 0.0424, 1], "claw": [0.0392, 0.0364, 0.0337, 1], "purple": [0.1243, 0.0775, 0.1965, 1]},
   "gojulas": GOJ_MEAN,
+  "iron-kong": {"blue": [0.0118, 0.0584, 0.3571, 1], "black": [0.0104, 0.0104, 0.0133, 1], "white": [0.687, 0.687, 0.7115, 1], "grey": [0.1711, 0.1839, 0.2111, 1], "gold": [0.5673, 0.3564, 0.0593, 1], "caps": [0.0398, 0.0398, 0.0459, 1], "canopy": [0.9574, 0.4098, 0.017, 1]},
   "geno-saurer": {"black": [0.0132, 0.009, 0.0223, 1], "grey": [0.1037, 0.1086, 0.1401, 1], "ivory": [0.6376, 0.6009, 0.4763, 1], "red": [0.5362, 0.0111, 0.0196, 1], "silver": [0.4649, 0.4649, 0.5231, 1], "violet": [0.1986, 0.0557, 0.3618, 1], "teeth": [0.5981, 0.5862, 0.5628, 1], "visor": [0.8751, 0.017, 0.017, 1]},
   "zaber-fang": {"gunmetal": [0.0761, 0.0683, 0.0575, 1], "plate": [0.2797, 0.2635, 0.2327, 1], "dark": [0.0194, 0.0176, 0.0158, 1], "steel": [0.389, 0.3992, 0.4305, 1], "red": [0.345, 0.013, 0.013, 1], "canopy": [0.0415, 0.586, 0.0781, 1], "eye": [0.0415, 0.586, 0.0781, 1], "ivory": [0.6432, 0.5821, 0.3893, 1], "salmon": [0.641, 0.1788, 0.1535, 1]},
 };
@@ -881,14 +885,8 @@ const POST = {
     // materials (red / violet / black / ivory), flattened via TEX_MEAN.
     scale: { head: GENO_HEAD, headWeapon: GENO_HEAD },
   },
-  "iron-kong": {
-    tint: {
-      head: [0.16, 0.16, 0.18], core: [0.13, 0.13, 0.15], tail: [0.13, 0.13, 0.15],
-      leftLeg: [0.18, 0.18, 0.2], rightLeg: [0.18, 0.18, 0.2],
-      leftWeapon: [0.2, 0.2, 0.22], rightWeapon: [0.2, 0.2, 0.22],
-      backMount: [0.5, 0.12, 0.05], headWeapon: [0.55, 0.3, 0.05],
-    },
-  },
+  // No tint since 25 Oct 16:56: iron_kong_new.glb carries real per-colour
+  // materials (blue / black / white / grey / gold), flattened via TEX_MEAN.
   "blade-liger": {
     pitch: { tail: 0.5 },
   },

@@ -43,7 +43,7 @@ export const MODEL_CREDITS = [
     author: "Anderson123",
     authorUrl: "https://sketchfab.com/Mr_Anderson123",
     modelUrl: "https://sketchfab.com/3d-models/iron-kong-zoids-74a45b6ead5f4f21bc6df68c9ca9bd9a",
-    changes: "scaled/split/optimized/stripped helper nodes",
+    changes: "scaled/split/optimized/stripped helper nodes; recoloured re-export of the same mesh supplied by Daniel Williams (25 Oct 2026)",
   },
   {
     slug: "death-saurer",

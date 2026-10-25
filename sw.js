@@ -2,7 +2,7 @@
 // Bump CACHE_VERSION whenever shipped files change so players get updates.
 // Shell files use network-first (fresh when online, cached when offline);
 // models and icons use cache-first within the current version.
-const CACHE_VERSION = "zoids-v9";
+const CACHE_VERSION = "zoids-v10";
 const SHELL = [
     "./",
     "index.html",

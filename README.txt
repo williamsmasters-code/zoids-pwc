@@ -229,6 +229,8 @@ MODEL CREDITS
   Iron Kong - Zoids
     Anderson123 — https://sketchfab.com/Mr_Anderson123
     https://sketchfab.com/3d-models/iron-kong-zoids-74a45b6ead5f4f21bc6df68c9ca9bd9a
+    (game file since 25 Oct 2026: Daniel Williams' recoloured re-export of
+    this same mesh, iron_kong_new.glb; no metadata in that file)
   Death saurer Zoids (free)
     Anderson455 (now Anderson123) — https://sketchfab.com/pablo.gabriel87
     https://sketchfab.com/3d-models/death-saurer-zoids-free-57539bc35b2445e997c091cccbdbee8b

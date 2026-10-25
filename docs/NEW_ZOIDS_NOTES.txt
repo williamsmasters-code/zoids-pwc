@@ -378,3 +378,22 @@ Head: the 1.45x enlargement is dropped. With real colours the stock head and
 jaw read clearly in side and front views, and the bigger head looked bulky.
 GENO_HEAD=1.45 node tools/optimize_models.mjs restores it.
 Screenshots: screenshots/new-models-20261025d/.
+
+FIFTH BATCH: NEW IRON KONG FILE (25 Oct 2026, 4:56 PM)
+-----------------------------------------------------
+File: iron_kong_new.glb (17.42 MB, md5 4df35345..., differs from the old
+source). No metadata (trimesh export). It is the same Anderson123 mesh as
+before: 499,766 triangles and identical bounds (+-40.0 x +-36.6 x +-30.0),
+split into 33 meshes by colour (blue, black, white, grey, gold, caps,
+canopy), each with a 512 px texture. The CC-BY-4.0 Anderson123 credit
+stays; the recolour is credited to Daniel's supplied file, author of the
+recolour not stated.
+Orientation, centring, feet on the floor and scale are unchanged from the
+old file (same mesh, same pre-rotation and half turn): in game 4.4 x 5.3 x
+5.8. Part zones and weapon mounts reuse the Iron Kong targets (back
+missile/turret mount on the back, arms as side weapons). Stats unchanged.
+Colours: textures flattened to their mean colours (same TEX_MEAN method as
+the other Daniel files); the old grey/orange part tint was removed so the
+blue/black/white/gold scheme shows. 1.90 MB after simplifying to 110k
+triangles.
+Screenshots: screenshots/new-models-20261025e/.

@@ -51,7 +51,12 @@ Iron Kong - Zoids
   Model: https://sketchfab.com/3d-models/iron-kong-zoids-74a45b6ead5f4f21bc6df68c9ca9bd9a
   License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
   Changes: scaled/split/optimized/stripped helper nodes; rotated upright and turned
-  to face forward; part split rebalanced; per-part grey/orange colour added
+  to face forward; part split rebalanced. Since 25 Oct 2026 built from
+  iron_kong_new.glb, supplied by Daniel Williams: the same Anderson123 mesh
+  (identical 499,766 triangles and bounds) re-exported with trimesh and
+  recoloured (blue/black/white/grey/gold). The re-export has no metadata, so
+  authorship rests on the geometry match; the recolour's author is not
+  stated. The old per-part grey/orange tint was removed.
 
 Death saurer Zoids (free)
   Author: Anderson455
