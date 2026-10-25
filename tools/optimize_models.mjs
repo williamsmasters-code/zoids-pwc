@@ -779,6 +779,26 @@ const POST = {
   "blade-liger": {
     pitch: { tail: 0.5 },
   },
+  // Untextured white sources: canon-style tints (purple Death Saurer with
+  // dark claws/fans; gunmetal Death Stinger with gold cutters and a dark tail
+  // cannon).
+  "death-saurer": {
+    tint: {
+      head: [0.3, 0.14, 0.42], core: [0.27, 0.12, 0.38], tail: [0.27, 0.12, 0.38],
+      leftLeg: [0.22, 0.1, 0.32], rightLeg: [0.22, 0.1, 0.32],
+      leftWeapon: [0.16, 0.12, 0.18], rightWeapon: [0.16, 0.12, 0.18],
+      backMount: [0.55, 0.16, 0.2], headWeapon: [0.6, 0.12, 0.1],
+    },
+  },
+  "death-stinger": {
+    tint: {
+      head: [0.32, 0.34, 0.38], core: [0.3, 0.32, 0.36], tail: [0.3, 0.32, 0.36],
+      leftFrontLeg: [0.18, 0.19, 0.22], rightFrontLeg: [0.18, 0.19, 0.22],
+      leftRearLeg: [0.18, 0.19, 0.22], rightRearLeg: [0.18, 0.19, 0.22],
+      leftWeapon: [0.6, 0.45, 0.15], rightWeapon: [0.6, 0.45, 0.15],
+      backMount: [0.12, 0.12, 0.14], headWeapon: [0.6, 0.2, 0.12],
+    },
+  },
 };
 
 // POST edits (tail pitch, head scale) can shift the footprint; put the

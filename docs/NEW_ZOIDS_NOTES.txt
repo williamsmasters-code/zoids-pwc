@@ -182,3 +182,82 @@ Tests:
   and a live ground Molga hits it at 18 m. Screenshots:
   screenshots/pteras-flight/pteras-airborne-chase.png,
   pteras-airborne-first-person.png, ground-zoid-shooting-up.png.
+
+
+MODELS SUPPLIED 25 OCT 2026: GENO SAURER, DEATH SAURER, DEATH STINGER
+=====================================================================
+
+Licence and author (read from each GLB's asset.extras, then confirmed on
+Sketchfab's public API on 25 Oct 2026):
+  genosaurer_zoids_free.glb    "Genosaurer Zoids (free)"   Anderson455, CC-BY-4.0
+  death_saurer_zoids_free.glb  "Death saurer Zoids (free)" Anderson455, CC-BY-4.0
+  death_stinger_zoids_free.glb "Death Stinger Zoids (free)" Anderson455, CC-BY-4.0
+  Sketchfab now shows the author as Anderson123 (same account as Iron Kong);
+  licence label "CC Attribution". Credits added to CREDITS.txt, README.txt and
+  the hangar credits panel (js/credits.js).
+
+Geno Saurer: the supplied file is byte-identical (same MD5) to the source the
+game already used (/workspace/zoids_models/m_01M542FS767...glb). Nothing was
+replaced; the existing geno-saurer.glb, part split, credit and 1.45x head
+enlargement stay as they were (the head scale is still needed with this mesh,
+whose head is small next to the canon proportions).
+
+Orientation (both new files): authored Z-up with the nose on +X. The
+optimiser rotates -90 degrees about X (stands them up), then a quarter turn
+about Y so the nose points at -Z (game forward), puts the feet on y = 0 and
+centres X/Z. Tests check: head in front of the core along the forward axis,
+legs below the core, min y = 0, centred, not stood on end.
+
+Scale: canon-relative, about 0.31 game units per canon metre (the same ratio
+as Geno Saurer 23 m and Shield Liger 21.6 m):
+  Death Saurer  32.4 m long -> 10.0 units (7.9 wide, 5.2 tall; catalog scale 1.82)
+  Death Stinger ~22 m long with the tail curled (canon 19.4-28.8 m) -> 6.8
+                units (6.0 wide with the pincers, 3.6 tall; scale 1.5)
+This Death Saurer mesh is in the low, horizontal "firing" pose with its tail
+curling to one side, so it is long and wide rather than tall.
+
+File sizes: source 15.75 MB -> 1.85 MB (Death Saurer), 17.65 MB -> 1.89 MB
+(Death Stinger), about 110k triangles each, meshopt-compressed. Untextured
+sources, so per-part tints were added (purple Death Saurer, gunmetal Death
+Stinger with gold pincers). Rebuild:
+  ONLY=death-saurer,death-stinger node tools/optimize_models.mjs
+
+Part zones (tools/optimize_models.mjs targetsFor):
+  Death Saurer (biped): head + mouth cannon (headWeapon) at the front, killer
+  claws either side of the head (left/rightWeapon), thighs (left/rightLeg),
+  back spikes/fans (backMount), tail including the sideways curl. The body
+  spine sits off-centre in the bounding box because of the tail curl, so the
+  zones are placed on the spine, not the box centre.
+  Death Stinger (quad): face + laser fangs, pincers (left/rightWeapon), leg
+  rows grouped into front and rear pairs, tail, tail-tip cannon (backMount).
+
+Death Saurer (now a real mesh; was a procedural mock)
+  Canon loadout: charged particle cannon in the mouth, Hyper Killer Claws,
+  missile pod. Hardpoints: Mouth Particle Cannon XL (headWeapon), Left Killer
+  Claw M, Right Claw Gun M, Back Missile Pod L (turret, 216-degree arc).
+  Stock: chargedParticle (mouth, group 1), missilePack (back, group 2),
+  strikeLaserClaw (left, group 3), pulseLaser (right, group 2).
+  Stats unchanged: 90 km/h canon, accel 8, armour x2.15, 168 t base / 230 t.
+  Boss-but-fair changes: Overload skill now +30% damage (was +40%) with a 14 s
+  cooldown (was 10 s); still only in the D5 Ace pool, at most one per mission,
+  and a mission with a boss is capped at 3 enemies.
+
+Death Stinger (new, KFD sea scorpion)
+  Canon 185 km/h, 320 t. Game: accel 10 (brake 13), turn 0.72, armour x1.85,
+  134 t base / 190 t max, price 1,750,000 C, radius 3.6.
+  Hardpoints: Laser Fangs S, Left/Right Laser Scissor M, Tail Particle Cannon
+  XL (turret, 108-degree arc so the tail swings toward the lock).
+  Stock: chargedParticle (tail, group 1), pulseLaser (fangs, group 2),
+  laserBlade x2 (pincers, group 3).
+  Skill: Carapace E-Shield (-12% damage taken) / Tail Overcharge (+30%
+  damage, +40% heat for 5 s, cooldown 12 s).
+  Enemy pools: D4 Elite and D5 Ace. Counts as a boss: never with a Death
+  Saurer, max one per mission, mission capped at 3 enemies.
+  Procedural fallback (?mock=1): a box-built scorpion (js/models.js
+  buildStinger).
+
+Tests: tests/glb.test.mjs (orientation, centring, canon scale, Death Saurer
+bigger than Geno), tests/new_zoids.test.mjs (both build, parts, pools,
+skills, sizes, Death Stinger speed/accel), tests/new_zoids_browser.mjs (both
+in a real mission), tests/new_models_browser.mjs (GLB in the hangar, front
+and side views, credits panel). Screenshots in screenshots/new-models-20261025/.

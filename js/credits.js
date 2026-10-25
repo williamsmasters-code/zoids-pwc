@@ -45,6 +45,22 @@ export const MODEL_CREDITS = [
     modelUrl: "https://sketchfab.com/3d-models/iron-kong-zoids-74a45b6ead5f4f21bc6df68c9ca9bd9a",
     changes: "scaled/split/optimized/stripped helper nodes",
   },
+  {
+    slug: "death-saurer",
+    title: "Death saurer Zoids (free)",
+    author: "Anderson455 (now Anderson123)",
+    authorUrl: "https://sketchfab.com/Mr_Anderson123",
+    modelUrl: "https://sketchfab.com/3d-models/death-saurer-zoids-free-57539bc35b2445e997c091cccbdbee8b",
+    changes: "scaled/split/optimized/stripped helper nodes; rotated upright and turned to face forward",
+  },
+  {
+    slug: "death-stinger",
+    title: "Death Stinger Zoids (free)",
+    author: "Anderson455 (now Anderson123)",
+    authorUrl: "https://sketchfab.com/Mr_Anderson123",
+    modelUrl: "https://sketchfab.com/3d-models/death-stinger-zoids-free-26c18f813ea741b691b8d5e421b3ded5",
+    changes: "scaled/split/optimized/stripped helper nodes; rotated upright and turned to face forward",
+  },
 ];
 
 export function creditsMarkup() {
@@ -63,7 +79,7 @@ export function creditsMarkup() {
         <h2>Model credits</h2>
         <button type="button" data-act="close-credits">Close</button>
       </header>
-      <p>Five Zoids use meshes from Sketchfab under ${LICENSE_NAME}. Zaber Fang, Gojulas, and Death Saurer stay procedural mocks. Gun Sniper, Elephander, Berserk Fuhrer, Molga, and Pteras are original procedural models made for this project. Add <code>?mock=1</code> to the page address to force every Zoid back to the mock.</p>
+      <p>Seven Zoids use meshes from Sketchfab under ${LICENSE_NAME}. Zaber Fang and Gojulas stay procedural mocks. Gun Sniper, Elephander, Berserk Fuhrer, Molga, and Pteras are original procedural models made for this project. Add <code>?mock=1</code> to the page address to force every Zoid back to the mock.</p>
       ${blocks}
     </div>
   `;

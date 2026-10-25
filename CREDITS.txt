@@ -49,7 +49,30 @@ Iron Kong - Zoids
   Changes: scaled/split/optimized/stripped helper nodes; rotated upright and turned
   to face forward; part split rebalanced; per-part grey/orange colour added
 
-Zaber Fang, Gojulas, and Death Saurer use the built-in procedural mocks.
+Death saurer Zoids (free)
+  Author: Anderson455
+  Author page: https://sketchfab.com/pablo.gabriel87
+  (Name and page as embedded in the downloaded file. Sketchfab now lists the
+  model under Anderson123, https://sketchfab.com/Mr_Anderson123; licence
+  confirmed on Sketchfab as CC Attribution, 25 Oct 2026)
+  Model: https://sketchfab.com/3d-models/death-saurer-zoids-free-57539bc35b2445e997c091cccbdbee8b
+  License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
+  Changes: scaled/split/optimized/stripped helper nodes; rotated upright (source
+  was Z-up) and turned to face forward
+
+Death Stinger Zoids (free)
+  Author: Anderson455
+  Author page: https://sketchfab.com/pablo.gabriel87
+  (Name and page as embedded in the downloaded file. Sketchfab now lists the
+  model under Anderson123, https://sketchfab.com/Mr_Anderson123; licence
+  confirmed on Sketchfab as CC Attribution, 25 Oct 2026)
+  Model: https://sketchfab.com/3d-models/death-stinger-zoids-free-26c18f813ea741b691b8d5e421b3ded5
+  License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
+  Changes: scaled/split/optimized/stripped helper nodes; rotated upright (source
+  was Z-up) and turned to face forward
+
+Zaber Fang and Gojulas use the built-in procedural mocks. Death Stinger and
+Death Saurer have procedural fallbacks for ?mock=1.
 
 Gun Sniper, Elephander, Berserk Fuhrer, Molga, and Pteras are original
 procedural models built for this project (js/models.js). No third-party

@@ -11,7 +11,7 @@ import { ZOID_ORDER, ZOIDS, stockWeaponsFor } from "../js/catalog.js";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const shots = path.join(root, "screenshots", "new-zoids");
 fs.mkdirSync(shots, { recursive: true });
-const NEW = ["gunSniper", "elephander", "berserkFuhrer", "molga", "pteras"];
+const NEW = ["gunSniper", "elephander", "berserkFuhrer", "molga", "pteras", "deathStinger", "deathSaurer"];
 const port = 8197;
 const server = spawn("python3", ["-m", "http.server", String(port)], { cwd: root, stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

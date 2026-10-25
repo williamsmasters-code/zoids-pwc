@@ -184,13 +184,14 @@ SKILLS
   Pteras          Sky Eye (+30% radar) / Bombing Run (4 bombs x 14 dmg, cd 11s)
 
 MODELS
-  Command Wolf, Shield Liger, Blade Liger, Iron Kong, and Geno Saurer load
+  Command Wolf, Shield Liger, Blade Liger, Iron Kong, Geno Saurer, Death
+  Saurer, and Death Stinger load
   Sketchfab meshes from assets/models (see CREDITS.txt). They face local -Z,
   stand on y = 0, and are split into the same named damage parts as the mocks.
   Shield Liger prefers assets/models/shield-liger-anim.glb, a rigid skin with
   Idle, Walk, Run, ShieldActivate, ShieldMaintain, and Fire. If that file
   fails it uses the static shield-liger.glb, then the procedural mock. The
-  other four files are static. Zaber Fang, Gojulas, and Death Saurer stay
+  other files are static. Zaber Fang and Gojulas stay
   boxes, cylinders, and cones. Add ?mock=1 to the page address to force the
   procedural model for every Zoid. If a GLB fails to load, that Zoid falls
   back to its mock. The hangar footer opens the credit list.
@@ -205,7 +206,7 @@ MODELS
     /workspace/tools/blender-4.5.14-linux-x64/blender -b --python tools/rig_shield_liger.py
 
 MODEL CREDITS
-  License for all five meshes: CC-BY-4.0
+  License for all seven meshes: CC-BY-4.0
   http://creativecommons.org/licenses/by/4.0/
   Changes: scaled/split/optimized/stripped helper nodes
 
@@ -226,6 +227,12 @@ MODEL CREDITS
   Iron Kong - Zoids
     Anderson123 — https://sketchfab.com/Mr_Anderson123
     https://sketchfab.com/3d-models/iron-kong-zoids-74a45b6ead5f4f21bc6df68c9ca9bd9a
+  Death saurer Zoids (free)
+    Anderson455 (now Anderson123) — https://sketchfab.com/pablo.gabriel87
+    https://sketchfab.com/3d-models/death-saurer-zoids-free-57539bc35b2445e997c091cccbdbee8b
+  Death Stinger Zoids (free)
+    Anderson455 (now Anderson123) — https://sketchfab.com/pablo.gabriel87
+    https://sketchfab.com/3d-models/death-stinger-zoids-free-26c18f813ea741b691b8d5e421b3ded5
 
 KNOWN GAPS
   Five Zoids use CC-BY Sketchfab meshes that were scaled, split, and
@@ -233,7 +240,9 @@ KNOWN GAPS
   The Shield Liger rig is a rigid split by region, not a hand-weighted
   skeleton. Small shards can sit off a limb, and the mane plates are the
   regions that could be separated cleanly.
-  Zaber Fang, Gojulas, and Death Saurer are still recognizable mockups.
+  Zaber Fang and Gojulas are still recognizable mockups. Death Saurer and
+  Death Stinger (added 25 Oct 2026) use Sketchfab meshes; see
+  docs/NEW_ZOIDS_NOTES.txt.
   Gun Sniper, Elephander, Berserk Fuhrer, Molga, and Pteras are original
   procedural models made for this project (no free CC-BY/CC0 model of them
   was found). Pteras flies at a low fixed height (flyHeight in js/catalog.js).

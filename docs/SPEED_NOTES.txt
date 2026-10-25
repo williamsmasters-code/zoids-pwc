@@ -56,8 +56,9 @@ Elephander      130 km/h                  65      86      108     130      7.15 
 Berserk Fuhrer  340 km/h                  170     226     282     340      18.7     30     39     0.37
 Molga           200 km/h                  100     133     166     200      11       15     19.5   0.73
 Pteras          Air: Mach 2 (capped 600)  300     399     498     600      33       24     31.2   0.46
+Death Stinger   185 km/h                  93      123     154     185      10.18    10     13     1.02
 
-Acceleration ranking: Command Wolf 34, Zaber Fang 34, Berserk Fuhrer 30, Blade Liger 29, Gun Sniper 28, Shield Liger 27, Geno Saurer 24, Pteras 24, Iron Kong 16, Molga 15, Elephander 13, Gojulas 11, Death Saurer 8
+Acceleration ranking: Command Wolf 34, Zaber Fang 34, Berserk Fuhrer 30, Blade Liger 29, Gun Sniper 28, Shield Liger 27, Geno Saurer 24, Pteras 24, Iron Kong 16, Molga 15, Elephander 13, Gojulas 11, Death Stinger 10, Death Saurer 8
 
 Compromises
 -----------
@@ -88,6 +89,7 @@ Elephander     https://zoids.fandom.com/wiki/Elephander      130 km/h
 Berserk Fuhrer https://zoids.fandom.com/wiki/Berserk_Führer  340 km/h
 Molga          https://zoids.fandom.com/wiki/Molga           200 km/h
 Pteras         https://zoids.fandom.com/wiki/Pteras          Air: Mach 2
+Death Stinger  https://zoids.fandom.com/wiki/Death_Stinger   185 km/h (sea 72 knots, not used)
 
 Tests
 -----
@@ -96,3 +98,9 @@ canon and full = canon for every Zoid, canon ordering, tonnage on top,
 acceleration ranking, unit conversion.
 tests/speed_browser.mjs: hangar current/max + 0-100 stat, toggle persists
 across reload, HUD in the chosen unit. Screenshots in screenshots/speed/.
+
+Death Stinger (added 25 Oct 2026)
+---------------------------------
+Canon 185 km/h, 320 t (Zoids Wiki). Acceleration 10 m/s^2 (brake 13): set by
+weight, between Gojulas (230 t, 11) and Death Saurer (400 t, 8). Same 3-level
+Speed Booster rule as everyone else; full set = 185 km/h.
