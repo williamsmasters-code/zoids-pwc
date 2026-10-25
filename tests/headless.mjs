@@ -232,7 +232,7 @@ try {
     }
     seenSkills.push(skill.active);
   }
-  if (new Set(seenSkills).size !== 13) note("skills", `active names ${seenSkills.join(", ")}`);
+  if (new Set(seenSkills).size !== 14) note("skills", `active names ${seenSkills.join(", ")}`);
   await page.select("#zoid-select", "shieldLiger");
   const viewState = await page.evaluate(() => ({
     banner: document.querySelector("#view-banner")?.dataset.state || "",

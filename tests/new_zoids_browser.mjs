@@ -72,6 +72,7 @@ try {
     console.log("screenshot", path.relative(root, f));
     const st = await page.evaluate(() => window.__ZOIDS__.selfTest && window.__ZOIDS__.selfTest());
     console.log(id, "mission selfTest", JSON.stringify(st).slice(0, 120));
+    if (!st || !st.ok) note(`${id} mission selfTest failed: ${JSON.stringify(st && st.failures)}`);
   }
 } finally {
   await browser.close();

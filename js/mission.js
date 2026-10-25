@@ -2384,7 +2384,13 @@ export function startMission(state, contract, hooks) {
     facingDirection(player.model.root, fwdNow);
     fwdNow.y = 0;
     fwdNow.normalize();
-    failTest(failures, forwardMove.length() > 1.5, `W did not move the Zoid (${forwardMove.length().toFixed(2)})`);
+    // Heavy stock Zoids (Death Saurer 45 km/h, accel 8) cover ~1 m in 0.5 s
+    // after the speed rework, so the bar scales with top speed.
+    const pf = derivePerformance(player.def, player.mods, player.parts, player.weight);
+    const tRamp = Math.min(0.5, pf.speed / Math.max(0.1, pf.accel));
+    const ideal = 0.5 * pf.accel * tRamp * tRamp + pf.speed * (0.5 - tRamp);
+    const moveBar = Math.min(1.5, 0.6 * ideal);
+    failTest(failures, forwardMove.length() > moveBar, `W did not move the Zoid (${forwardMove.length().toFixed(2)} < ${moveBar.toFixed(2)})`);
     if (forwardMove.length() > 0.2) {
       failTest(failures, forwardMove.clone().normalize().dot(fwdNow) > 0.85, "W did not move along chassis forward");
     }
