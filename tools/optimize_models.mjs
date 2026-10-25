@@ -52,6 +52,9 @@ const MOCK_SIZE = {
   "gun-sniper": [4.0, 4.0, 4.0],
   // Zaber Fang 15.6 m -> 4.84 units at scale 0.96.
   "zaber-fang": [5.04, 5.04, 5.04],
+  // Gojulas 26 m long (canon depth) -> 8.06 units at scale 1.48. The file is
+  // posed upright (taller than long), so the largest axis is height: 6.19.
+  "gojulas": [6.19, 6.19, 6.19],
 };
 
 // Side-view splats (camera on +X, image-right = +Z) put the head on +Z
@@ -67,6 +70,7 @@ const FACING_YAW = {
   "death-stinger": Math.PI / 2,
   "gun-sniper": Math.PI / 2,
   "zaber-fang": Math.PI / 2,
+  "gojulas": Math.PI / 2,
 };
 
 const SOURCE = {
@@ -83,6 +87,8 @@ const SOURCE = {
   "gun-sniper": "gun_sniper.glb",
   // Supplied by Daniel 2026-10-25. No author/licence metadata (trimesh export).
   "zaber-fang": "zaber_fang.glb",
+  // Supplied by Daniel 2026-10-25 15:53. No author/licence metadata (trimesh).
+  "gojulas": "gojulas.glb",
 };
 
 const TRI_TARGET = {
@@ -95,6 +101,7 @@ const TRI_TARGET = {
   "death-stinger": 110000,
   "gun-sniper": 20000,
   "zaber-fang": 20000,
+  "gojulas": 20000,
 };
 
 const QUAD = [
@@ -117,6 +124,7 @@ const LAYOUT = {
   "death-stinger": "quad",
   "gun-sniper": "biped",
   "zaber-fang": "quad",
+  "gojulas": "biped",
 };
 
 function targetsFor(slug) {
@@ -299,6 +307,7 @@ const PRE_ROT = {
   "death-stinger": [-Math.PI / 2, 0, 0],
   "gun-sniper": [0, 0, 0],
   "zaber-fang": [0, 0, 0],
+  "gojulas": [0, 0, 0],
 };
 
 function preRotFor(slug) {
@@ -336,8 +345,10 @@ function triArea(ax, ay, az, bx, by, bz, cx, cy, cz) {
 // panel-line PNGs per material instead of colour factors. The game renders
 // flat per-part colours, so each texture is replaced by its mean colour
 // (linear, measured with PIL 2026-10-25). Saves ~2.3 MB per file.
+const GOJ_MEAN = {"frame": [0.0166, 0.0166, 0.0203, 1], "white": [0.6906, 0.6658, 0.5803, 1], "grey": [0.1722, 0.1982, 0.2334, 1], "cap": [0.0052, 0.0052, 0.0062, 1], "canopy": [0.8751, 0.0869, 0.009, 1], "teeth": [0.6983, 0.6598, 0.5512, 1], "steel": [0.3017, 0.329, 0.3774, 1], "claw": [0.011, 0.011, 0.0125, 1]};
 const TEX_MEAN = {
   "gun-sniper": {"frame": [0.0624, 0.0523, 0.0403, 1], "blue": [0.0341, 0.0424, 0.2314, 1], "white": [0.7263, 0.7263, 0.7897, 1], "silver": [0.4819, 0.4934, 0.5656, 1], "canopy": [1.0, 0.2195, 0.0055, 1], "sensor": [0.1011, 0.7519, 0.1166, 1], "yellow": [0.8569, 0.5732, 0.0291, 1], "orange": [0.848, 0.3279, 0.0457, 1], "gold": [0.6023, 0.3642, 0.0424, 1], "claw": [0.0392, 0.0364, 0.0337, 1], "purple": [0.1243, 0.0775, 0.1965, 1]},
+  "gojulas": GOJ_MEAN,
   "zaber-fang": {"gunmetal": [0.0761, 0.0683, 0.0575, 1], "plate": [0.2797, 0.2635, 0.2327, 1], "dark": [0.0194, 0.0176, 0.0158, 1], "steel": [0.389, 0.3992, 0.4305, 1], "red": [0.345, 0.013, 0.013, 1], "canopy": [0.0415, 0.586, 0.0781, 1], "eye": [0.0415, 0.586, 0.0781, 1], "ivory": [0.6432, 0.5821, 0.3893, 1], "salmon": [0.641, 0.1788, 0.1535, 1]},
 };
 let CURRENT_SLUG = null;
@@ -653,6 +664,17 @@ const NAMED_PARTS = {
     const leg = name.match(/_(FL|FR|RL|RR)(_|$)/);
     if (leg) return { FL: "leftFrontLeg", FR: "rightFrontLeg", RL: "leftRearLeg", RR: "rightRearLeg" }[leg[1]];
     if (/^(head|snout|eye|jaw|tooth|canopy)/.test(name)) return "head";
+    return "core";
+  },
+  // Gojulas (Daniel's file): Y-up, upright pose, nose on +X, _L/_R sides.
+  "gojulas": (name) => {
+    if (/^buster_/.test(name)) return "backMount";
+    if (/^(tail_|dorsal_spike)/.test(name)) return "tail";
+    if (/^(lower_jaw|upper_tooth|lower_tooth)/.test(name)) return "headWeapon";
+    if (/^(skull|canopy|upper_jaw|jaw_hinge|head_side)/.test(name)) return "head";
+    const side = /_L(_|$)/.test(name) ? "left" : /_R(_|$)/.test(name) ? "right" : null;
+    if (side && /^(hmg_|shoulder_|upper_arm|elbow_|forearm|crusher_claw)/.test(name)) return `${side}Weapon`;
+    if (side && /^(thigh|hip_cap|knee_cap|shin|ankle_cap|foot|toe|heel_claw)/.test(name)) return `${side}Leg`;
     return "core";
   },
 };

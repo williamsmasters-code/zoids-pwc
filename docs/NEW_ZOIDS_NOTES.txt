@@ -315,3 +315,42 @@ Stats (canon: 15.6 m, 78 t, 240 km/h; zoids.fandom.com, theironbible.com):
 Pools: removed from Green (the shock cannon is too strong for D1), kept in
 Regular and Veteran, added to Elite.
 Screenshots: screenshots/new-models-20261025b/.
+
+THIRD BATCH: GOJULAS (25 Oct 2026, 3:53 PM)
+-------------------------------------------
+File: gojulas.glb (1.78 MB) from Daniel. No author or licence in the file
+(only the "trimesh" generator tag). Credited as "supplied by Daniel
+Williams, licence not stated". Confirm before any public release.
+Output 0.12 MB, 5,424 triangles (panel textures flattened to mean colours,
+same as Zaber Fang / Gun Sniper v2).
+Orientation: Y-up, feet at y = 0, nose on +X. Turned 90 degrees so the
+nose points to -Z, centred on X/Z.
+Scale: canon is 26 m long (depth), 21 m tall, 230 t, 75 km/h
+(zoids.fandom.com/wiki/Gojulas). Fitted so the length is 26 m at 0.31
+units per metre: 8.05 units at game scale 1.48. The model stands in an
+upright Godzilla pose, so it is 9.2 units tall (about 29 m), taller than
+canon's 21 m. It is the tallest Zoid in the game; Death Saurer stays the
+longest (10.0).
+Parts by node name: buster cannons = back mount; tail segments and dorsal
+spikes = tail; lower jaw and teeth = head weapon (bite); skull, canopy,
+upper jaw = head; each arm (shoulder, arm, crusher claw) plus its 70 mm
+HMG pod = left/right weapon; legs by side; the rest (pelvis, torso,
+neck, back unit, back spikes) = core.
+Stats: speed 75 km/h canon (stock 38), accel 11, brake 14.3, turn 0.7,
+armour 1.65 (unchanged; still the slowest Zoid). Weight 160 t base,
+230 t max (was 98/140; 230 t is canon, same load ratio).
+Hardpoints: Hyper Bite Fangs M, Left Crusher Claw / 70mm HMG L, Right
+Crusher Claw / AZ 30mm Beam L, Long-Range Buster Cannons XL (back turret,
+90 degree arc, slow 0.9 rad/s traverse).
+Stock: strike laser claw on the bite (group 3), gatling left and double
+beam cannon right (group 1), sniper rifle as the buster cannons (group 2).
+The old stock had two shock cannons plus a 55% chance of a charged
+particle gun; the new one hits a bit less hard up close.
+The tail is an armoured part, not a weapon. Skill unchanged (Siege Brace /
+Artillery Barrage).
+Fairness: Gojulas now counts as a superheavy with Death Saurer and Death
+Stinger. A mission rolls at most one of the three (a second one becomes
+Iron Kong or Geno Saurer), and any mission with one has at most 3 enemies.
+Pools unchanged: Elite and Ace. tests/new_zoids.test.mjs checks the rule
+over 3,200 rolls.
+Screenshots: screenshots/new-models-20261025c/.

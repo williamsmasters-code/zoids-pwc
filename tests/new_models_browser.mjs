@@ -15,13 +15,16 @@ const shotsB = path.join(root, "screenshots", "new-models-20261025b");
 const BATCH_B = new Set(["gunSniper", "zaberFang"]);
 fs.mkdirSync(shots, { recursive: true });
 fs.mkdirSync(shotsB, { recursive: true });
+// Third batch (Daniel, 25 Oct 15:53): Gojulas.
+const shotsC = path.join(root, "screenshots", "new-models-20261025c");
+fs.mkdirSync(shotsC, { recursive: true });
 const port = 8214;
 const server = spawn("python3", ["-m", "http.server", String(port)], { cwd: root, stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await sleep(900);
 const errors = [];
 const note = (t) => { errors.push(t); console.error("FAIL", t); };
-const IDS = { genoSaurer: "geno-saurer", deathSaurer: "death-saurer", deathStinger: "death-stinger", gunSniper: "gun-sniper", zaberFang: "zaber-fang" };
+const IDS = { genoSaurer: "geno-saurer", deathSaurer: "death-saurer", deathStinger: "death-stinger", gunSniper: "gun-sniper", zaberFang: "zaber-fang", gojulas: "gojulas" };
 const browser = await puppeteer.launch({
   executablePath: "/usr/bin/google-chrome", headless: true, protocolTimeout: 300000,
   args: ["--no-sandbox", "--disable-dev-shm-usage", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
@@ -46,19 +49,19 @@ try {
     await sleep(300);
     const v = await page.evaluate(() => window.__ZOIDS__.previewView());
     if (!(v.tailSide < -0.5)) note(`${id}: front view does not face the camera (tailSide ${v.tailSide.toFixed(2)})`);
-    await page.screenshot({ path: path.join(BATCH_B.has(id) ? shotsB : shots, `${slug}-front34.png`) });
+    await page.screenshot({ path: path.join(id === "gojulas" ? shotsC : BATCH_B.has(id) ? shotsB : shots, `${slug}-front34.png`) });
     // Side: camera 90 degrees round from the nose, low angle
     await page.evaluate(() => window.__ZOIDS__.previewSetView({ yaw: Math.PI / 2 - Math.atan2(0.38, 1), pitch: 0.12, zoom: 1 }));
     await sleep(300);
     const s = await page.evaluate(() => window.__ZOIDS__.previewView());
     if (Math.abs(s.tailSide) > 0.2) note(`${id}: side view is not side-on (tailSide ${s.tailSide.toFixed(2)})`);
-    await page.screenshot({ path: path.join(BATCH_B.has(id) ? shotsB : shots, `${slug}-side.png`) });
+    await page.screenshot({ path: path.join(id === "gojulas" ? shotsC : BATCH_B.has(id) ? shotsB : shots, `${slug}-side.png`) });
     console.log("screenshots", `${slug}-front34.png`, `${slug}-side.png`);
   }
   await page.evaluate(() => window.__ZOIDS__.previewSetView({ yaw: 0, pitch: 0.29, zoom: 1 }));
   await page.click('[data-act="credits"]');
   const credits = await page.$eval("#credits-panel", (p) => p.innerText);
-  for (const t of ["Death saurer Zoids (free)", "Death Stinger Zoids (free)", "Genosaurer Zoids (free)", "Anderson455", "Zaber Fang (supplied by Daniel Williams"]) {
+  for (const t of ["Death saurer Zoids (free)", "Death Stinger Zoids (free)", "Genosaurer Zoids (free)", "Anderson455", "Zaber Fang (supplied by Daniel Williams", "Gojulas (supplied by Daniel Williams"]) {
     if (!credits.includes(t)) note(`credits panel missing "${t}"`);
   }
 } catch (e) {

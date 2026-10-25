@@ -19,19 +19,19 @@ function shuffle(items, rng) {
   return arr;
 }
 
-function rollEnemies(type, difficulty, rng) {
+export function rollEnemies(type, difficulty, rng) {
   const pool = DIFFICULTY[difficulty].pool;
   const count = enemyCountFor(difficulty, type);
   const out = [];
   for (let i = 0; i < count; i++) {
     let zoidId = pool[Math.floor(rng() * pool.length)];
-    // Bosses: at most one Death Saurer and one Death Stinger, never both.
-    const boss = (id) => id === "deathSaurer" || id === "deathStinger";
-    if (boss(zoidId) && out.some((e) => boss(e.zoidId))) zoidId = zoidId === "deathSaurer" ? "gojulas" : "genoSaurer";
+    // Superheavies (Death Saurer, Death Stinger, Gojulas): at most one per mission.
+    const boss = (id) => id === "deathSaurer" || id === "deathStinger" || id === "gojulas";
+    if (boss(zoidId) && out.some((e) => boss(e.zoidId))) zoidId = zoidId === "deathSaurer" ? "ironKong" : "genoSaurer";
     out.push({ zoidId, name: `${ZOIDS[zoidId].name} ${i + 1}` });
   }
-  // One Death Saurer is a lance on its own: cap the escort at 3 total.
-  if (out.some((e) => e.zoidId === "deathSaurer" || e.zoidId === "deathStinger") && out.length > 3) out.length = 3;
+  // One superheavy is a lance on its own: cap the escort at 3 total.
+  if (out.some((e) => e.zoidId === "deathSaurer" || e.zoidId === "deathStinger" || e.zoidId === "gojulas") && out.length > 3) out.length = 3;
   return out;
 }
 

@@ -10,7 +10,7 @@ import { buildUnitModel, disposeTree } from "../js/models.js";
 import { DIFFICULTY } from "../js/difficulty.js";
 import { SKILLS } from "../js/skills.js";
 
-const NEW = ["gunSniper", "elephander", "berserkFuhrer", "molga", "pteras", "deathStinger", "deathSaurer"];
+const NEW = ["gunSniper", "elephander", "berserkFuhrer", "molga", "pteras", "deathStinger", "deathSaurer", "gojulas"];
 const box = (obj) => new Box3().setFromObject(obj);
 const sizeOf = (id) => {
   const m = buildUnitModel(ZOIDS[id], [], "player");
@@ -57,3 +57,22 @@ assert.equal(ZOIDS.deathStinger.canonKph, 185);
 assert.ok(ZOIDS.deathStinger.accel < ZOIDS.ironKong.accel && ZOIDS.deathStinger.accel > ZOIDS.deathSaurer.accel, "Death Stinger accel sits between Iron Kong and Death Saurer");
 ok("relative sizes");
 console.log(`new zoid tests passed: ${n}`);
+
+// Superheavy fairness (Gojulas joined Death Saurer / Death Stinger, 25 Oct 2026):
+// never two superheavies in one mission, and at most 3 enemies when one is present.
+{
+  const { rollEnemies } = await import("../js/contracts.js");
+  const SUPER = new Set(["deathSaurer", "deathStinger", "gojulas"]);
+  let seed = 7;
+  const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  let sawGojulas = false;
+  for (const level of [4, 5]) for (const type of ["assault", "defend", "escort", "recon"]) for (let i = 0; i < 400; i++) {
+    const out = rollEnemies(type, level, rng);
+    const n = out.filter((e) => SUPER.has(e.zoidId)).length;
+    assert.ok(n <= 1, `two superheavies rolled: ${out.map((e) => e.zoidId)}`);
+    if (n) assert.ok(out.length <= 3, `superheavy mission has ${out.length} enemies`);
+    if (out.some((e) => e.zoidId === "gojulas")) sawGojulas = true;
+  }
+  assert.ok(sawGojulas, "Gojulas appears in Elite/Ace pools");
+  console.log("ok superheavy rule: max one of Death Saurer / Death Stinger / Gojulas, max 3 enemies");
+}

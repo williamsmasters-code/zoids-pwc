@@ -240,7 +240,9 @@ KNOWN GAPS
   The Shield Liger rig is a rigid split by region, not a hand-weighted
   skeleton. Small shards can sit off a limb, and the mane plates are the
   regions that could be separated cleanly.
-  Gojulas is still a recognizable mockup. Death Saurer and
+  Gojulas uses gojulas.glb, supplied by Daniel Williams on 25 Oct 2026,
+  licence not stated (no author or licence in the file); its old mock is
+  the ?mock=1 fallback. No Zoid is a procedural-only mockup any more. Death Saurer and
   Death Stinger (added 25 Oct 2026) use Sketchfab meshes; see
   docs/NEW_ZOIDS_NOTES.txt.
   Gun Sniper uses a GLB supplied by Daniel Williams on 25 Oct 2026 (no

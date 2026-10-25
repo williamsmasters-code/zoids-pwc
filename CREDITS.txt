@@ -71,7 +71,15 @@ Death Stinger Zoids (free)
   Changes: scaled/split/optimized/stripped helper nodes; rotated upright (source
   was Z-up) and turned to face forward
 
-Gojulas uses the built-in procedural mock. Death Stinger and
+Gojulas (assets/models/gojulas.glb)
+  Supplied by Daniel Williams, licence not stated (gojulas.glb, 25 Oct 2026)
+  Author/licence: not stated in the file (generator: trimesh). TO CONFIRM
+  before any public release.
+  Changes: turned to face forward, centred, scaled to 26 m canon length,
+  split into parts by node name, textures flattened to mean colours,
+  compressed
+
+Death Stinger and
 Death Saurer have procedural fallbacks for ?mock=1.
 
 Gun Sniper (assets/models/gun-sniper.glb)

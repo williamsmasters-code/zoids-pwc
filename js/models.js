@@ -34,6 +34,7 @@ const GLB_SLUG = {
   deathStinger: "death-stinger",
   gunSniper: "gun-sniper",
   zaberFang: "zaber-fang",
+  gojulas: "gojulas",
 };
 
 const glbTemplates = new Map();
