@@ -96,3 +96,30 @@ The Zoid preview in the hangar can now be inspected by hand.
 - Note: before this change the auto-spin turned the camera together with the
   Zoid, so the Zoid always faced the camera. That is unchanged; dragging now
   gives the real side and rear views.
+
+ANY-ANGLE VIEWER (update)
+-------------------------
+The showcase is now a true spherical orbit around the centre of the Zoid's
+bounding box, replacing the yaw + limited lift version above.
+- Drag left/right: full 360-degree yaw with no limit (keep dragging to go
+  round again).
+- Drag up/down: pitch from -85 degrees (camera nearly straight below, looking
+  at the underside) to +85 degrees (nearly top-down). It stops 5 degrees short
+  of straight up/down so the view never flips.
+- When the camera goes below the floor, the floor disc is hidden so the
+  underside is seen cleanly. A soft fill light from below keeps the belly from
+  being a black silhouette.
+- Zoom (wheel / pinch): 0.35x to 2.5x of the default framing distance, which
+  scales with the Zoid's size. The camera never gets closer than the model's
+  bounding radius plus a margin, so it can't clip into the model.
+- Pan: right-drag (or Shift + drag), or two-finger drag on touch. Limited to
+  60% of the Zoid's size so the model can't be lost off screen.
+- Reset (double-click / double-tap / the reset button) restores yaw, pitch,
+  zoom and pan. Auto-spin pause/resume, touch handling and the no-scroll-leak
+  behaviour are unchanged.
+- Test (tests/hangar_viewer_browser.mjs) now also checks the top view (+85),
+  the underside (-85, camera below, floor hidden), the rear view (camera on
+  the tail side), more than one full turn of yaw, zoom bounds 0.35 and 2.5
+  with no clipping at the closest zoom, and right-drag pan.
+  Screenshots: screenshots/hangar-viewer/top.png, underside.png, rear.png.
+- Service worker cache bumped to zoids-v4.

@@ -491,6 +491,7 @@ export function showHangar(state, hooks) {
   window.__ZOIDS__.ready = true;
   window.__ZOIDS__.previewParts = () => preview.parts();
   window.__ZOIDS__.previewView = () => preview.viewState();
+  window.__ZOIDS__.previewSetView = (v) => preview.setView(v);
   window.__ZOIDS__.installMode = installMode;
 
   let closed = false;
@@ -547,13 +548,17 @@ function createPreview(canvas) {
   const scene = new Scene();
   scene.background = new Color(0x101820);
   const camera = new PerspectiveCamera(32, 1, 0.1, 200);
-  scene.add(new HemisphereLight(0xd7e6f2, 0x1c140e, 0.85));
+  scene.add(new HemisphereLight(0xd7e6f2, 0x3a3f48, 0.85));
   const key = new DirectionalLight(0xfff4e0, 1.6);
   key.position.set(-4, 8, 6);
   scene.add(key);
   const rim = new DirectionalLight(0x6ec8ff, 0.6);
   rim.position.set(6, 3, -4);
   scene.add(rim);
+  // Soft fill from below so the underside view isn't a silhouette.
+  const under = new DirectionalLight(0x9fb8cc, 1.4);
+  under.position.set(1, -8, 2);
+  scene.add(under);
   const floor = new Mesh(
     new CircleGeometry(18, 40),
     new MeshStandardMaterial({ color: 0x1a222c, roughness: 1, metalness: 0 }),
@@ -562,20 +567,25 @@ function createPreview(canvas) {
   scene.add(floor);
   let model = null;
   const SPIN0 = Math.PI - 0.55;
-  const LIFT0 = 0.32;
+  // Default orbit = the old fixed framing (behind-left of the nose, slightly raised).
+  const AZ0 = Math.atan2(0.38, 1);
+  const PITCH0 = Math.atan2(0.32, Math.hypot(1, 0.38));
+  const PITCH_MIN = (-85 * Math.PI) / 180;
+  const PITCH_MAX = (85 * Math.PI) / 180;
   let spin = SPIN0;
   let running = true;
 
   // Showcase controls (custom; three's OrbitControls isn't vendored).
-  // Drag = rotate (yaw) and tilt (camera lift), wheel / pinch = zoom within
-  // limits scaled by the Zoid's size, double-click / double-tap / reset button
-  // = default view. Auto-spin pauses while interacting, resumes after 3 s.
-  const ZOOM_MIN = 0.55;
-  const ZOOM_MAX = 1.8;
-  const LIFT_MIN = -0.05;
-  const LIFT_MAX = 1.1;
+  // True spherical orbit around the model's centre: drag = 360 yaw + pitch
+  // from -85 (underside) to +85 (top-down), clamped so lookAt never flips.
+  // Wheel / pinch = zoom (limits scale with the Zoid's size, and the camera
+  // never gets closer than the model's bounding radius). Right-drag or
+  // two-finger drag pans. Double-click / double-tap / reset button = default.
+  // Auto-spin pauses while interacting, resumes after 3 s.
+  const ZOOM_MIN = 0.35;
+  const ZOOM_MAX = 2.5;
   const RESUME_MS = 3000;
-  const view = { yaw: 0, zoom: 1, lift: LIFT0, lastInput: -Infinity, dragging: false };
+  const view = { yaw: 0, pitch: PITCH0, zoom: 1, panX: 0, panY: 0, mode: "orbit", lastInput: -Infinity, dragging: false };
   const pointers = new Map();
   let pinchDist = 0;
   let lastTap = 0;
@@ -587,12 +597,31 @@ function createPreview(canvas) {
   function resetView() {
     spin = SPIN0;
     view.yaw = 0;
+    view.pitch = PITCH0;
     view.zoom = 1;
-    view.lift = LIFT0;
+    view.panX = 0;
+    view.panY = 0;
     view.lastInput = -Infinity;
   }
   function zoomBy(factor) {
     view.zoom = clampN(view.zoom * factor, ZOOM_MIN, ZOOM_MAX);
+    touch();
+  }
+  function orbitBy(dx, dy) {
+    view.yaw -= dx * 0.01;
+    view.pitch = clampN(view.pitch + dy * 0.01, PITCH_MIN, PITCH_MAX);
+  }
+  function panBy(dx, dy) {
+    const lim = (model && model.frameSize ? model.frameSize : 6) * 0.6;
+    const k = (view.dist || 10) * 0.0016;
+    view.panX = clampN(view.panX - dx * k, -lim, lim);
+    view.panY = clampN(view.panY + dy * k, -lim, lim);
+    touch();
+  }
+  function setView(v) {
+    if (v.yaw != null) view.yaw = v.yaw;
+    if (v.pitch != null) view.pitch = clampN(v.pitch, PITCH_MIN, PITCH_MAX);
+    if (v.zoom != null) view.zoom = clampN(v.zoom, ZOOM_MIN, ZOOM_MAX);
     touch();
   }
   function onDown(e) {
@@ -600,6 +629,7 @@ function createPreview(canvas) {
     try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic or already released */ }
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     view.dragging = true;
+    view.mode = e.button === 2 || e.shiftKey ? "pan" : "orbit";
     touch();
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
@@ -631,10 +661,12 @@ function createPreview(canvas) {
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (pinchDist > 0 && d > 0) zoomBy(pinchDist / d);
       pinchDist = d;
+      // Two-finger drag pans by half of each finger's move (midpoint shift).
+      panBy((cur.x - prev.x) / 2, (cur.y - prev.y) / 2);
       return;
     }
-    view.yaw -= (cur.x - prev.x) * 0.01;
-    view.lift = clampN(view.lift + (cur.y - prev.y) * 0.004, LIFT_MIN, LIFT_MAX);
+    if (view.mode === "pan") panBy(cur.x - prev.x, cur.y - prev.y);
+    else orbitBy(cur.x - prev.x, cur.y - prev.y);
     touch();
   }
   function onUp(e) {
@@ -702,23 +734,33 @@ function createPreview(canvas) {
       model.root.getWorldDirection(fwd);
       fwd.y = 0;
       fwd.normalize();
-      // User orbit: swing the camera around the Zoid by view.yaw.
-      fwd.applyAxisAngle(UP, view.yaw);
       const right = new Vector3().crossVectors(fwd, UP);
-      // Pulled in ~20% now the stage has the whole centre column to itself.
-      // Big frames (Elephander) also back the camera off by their real size.
       if (!model.frameSize) {
-        const size = new Box3().setFromObject(model.visual).getSize(new Vector3());
+        const box = new Box3().setFromObject(model.visual);
+        const size = box.getSize(new Vector3());
         model.frameSize = Math.max(size.x, size.y, size.z);
+        model.frameRadius = size.length() / 2;
+        model.frameCenterY = box.getCenter(new Vector3()).y - model.root.position.y;
       }
-      // Zoom limits follow the Zoid's size because dist does.
-      const dist = Math.max((8 + (model.def.scale || 1) * 4.2) * 0.8, model.frameSize * 1.75) * view.zoom;
+      // Zoom limits follow the Zoid's size because the base distance does;
+      // never closer than the bounding radius + near-plane margin.
+      const base = Math.max((8 + (model.def.scale || 1) * 4.2) * 0.8, model.frameSize * 1.75);
+      const dist = Math.max(base * view.zoom, model.frameRadius * 1.15 + 0.5);
       view.dist = dist;
-      camera.position.copy(model.root.position)
-        .addScaledVector(fwd, -dist)
-        .addScaledVector(right, dist * 0.38)
-        .add(new Vector3(0, dist * view.lift, 0));
-      camera.lookAt(0, 1.6 * (model.def.scale || 1), 0);
+      // Spherical orbit around the model's centre (+ pan in screen space).
+      const az = AZ0 + view.yaw;
+      const horiz = fwd.clone().multiplyScalar(-Math.cos(az)).addScaledVector(right, Math.sin(az));
+      const dir = horiz.multiplyScalar(Math.cos(view.pitch)).add(new Vector3(0, Math.sin(view.pitch), 0)).normalize();
+      const center = new Vector3(model.root.position.x, model.root.position.y + model.frameCenterY, model.root.position.z);
+      const camRight = new Vector3().crossVectors(UP, dir).normalize();
+      const camUp = new Vector3().crossVectors(dir, camRight).normalize();
+      center.addScaledVector(camRight, view.panX).addScaledVector(camUp, view.panY);
+      camera.position.copy(center).addScaledVector(dir, dist);
+      camera.up.copy(UP);
+      camera.lookAt(center);
+      view.center = center;
+      // Below the floor: hide it so the underside is visible cleanly.
+      floor.visible = camera.position.y > 0.05;
     }
     resize();
     renderer.render(scene, camera);
@@ -729,10 +771,19 @@ function createPreview(canvas) {
   return {
     show,
     viewState() {
-      return { spin, yaw: view.yaw, zoom: view.zoom, lift: view.lift, dist: view.dist || 0, dragging: view.dragging,
+      const c = view.center || new Vector3();
+      const fwd = new Vector3();
+      if (model) { model.root.getWorldDirection(fwd); fwd.y = 0; fwd.normalize(); }
+      const toCam = camera.position.clone().sub(c).setY(0).normalize();
+      return { spin, yaw: view.yaw, pitch: view.pitch, pitchDeg: (view.pitch * 180) / Math.PI, zoom: view.zoom,
+        panX: view.panX, panY: view.panY, dist: view.dist || 0, radius: model ? model.frameRadius : 0,
+        camY: camera.position.y, centerY: c.y, floorVisible: floor.visible,
+        // +1 = camera on the tail side (rear view), -1 = nose side.
+        tailSide: toCam.dot(fwd), dragging: view.dragging,
         autoSpin: !view.dragging && performance.now() - view.lastInput > RESUME_MS, zoomMin: ZOOM_MIN, zoomMax: ZOOM_MAX };
     },
     resetView,
+    setView,
     parts() {
       if (!model) return null;
       const counts = {};
