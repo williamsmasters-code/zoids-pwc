@@ -71,14 +71,23 @@ Death Stinger Zoids (free)
   Changes: scaled/split/optimized/stripped helper nodes; rotated upright (source
   was Z-up) and turned to face forward
 
-Zaber Fang and Gojulas use the built-in procedural mocks. Death Stinger and
+Gojulas uses the built-in procedural mock. Death Stinger and
 Death Saurer have procedural fallbacks for ?mock=1.
 
 Gun Sniper (assets/models/gun-sniper.glb)
-  Supplied by Daniel Williams, 25 Oct 2026 (gun_sniper_daniel.glb)
+  Supplied by Daniel Williams, 25 Oct 2026 (gun_sniper.glb, second file,
+  replaces gun_sniper_daniel.glb; same mesh plus panel textures)
   Author/licence: not stated in the file (generator: trimesh). Assumed to be
   Daniel's own work; TO CONFIRM before any public release.
-  Changes: turned to face forward, split into parts by node name, compressed
+  Changes: turned to face forward, split into parts by node name, textures
+  flattened to mean colours, compressed
+
+Zaber Fang (assets/models/zaber-fang.glb)
+  Supplied by Daniel Williams, licence not stated (zaber_fang.glb, 25 Oct 2026)
+  Author/licence: not stated in the file (generator: trimesh). TO CONFIRM
+  before any public release.
+  Changes: turned to face forward, centred, scaled to 15.6 m canon, split
+  into parts by node name, textures flattened to mean colours, compressed
 
 Elephander, Berserk Fuhrer, Molga, and Pteras are original
 procedural models built for this project (js/models.js). No third-party

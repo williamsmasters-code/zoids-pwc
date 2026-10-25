@@ -79,7 +79,7 @@ export function creditsMarkup() {
         <h2>Model credits</h2>
         <button type="button" data-act="close-credits">Close</button>
       </header>
-      <p>Seven Zoids use meshes from Sketchfab under ${LICENSE_NAME}. Zaber Fang and Gojulas stay procedural mocks. Gun Sniper uses a model supplied by Daniel Williams (25 Oct 2026; licence not stated). Elephander, Berserk Fuhrer, Molga, and Pteras are original procedural models made for this project. Add <code>?mock=1</code> to the page address to force every Zoid back to the mock.</p>
+      <p>Seven Zoids use meshes from Sketchfab under ${LICENSE_NAME}. Gojulas stays a procedural mock. Gun Sniper uses a model supplied by Daniel Williams (25 Oct 2026; licence not stated). Zaber Fang (supplied by Daniel Williams, licence not stated) uses his zaber_fang.glb from 25 Oct 2026. Elephander, Berserk Fuhrer, Molga, and Pteras are original procedural models made for this project. Add <code>?mock=1</code> to the page address to force every Zoid back to the mock.</p>
       ${blocks}
     </div>
   `;

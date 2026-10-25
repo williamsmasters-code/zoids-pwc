@@ -280,3 +280,38 @@ The long rifle points backwards over the tail, so it uses the back-mount
 turret anchor. The side hardpoints are renamed "Left/Right Missile Pod" to
 match where the pods sit on the model. Stats and loadout are unchanged.
 The old procedural Gun Sniper stays as the ?mock=1 fallback.
+
+SECOND BATCH: GUN SNIPER v2 AND ZABER FANG (25 Oct 2026, 3:19 PM)
+----------------------------------------------------------------
+Files: gun_sniper.glb (2.41 MB) and zaber_fang.glb (1.98 MB) from Daniel.
+Neither file has an author or licence (only the "trimesh" generator tag).
+Credited as "supplied by Daniel Williams, licence not stated". Confirm
+before any public release.
+
+Gun Sniper v2: same mesh as gun_sniper_daniel.glb (5,840 triangles, same
+node names and same part centres), but every material now has a 512 px
+panel-line PNG instead of a flat colour. The game draws flat colours per
+part, so each texture is replaced by its mean colour (TEX_MEAN in
+tools/optimize_models.mjs). Output 0.14 MB. Orientation, scale, part split
+and hardpoints are unchanged from the first Gun Sniper pass.
+
+Zaber Fang: 5,376 triangles, Y-up, feet at y = 0, nose on +X, legs named
+FL/FR/RL/RR. Turned 90 degrees so the nose points to -Z and centred.
+Scaled to 15.6 m canon length: 4.84 units at game scale 0.96 (0.31 units
+per metre). Output 0.10 MB (textures flattened as above).
+Parts by node name: Killer Sabres = head weapon (bite), front-left strike
+claws = left weapon, front-right strike claws = right weapon, back gun
+stack (weapon mount, 3-barrel shock cannon, 30 mm beam cannon, SSM pod) =
+back mount, tail segments and tail linear laser guns = tail, legs by
+corner, head/snout/jaw/teeth/eyes/canopy = head, the rest = core.
+Stats (canon: 15.6 m, 78 t, 240 km/h; zoids.fandom.com, theironbible.com):
+  speed 240 km/h canon (120 stock), accel 34, brake 44.2, turn 1.36 (all
+  unchanged, so it still ties Command Wolf for top acceleration).
+  Base weight 48 t, max 78 t (was 34/54; same load ratio).
+  Hardpoints: Killer Saber Fangs S, Left Strike Laser Claw M, Right AZ 20mm
+  Beam Gun M, AZ 3-Barrel Shock Cannon L (back turret, 90 degree arc).
+  Stock: strike laser claw on fangs and left claw (group 2), beam cannon on
+  the right (group 1), shock cannon on the back (group 3).
+Pools: removed from Green (the shock cannon is too strong for D1), kept in
+Regular and Veteran, added to Elite.
+Screenshots: screenshots/new-models-20261025b/.

@@ -24,10 +24,11 @@ const FILES = {
   deathSaurer: "death-saurer",
   deathStinger: "death-stinger",
   gunSniper: "gun-sniper",
+  zaberFang: "zaber-fang",
 };
 // Canon-relative size check (2026-10-25 models): ~0.31 game units per canon
 // metre, same ratio as Geno Saurer (23 m) and Shield Liger (21.6 m).
-const CANON_LENGTH_M = { genoSaurer: 23, shieldLiger: 21.6, deathSaurer: 32.4, deathStinger: 22, gunSniper: 11.9 };
+const CANON_LENGTH_M = { genoSaurer: 23, shieldLiger: 21.6, deathSaurer: 32.4, deathStinger: 22, gunSniper: 11.9, zaberFang: 15.6 };
 const sizes = {};
 
 function center(meshes) {

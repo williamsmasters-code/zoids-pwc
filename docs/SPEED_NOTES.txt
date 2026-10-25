@@ -31,8 +31,10 @@ Acceleration
 - Hangar "0-100" = seconds from rest to 100 km/h-equivalent at the current
   load (or to the Zoid's top speed if that is lower, e.g. stock Gojulas).
   Game-scale times are short because game speeds are scaled down too.
-- Zaber Fang is in the catalog already (no new model was built); its values
-  are the ones listed here.
+- Zaber Fang got a real model on 25 Oct 2026 (Daniel's zaber_fang.glb).
+  Speed (240 km/h canon), accel 34 and brake 44.2 are unchanged, so it still
+  shares top acceleration with Command Wolf. Base weight is now 48 t of 78 t
+  (canon weight is 78 t), the same load ratio as before.
 
 Units
 -----

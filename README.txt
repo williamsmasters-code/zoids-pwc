@@ -240,12 +240,17 @@ KNOWN GAPS
   The Shield Liger rig is a rigid split by region, not a hand-weighted
   skeleton. Small shards can sit off a limb, and the mane plates are the
   regions that could be separated cleanly.
-  Zaber Fang and Gojulas are still recognizable mockups. Death Saurer and
+  Gojulas is still a recognizable mockup. Death Saurer and
   Death Stinger (added 25 Oct 2026) use Sketchfab meshes; see
   docs/NEW_ZOIDS_NOTES.txt.
   Gun Sniper uses a GLB supplied by Daniel Williams on 25 Oct 2026 (no
   author or licence in the file; assumed to be his own). Its old procedural
-  model is kept as the ?mock=1 fallback.
+  model is kept as the ?mock=1 fallback. It was replaced the same day by
+  Daniel's second file (gun_sniper.glb, same mesh with panel textures,
+  also no author or licence; textures flattened to their mean colours).
+  Zaber Fang uses zaber_fang.glb, supplied by Daniel Williams on 25 Oct
+  2026, licence not stated (no author or licence in the file). Its old
+  procedural mock is the ?mock=1 fallback.
   Elephander, Berserk Fuhrer, Molga, and Pteras are original
   procedural models made for this project (no free CC-BY/CC0 model of them
   was found). Pteras flies at a low fixed height (flyHeight in js/catalog.js).

@@ -50,6 +50,8 @@ const MOCK_SIZE = {
   "death-stinger": [4.55, 4.55, 4.55],
   // Gun Sniper 11.9 m (rifle included) -> 3.7 units at scale 0.92.
   "gun-sniper": [4.0, 4.0, 4.0],
+  // Zaber Fang 15.6 m -> 4.84 units at scale 0.96.
+  "zaber-fang": [5.04, 5.04, 5.04],
 };
 
 // Side-view splats (camera on +X, image-right = +Z) put the head on +Z
@@ -64,6 +66,7 @@ const FACING_YAW = {
   "death-saurer": Math.PI / 2,
   "death-stinger": Math.PI / 2,
   "gun-sniper": Math.PI / 2,
+  "zaber-fang": Math.PI / 2,
 };
 
 const SOURCE = {
@@ -76,7 +79,10 @@ const SOURCE = {
   "death-saurer": "death_saurer_zoids_free.glb",
   "death-stinger": "death_stinger_zoids_free.glb",
   // Supplied by Daniel 2026-10-25. No author/licence metadata (trimesh export).
-  "gun-sniper": "gun_sniper_daniel.glb",
+  // Replaced 2026-10-25 15:19 by Daniel's second file (also trimesh, no metadata).
+  "gun-sniper": "gun_sniper.glb",
+  // Supplied by Daniel 2026-10-25. No author/licence metadata (trimesh export).
+  "zaber-fang": "zaber_fang.glb",
 };
 
 const TRI_TARGET = {
@@ -88,6 +94,7 @@ const TRI_TARGET = {
   "death-saurer": 110000,
   "death-stinger": 110000,
   "gun-sniper": 20000,
+  "zaber-fang": 20000,
 };
 
 const QUAD = [
@@ -109,6 +116,7 @@ const LAYOUT = {
   "death-saurer": "biped",
   "death-stinger": "quad",
   "gun-sniper": "biped",
+  "zaber-fang": "quad",
 };
 
 function targetsFor(slug) {
@@ -290,6 +298,7 @@ const PRE_ROT = {
   "death-saurer": [-Math.PI / 2, 0, 0],
   "death-stinger": [-Math.PI / 2, 0, 0],
   "gun-sniper": [0, 0, 0],
+  "zaber-fang": [0, 0, 0],
 };
 
 function preRotFor(slug) {
@@ -323,9 +332,21 @@ function triArea(ax, ay, az, bx, by, bz, cx, cy, cz) {
   return Math.hypot(cxr, cyr, czr);
 }
 
+// Daniel's second-round files (gun_sniper.glb, zaber_fang.glb) carry 512px
+// panel-line PNGs per material instead of colour factors. The game renders
+// flat per-part colours, so each texture is replaced by its mean colour
+// (linear, measured with PIL 2026-10-25). Saves ~2.3 MB per file.
+const TEX_MEAN = {
+  "gun-sniper": {"frame": [0.0624, 0.0523, 0.0403, 1], "blue": [0.0341, 0.0424, 0.2314, 1], "white": [0.7263, 0.7263, 0.7897, 1], "silver": [0.4819, 0.4934, 0.5656, 1], "canopy": [1.0, 0.2195, 0.0055, 1], "sensor": [0.1011, 0.7519, 0.1166, 1], "yellow": [0.8569, 0.5732, 0.0291, 1], "orange": [0.848, 0.3279, 0.0457, 1], "gold": [0.6023, 0.3642, 0.0424, 1], "claw": [0.0392, 0.0364, 0.0337, 1], "purple": [0.1243, 0.0775, 0.1965, 1]},
+  "zaber-fang": {"gunmetal": [0.0761, 0.0683, 0.0575, 1], "plate": [0.2797, 0.2635, 0.2327, 1], "dark": [0.0194, 0.0176, 0.0158, 1], "steel": [0.389, 0.3992, 0.4305, 1], "red": [0.345, 0.013, 0.013, 1], "canopy": [0.0415, 0.586, 0.0781, 1], "eye": [0.0415, 0.586, 0.0781, 1], "ivory": [0.6432, 0.5821, 0.3893, 1], "salmon": [0.641, 0.1788, 0.1535, 1]},
+};
+let CURRENT_SLUG = null;
+
 function matKey(material) {
   if (!material) return "default";
-  const base = material.getBaseColorFactor ? material.getBaseColorFactor() : [0.7, 0.7, 0.7, 1];
+  let base = material.getBaseColorFactor ? material.getBaseColorFactor() : [0.7, 0.7, 0.7, 1];
+  const tm = TEX_MEAN[CURRENT_SLUG];
+  if (tm && material.getBaseColorTexture && material.getBaseColorTexture() && tm[material.getName()]) base = tm[material.getName()];
   const metal = material.getMetallicFactor ? material.getMetallicFactor() : 0.4;
   const rough = material.getRoughnessFactor ? material.getRoughnessFactor() : 0.5;
   const emit = material.getEmissiveFactor ? material.getEmissiveFactor() : [0, 0, 0];
@@ -620,6 +641,18 @@ const NAMED_PARTS = {
     if (side && /^(missile_|thruster_|back_fin)/.test(name)) return `${side}Weapon`;
     if (side && /^(thigh|shin|piston|metatarsus|hip_joint|knee_joint|ankle_joint|foot|toe|sickle_claw|heel_spur)/.test(name)) return `${side}Leg`;
     if (/^(head|jaw|tooth|canopy|eye_sensor|multi_blade)/.test(name)) return "head";
+    return "core";
+  },
+  // Zaber Fang (Daniel's file): Y-up, nose on +X, legs suffixed FL/FR/RL/RR.
+  "zaber-fang": (name) => {
+    if (/^killer_sabre/.test(name)) return "headWeapon";
+    if (/^(weapon_mount|shock_cannon|beam_cannon|ssm_pod)/.test(name)) return "backMount";
+    if (/^(tail_seg|linear_laser_gun)/.test(name)) return "tail";
+    if (/^strike_claw_FL/.test(name)) return "leftWeapon";
+    if (/^strike_claw_FR/.test(name)) return "rightWeapon";
+    const leg = name.match(/_(FL|FR|RL|RR)(_|$)/);
+    if (leg) return { FL: "leftFrontLeg", FR: "rightFrontLeg", RL: "leftRearLeg", RR: "rightRearLeg" }[leg[1]];
+    if (/^(head|snout|eye|jaw|tooth|canopy)/.test(name)) return "head";
     return "core";
   },
 };
@@ -1024,6 +1057,7 @@ async function main() {
   const only = process.env.ONLY ? process.env.ONLY.split(",") : null;
   for (const [slug, file] of Object.entries(SOURCE)) {
     if (only && !only.includes(slug)) continue;
+    CURRENT_SLUG = slug;
     const src = path.join(SRC_DIR, file);
     const before = mb(src);
     console.log(`\n== ${slug}  source ${before.toFixed(2)} MB`);
