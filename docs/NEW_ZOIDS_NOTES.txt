@@ -368,8 +368,8 @@ Anderson123 credit stays; the recolour is credited to Daniel's supplied
 file, author of the recolour not stated.
 Orientation: same as before (lies on its back, Z-up; -90 degree X turn then a
 half turn so the nose points to -Z), centred, feet at y = 0.
-Size: 2.27 x 3.54 x 5.70 model units, 8.1 units long in game (canon 23 m,
-0.35 units per metre). Part zones and weapon mounts reuse the Geno Saurer
+Size: 2.27 x 3.54 x 5.70 model units; in game 2.9 x 4.5 x 7.3 (canon 23 m,
+0.32 units per metre; was 8.1 long with the 1.45x head). Part zones and weapon mounts reuse the Geno Saurer
 targets (head, jaw = head weapon, back particle mount, small arms = side
 weapons, legs, tail). 1.89 MB after simplifying to 110k triangles.
 Colours: textures flattened to their mean colours; the old red/grey part
