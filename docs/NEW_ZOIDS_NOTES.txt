@@ -354,3 +354,5 @@ Iron Kong or Geno Saurer), and any mission with one has at most 3 enemies.
 Pools unchanged: Elite and Ace. tests/new_zoids.test.mjs checks the rule
 over 3,200 rolls.
 Screenshots: screenshots/new-models-20261025c/.
+Hangar framing: the camera distance now also allows for model height
+(height x 2.3), so the upright Gojulas fits the hangar view head to toe.

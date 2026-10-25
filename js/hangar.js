@@ -740,11 +740,13 @@ function createPreview(canvas) {
         const size = box.getSize(new Vector3());
         model.frameSize = Math.max(size.x, size.y, size.z);
         model.frameRadius = size.length() / 2;
+        model.frameHeight = size.y;
         model.frameCenterY = box.getCenter(new Vector3()).y - model.root.position.y;
       }
       // Zoom limits follow the Zoid's size because the base distance does;
       // never closer than the bounding radius + near-plane margin.
-      const base = Math.max((8 + (model.def.scale || 1) * 4.2) * 0.8, model.frameSize * 1.75);
+      // Tall Zoids (upright Gojulas) need extra distance: the view is wider than tall.
+      const base = Math.max((8 + (model.def.scale || 1) * 4.2) * 0.8, model.frameSize * 1.75, (model.frameHeight || 0) * 2.3);
       const dist = Math.max(base * view.zoom, model.frameRadius * 1.15 + 0.5);
       view.dist = dist;
       // Spherical orbit around the model's centre (+ pan in screen space).
