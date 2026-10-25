@@ -14,6 +14,7 @@ const shots = path.join(root, "screenshots", "new-models-20261025");
 const shotsB = path.join(root, "screenshots", "new-models-20261025b");
 const BATCH_B = new Set(["gunSniper", "zaberFang"]);
 fs.mkdirSync(shots, { recursive: true });
+fs.mkdirSync(shotsB, { recursive: true });
 const port = 8214;
 const server = spawn("python3", ["-m", "http.server", String(port)], { cwd: root, stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
