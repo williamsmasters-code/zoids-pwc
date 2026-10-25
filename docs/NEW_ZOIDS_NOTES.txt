@@ -356,3 +356,25 @@ over 3,200 rolls.
 Screenshots: screenshots/new-models-20261025c/.
 Hangar framing: the camera distance now also allows for model height
 (height x 2.3), so the upright Gojulas fits the hangar view head to toe.
+
+FOURTH BATCH: NEW GENO SAURER FILE (25 Oct 2026, 4:14 PM)
+--------------------------------------------------------
+File: genosaurer_new.glb (15.67 MB, md5 7661e140..., differs from the old
+source). No metadata (trimesh export). It is the same Anderson455 mesh as
+before: 439,487 triangles and identical bounds (+-15.93 x +-24.88 x +-40.0),
+split into 31 meshes by colour (black, grey, ivory, red, silver, violet,
+teeth, visor), each with a 512 px texture. So the CC-BY-4.0 Anderson455 /
+Anderson123 credit stays; the recolour is credited to Daniel's supplied
+file, author of the recolour not stated.
+Orientation: same as before (lies on its back, Z-up; -90 degree X turn then a
+half turn so the nose points to -Z), centred, feet at y = 0.
+Size: 2.27 x 3.54 x 5.70 model units, 8.1 units long in game (canon 23 m,
+0.35 units per metre). Part zones and weapon mounts reuse the Geno Saurer
+targets (head, jaw = head weapon, back particle mount, small arms = side
+weapons, legs, tail). 1.89 MB after simplifying to 110k triangles.
+Colours: textures flattened to their mean colours; the old red/grey part
+tint was removed so Daniel's violet/black/red scheme shows.
+Head: the 1.45x enlargement is dropped. With real colours the stock head and
+jaw read clearly in side and front views, and the bigger head looked bulky.
+GENO_HEAD=1.45 node tools/optimize_models.mjs restores it.
+Screenshots: screenshots/new-models-20261025d/.

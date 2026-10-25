@@ -27,7 +27,7 @@ export const MODEL_CREDITS = [
     author: "Anderson455",
     authorUrl: "https://sketchfab.com/pablo.gabriel87",
     modelUrl: "https://sketchfab.com/3d-models/genosaurer-zoids-free-3b7075f3b14a4022ad3996e0eda8ca88",
-    changes: "scaled/split/optimized/stripped helper nodes",
+    changes: "scaled/split/optimized/stripped helper nodes; recoloured re-export of the same mesh supplied by Daniel Williams (25 Oct 2026)",
   },
   {
     slug: "command-wolf",

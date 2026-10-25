@@ -32,7 +32,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TOOLS_DIR = "/tmp/gltf-tools";
 const TOOLS = path.join(TOOLS_DIR, "node_modules");
-const OUT_DIR = path.join(ROOT, "assets", "models");
+const OUT_DIR = process.env.OUT_DIR || path.join(ROOT, "assets", "models");
 const SRC_DIR = "/workspace/zoids_models";
 
 // Unscaled mock AABB (visual.scale forced to 1). Largest axis is the fit target.
@@ -76,7 +76,10 @@ const FACING_YAW = {
 const SOURCE = {
   "blade-liger": "m_01M542FS5WFKW0XW5HM8PP9FRS.glb",
   "shield-liger": "m_01M542FS6N6H6CWBDH7AKB6HS7.glb",
-  "geno-saurer": "m_01M542FS767EPGE6TRXJCXAMGY.glb",
+  // Replaced 2026-10-25 16:14 by Daniel's genosaurer_new.glb: the same
+  // Anderson455 mesh (identical triangles/bounds) re-exported by trimesh with
+  // per-colour materials; metadata stripped. Old source kept in zoids_models.
+  "geno-saurer": "genosaurer_new.glb",
   "command-wolf": "m_01M542FS7F361CT01EZKCDE8W8.glb",
   "iron-kong": "m_01M542FS8BC1JVABHG2R5JP24R.glb",
   // Supplied by Daniel 2026-10-25 (Anderson455, CC-BY-4.0, see CREDITS.txt).
@@ -349,6 +352,7 @@ const GOJ_MEAN = {"frame": [0.0166, 0.0166, 0.0203, 1], "white": [0.6906, 0.6658
 const TEX_MEAN = {
   "gun-sniper": {"frame": [0.0624, 0.0523, 0.0403, 1], "blue": [0.0341, 0.0424, 0.2314, 1], "white": [0.7263, 0.7263, 0.7897, 1], "silver": [0.4819, 0.4934, 0.5656, 1], "canopy": [1.0, 0.2195, 0.0055, 1], "sensor": [0.1011, 0.7519, 0.1166, 1], "yellow": [0.8569, 0.5732, 0.0291, 1], "orange": [0.848, 0.3279, 0.0457, 1], "gold": [0.6023, 0.3642, 0.0424, 1], "claw": [0.0392, 0.0364, 0.0337, 1], "purple": [0.1243, 0.0775, 0.1965, 1]},
   "gojulas": GOJ_MEAN,
+  "geno-saurer": {"black": [0.0132, 0.009, 0.0223, 1], "grey": [0.1037, 0.1086, 0.1401, 1], "ivory": [0.6376, 0.6009, 0.4763, 1], "red": [0.5362, 0.0111, 0.0196, 1], "silver": [0.4649, 0.4649, 0.5231, 1], "violet": [0.1986, 0.0557, 0.3618, 1], "teeth": [0.5981, 0.5862, 0.5628, 1], "visor": [0.8751, 0.017, 0.017, 1]},
   "zaber-fang": {"gunmetal": [0.0761, 0.0683, 0.0575, 1], "plate": [0.2797, 0.2635, 0.2327, 1], "dark": [0.0194, 0.0176, 0.0158, 1], "steel": [0.389, 0.3992, 0.4305, 1], "red": [0.345, 0.013, 0.013, 1], "canopy": [0.0415, 0.586, 0.0781, 1], "eye": [0.0415, 0.586, 0.0781, 1], "ivory": [0.6432, 0.5821, 0.3893, 1], "salmon": [0.641, 0.1788, 0.1535, 1]},
 };
 let CURRENT_SLUG = null;
@@ -868,15 +872,14 @@ function writeDoc(buckets, api) {
 //             single white materials and read as bleached in game).
 //   scale:    grow a part about its rear attachment point.
 //   pitch:    rotate a part about its front root (radians, + tips the free end down).
+// Head enlargement dropped 25 Oct 16:14 (was 1.45x): with the new file's real
+// colours the stock head reads clearly in the hangar. GENO_HEAD=1.45 restores it.
+const GENO_HEAD = Number(process.env.GENO_HEAD || 1.0);
 const POST = {
   "geno-saurer": {
-    tint: {
-      head: [0.42, 0.05, 0.05], core: [0.38, 0.05, 0.05], tail: [0.36, 0.05, 0.05],
-      leftLeg: [0.3, 0.05, 0.05], rightLeg: [0.3, 0.05, 0.05],
-      leftWeapon: [0.2, 0.2, 0.22], rightWeapon: [0.2, 0.2, 0.22],
-      backMount: [0.24, 0.24, 0.26], headWeapon: [0.12, 0.12, 0.13],
-    },
-    scale: { head: 1.45, headWeapon: 1.45 },
+    // No tint since 25 Oct 16:14: genosaurer_new.glb carries real per-colour
+    // materials (red / violet / black / ivory), flattened via TEX_MEAN.
+    scale: { head: GENO_HEAD, headWeapon: GENO_HEAD },
   },
   "iron-kong": {
     tint: {

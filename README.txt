@@ -221,6 +221,8 @@ MODEL CREDITS
   Genosaurer Zoids (free)
     Anderson455 — https://sketchfab.com/pablo.gabriel87
     https://sketchfab.com/3d-models/genosaurer-zoids-free-3b7075f3b14a4022ad3996e0eda8ca88
+    (game file since 25 Oct 2026: Daniel Williams' recoloured re-export of
+    this same mesh, genosaurer_new.glb; no metadata in that file)
   Command Wolf
     Warner's Digital Art — https://sketchfab.com/warnerdraws
     https://sketchfab.com/3d-models/command-wolf-a69dcd74f065467981aaf3d9dc913b59

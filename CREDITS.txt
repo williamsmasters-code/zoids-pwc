@@ -32,7 +32,11 @@ Genosaurer Zoids (free)
   Model: https://sketchfab.com/3d-models/genosaurer-zoids-free-3b7075f3b14a4022ad3996e0eda8ca88
   License: CC-BY-4.0 http://creativecommons.org/licenses/by/4.0/
   Changes: scaled/split/optimized/stripped helper nodes; rotated upright (source lay
-  on its back); per-part red/grey colour added; head enlarged 1.45x
+  on its back). Since 25 Oct 2026 built from genosaurer_new.glb, supplied by
+  Daniel Williams: the same Anderson455 mesh (identical 439,487 triangles and
+  bounds) re-exported with trimesh and recoloured (violet/black/red/ivory). The
+  re-export has no metadata, so authorship rests on the geometry match; the
+  recolour's author is not stated. Head no longer enlarged (was 1.45x).
 
 Command Wolf
   Author: Warner's Digital Art
