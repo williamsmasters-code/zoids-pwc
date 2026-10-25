@@ -74,7 +74,13 @@ Death Stinger Zoids (free)
 Zaber Fang and Gojulas use the built-in procedural mocks. Death Stinger and
 Death Saurer have procedural fallbacks for ?mock=1.
 
-Gun Sniper, Elephander, Berserk Fuhrer, Molga, and Pteras are original
+Gun Sniper (assets/models/gun-sniper.glb)
+  Supplied by Daniel Williams, 25 Oct 2026 (gun_sniper_daniel.glb)
+  Author/licence: not stated in the file (generator: trimesh). Assumed to be
+  Daniel's own work; TO CONFIRM before any public release.
+  Changes: turned to face forward, split into parts by node name, compressed
+
+Elephander, Berserk Fuhrer, Molga, and Pteras are original
 procedural models built for this project (js/models.js). No third-party
 assets were used for them. No free CC-BY or CC0 model of these Zoids was
 found on Sketchfab, Poly Haven or OpenGameArt (searched 21 Oct 2026).

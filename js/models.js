@@ -32,6 +32,7 @@ const GLB_SLUG = {
   genoSaurer: "geno-saurer",
   deathSaurer: "death-saurer",
   deathStinger: "death-stinger",
+  gunSniper: "gun-sniper",
 };
 
 const glbTemplates = new Map();

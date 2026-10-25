@@ -243,7 +243,10 @@ KNOWN GAPS
   Zaber Fang and Gojulas are still recognizable mockups. Death Saurer and
   Death Stinger (added 25 Oct 2026) use Sketchfab meshes; see
   docs/NEW_ZOIDS_NOTES.txt.
-  Gun Sniper, Elephander, Berserk Fuhrer, Molga, and Pteras are original
+  Gun Sniper uses a GLB supplied by Daniel Williams on 25 Oct 2026 (no
+  author or licence in the file; assumed to be his own). Its old procedural
+  model is kept as the ?mock=1 fallback.
+  Elephander, Berserk Fuhrer, Molga, and Pteras are original
   procedural models made for this project (no free CC-BY/CC0 model of them
   was found). Pteras flies at a low fixed height (flyHeight in js/catalog.js).
   See docs/NEW_ZOIDS_NOTES.txt.

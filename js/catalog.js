@@ -660,8 +660,8 @@ export const ZOIDS = {
     colors: { primary: 0x5f7fa6, secondary: 0x2b3542, accent: 0xd8dde3, dark: 0x15191f, eye: 0x66ff88, plate: 0x8fa9c6 },
     hardpoints: [
       { id: "headWeapon", name: "Jaw", size: "S" },
-      { id: "leftWeapon", name: "Left Thigh Pod", size: "M" },
-      { id: "rightWeapon", name: "Right Thigh Pod", size: "M" },
+      { id: "leftWeapon", name: "Left Missile Pod", size: "M" },
+      { id: "rightWeapon", name: "Right Missile Pod", size: "M" },
       { id: "backMount", name: "Tail Rifle", size: "L", turret: { arc: Math.PI * 0.5, speed: 1.9 } },
     ],
   },

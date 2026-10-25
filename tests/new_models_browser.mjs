@@ -17,7 +17,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await sleep(900);
 const errors = [];
 const note = (t) => { errors.push(t); console.error("FAIL", t); };
-const IDS = { genoSaurer: "geno-saurer", deathSaurer: "death-saurer", deathStinger: "death-stinger" };
+const IDS = { genoSaurer: "geno-saurer", deathSaurer: "death-saurer", deathStinger: "death-stinger", gunSniper: "gun-sniper" };
 const browser = await puppeteer.launch({
   executablePath: "/usr/bin/google-chrome", headless: true, protocolTimeout: 300000,
   args: ["--no-sandbox", "--disable-dev-shm-usage", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],

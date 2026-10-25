@@ -48,6 +48,8 @@ const MOCK_SIZE = {
   // 10.0 units at scale 1.82; Death Stinger ~22 m (tail curled) -> 6.8 at 1.5.
   "death-saurer": [5.5, 5.5, 5.5],
   "death-stinger": [4.55, 4.55, 4.55],
+  // Gun Sniper 11.9 m (rifle included) -> 3.7 units at scale 0.92.
+  "gun-sniper": [4.0, 4.0, 4.0],
 };
 
 // Side-view splats (camera on +X, image-right = +Z) put the head on +Z
@@ -61,6 +63,7 @@ const FACING_YAW = {
   // After the Z-up fix these two have the nose on +X; a quarter turn puts it on -Z.
   "death-saurer": Math.PI / 2,
   "death-stinger": Math.PI / 2,
+  "gun-sniper": Math.PI / 2,
 };
 
 const SOURCE = {
@@ -72,6 +75,8 @@ const SOURCE = {
   // Supplied by Daniel 2026-10-25 (Anderson455, CC-BY-4.0, see CREDITS.txt).
   "death-saurer": "death_saurer_zoids_free.glb",
   "death-stinger": "death_stinger_zoids_free.glb",
+  // Supplied by Daniel 2026-10-25. No author/licence metadata (trimesh export).
+  "gun-sniper": "gun_sniper_daniel.glb",
 };
 
 const TRI_TARGET = {
@@ -82,6 +87,7 @@ const TRI_TARGET = {
   "iron-kong": 110000,
   "death-saurer": 110000,
   "death-stinger": 110000,
+  "gun-sniper": 20000,
 };
 
 const QUAD = [
@@ -102,6 +108,7 @@ const LAYOUT = {
   "iron-kong": "biped",
   "death-saurer": "biped",
   "death-stinger": "quad",
+  "gun-sniper": "biped",
 };
 
 function targetsFor(slug) {
@@ -282,6 +289,7 @@ const PRE_ROT = {
   // Authored Z-up (Sketchfab export), nose on +X.
   "death-saurer": [-Math.PI / 2, 0, 0],
   "death-stinger": [-Math.PI / 2, 0, 0],
+  "gun-sniper": [0, 0, 0],
 };
 
 function preRotFor(slug) {
@@ -601,7 +609,54 @@ function scoreAt(slug, part, u, v, w, targets) {
   return best;
 }
 
+// Files with meaningful node names are split by name, not by position.
+// Gun Sniper (Daniel's file): 132 named meshes, Y-up, nose on +X, _L = left.
+const NAMED_PARTS = {
+  "gun-sniper": (name) => {
+    if (/^rifle_/.test(name)) return "backMount";
+    if (/^tail_/.test(name)) return "tail";
+    if (/^chest_(beam_gun|gun_housing)/.test(name)) return "headWeapon";
+    const side = /_L(_|$)/.test(name) ? "left" : /_R(_|$)/.test(name) ? "right" : null;
+    if (side && /^(missile_|thruster_|back_fin)/.test(name)) return `${side}Weapon`;
+    if (side && /^(thigh|shin|piston|metatarsus|hip_joint|knee_joint|ankle_joint|foot|toe|sickle_claw|heel_spur)/.test(name)) return `${side}Leg`;
+    if (/^(head|jaw|tooth|canopy|eye_sensor|multi_blade)/.test(name)) return "head";
+    return "core";
+  },
+};
+
+function extractNamed(doc, slug) {
+  const out = [];
+  const pick = NAMED_PARTS[slug];
+  for (const node of doc.getRoot().listNodes()) {
+    const mesh = node.getMesh();
+    if (!mesh) continue;
+    const part = pick(node.getName() || mesh.getName() || "");
+    const world = node.getWorldMatrix();
+    for (const prim of mesh.listPrimitives()) {
+      const pos = prim.getAttribute("POSITION")?.getArray();
+      if (!pos) continue;
+      const idx = prim.getIndices() ? prim.getIndices().getArray() : null;
+      const spec = clampMat(parseKey(matKey(prim.getMaterial())));
+      const triCount = idx ? idx.length / 3 : pos.length / 9;
+      for (let t = 0; t < triCount; t++) {
+        const ids = idx ? [idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]] : [t * 3, t * 3 + 1, t * 3 + 2];
+        const v = [];
+        for (const id of ids) v.push(...transformPoint(world, pos[id * 3], pos[id * 3 + 1], pos[id * 3 + 2]));
+        if (!v.every((n) => Number.isFinite(n)) || triArea(...v) < 1e-10) continue;
+        out.push({ v, spec, part });
+      }
+    }
+  }
+  return out;
+}
+
 function splitParts(tris, slug) {
+  if (NAMED_PARTS[slug]) {
+    const parts = LAYOUT[slug] === "quad" ? QUAD : BIPED;
+    const buckets = Object.fromEntries(parts.map((id) => [id, []]));
+    for (const tri of tris) buckets[tri.part].push(tri);
+    return buckets;
+  }
   const parts = LAYOUT[slug] === "quad" ? QUAD : BIPED;
   const targets = targetsFor(slug);
   const box = boundsOf(tris);
@@ -973,9 +1028,10 @@ async function main() {
     const before = mb(src);
     console.log(`\n== ${slug}  source ${before.toFixed(2)} MB`);
     const doc = await io.read(src);
-    const extracted = extract(doc);
-    console.log(`  tris ${extracted.tris}  helper nodes skipped ${extracted.skipped}  materials ${extracted.groups.size}`);
-    const simplified = await simplifyGroups(extracted.groups, TRI_TARGET[slug], api);
+    const extracted = NAMED_PARTS[slug] ? null : extract(doc);
+    if (extracted) console.log(`  tris ${extracted.tris}  helper nodes skipped ${extracted.skipped}  materials ${extracted.groups.size}`);
+    // Named files are small and low-poly: keep every triangle and the part names.
+    const simplified = extracted ? await simplifyGroups(extracted.groups, TRI_TARGET[slug], api) : extractNamed(doc, slug);
     console.log(`  simplified tris ${simplified.length}`);
     const fit = normalize(simplified, slug);
     console.log(`  yaw ${fit.yaw.toFixed(3)} scale ${fit.scale.toFixed(4)} size ${fit.size.map((n) => n.toFixed(2)).join(" x ")}`);
@@ -1002,7 +1058,7 @@ async function main() {
     const after = mb(out);
     const tris = Object.values(buckets).reduce((n, list) => n + list.length, 0);
     console.log(`  wrote ${out}  ${after.toFixed(2)} MB  ${tris} tris`);
-    report.push({ slug, before: Number(before.toFixed(2)), after: Number(after.toFixed(2)), sourceTris: extracted.tris, tris, size: fit.size.map((n) => Number(n.toFixed(2))) });
+    report.push({ slug, before: Number(before.toFixed(2)), after: Number(after.toFixed(2)), sourceTris: extracted ? extracted.tris : simplified.length, tris, size: fit.size.map((n) => Number(n.toFixed(2))) });
   }
   writeFileSync("/tmp/glb-opt-report.json", JSON.stringify(report, null, 2));
   console.log("\nreport /tmp/glb-opt-report.json");

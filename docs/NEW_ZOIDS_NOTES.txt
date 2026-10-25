@@ -261,3 +261,22 @@ bigger than Geno), tests/new_zoids.test.mjs (both build, parts, pools,
 skills, sizes, Death Stinger speed/accel), tests/new_zoids_browser.mjs (both
 in a real mission), tests/new_models_browser.mjs (GLB in the hangar, front
 and side views, credits panel). Screenshots in screenshots/new-models-20261025/.
+
+GUN SNIPER GLB (25 Oct 2026, follow-up)
+---------------------------------------
+Source: gun_sniper_daniel.glb supplied by Daniel Williams. 5,840 triangles,
+0.14 MB after compression. No author or licence in the file (only the
+"trimesh" generator tag), so it is assumed to be Daniel's own work. Confirm
+before any public release.
+Orientation: file was Y-up with feet on the floor and the nose on +X; it is
+turned 90 degrees so the nose points to -Z, centred on X/Z, feet at y = 0.
+Size: 4.0 units nose to tail (canon 11.9 m, about 0.34 units per metre,
+inside the 0.25-0.38 band used for the other models). Game scale stays 0.92.
+Parts are split by node name instead of the geometric zones: rifle = back
+mount, chest beam gun = head weapon, side missile pods / thrusters / back
+fins = left and right weapons, legs by side, head/jaw/canopy/sensors = head,
+everything else (torso, neck, arms) = core.
+The long rifle points backwards over the tail, so it uses the back-mount
+turret anchor. The side hardpoints are renamed "Left/Right Missile Pod" to
+match where the pods sit on the model. Stats and loadout are unchanged.
+The old procedural Gun Sniper stays as the ?mock=1 fallback.
