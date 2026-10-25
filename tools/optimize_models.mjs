@@ -42,6 +42,12 @@ const MOCK_SIZE = {
   "geno-saurer": [1.59, 3.77, 5.7],
   "command-wolf": [1.54, 3.01, 5.54],
   "iron-kong": [3.4, 4.79, 2.48],
+  // Not mock-matched: fitted so (largest axis x ZOIDS[id].scale) gives a
+  // canon-relative game size (~0.31 game units per canon metre, the same
+  // ratio as Geno Saurer and Shield Liger). Death Saurer 32.4 m long ->
+  // 10.0 units at scale 1.82; Death Stinger ~22 m (tail curled) -> 6.8 at 1.5.
+  "death-saurer": [5.5, 5.5, 5.5],
+  "death-stinger": [4.55, 4.55, 4.55],
 };
 
 // Side-view splats (camera on +X, image-right = +Z) put the head on +Z
@@ -52,6 +58,9 @@ const FACING_YAW = {
   "geno-saurer": Math.PI,
   "command-wolf": Math.PI,
   "iron-kong": Math.PI,
+  // After the Z-up fix these two have the nose on +X; a quarter turn puts it on -Z.
+  "death-saurer": Math.PI / 2,
+  "death-stinger": Math.PI / 2,
 };
 
 const SOURCE = {
@@ -60,6 +69,9 @@ const SOURCE = {
   "geno-saurer": "m_01M542FS767EPGE6TRXJCXAMGY.glb",
   "command-wolf": "m_01M542FS7F361CT01EZKCDE8W8.glb",
   "iron-kong": "m_01M542FS8BC1JVABHG2R5JP24R.glb",
+  // Supplied by Daniel 2026-10-25 (Anderson455, CC-BY-4.0, see CREDITS.txt).
+  "death-saurer": "death_saurer_zoids_free.glb",
+  "death-stinger": "death_stinger_zoids_free.glb",
 };
 
 const TRI_TARGET = {
@@ -68,6 +80,8 @@ const TRI_TARGET = {
   "geno-saurer": 110000,
   "command-wolf": 90000,
   "iron-kong": 110000,
+  "death-saurer": 110000,
+  "death-stinger": 110000,
 };
 
 const QUAD = [
@@ -86,6 +100,8 @@ const LAYOUT = {
   "command-wolf": "quad",
   "geno-saurer": "biped",
   "iron-kong": "biped",
+  "death-saurer": "biped",
+  "death-stinger": "quad",
 };
 
 function targetsFor(slug) {
@@ -174,6 +190,46 @@ function targetsFor(slug) {
       { part: "rightLeg", u: 0.7, v: 0.16, w: 0.7, su: 0.14, sv: 0.18, sw: 0.2 },
     ];
   }
+  if (slug === "death-saurer") {
+    // Horizontal tyrant pose, spine at u ~0.65 (the tail curls off to the
+    // left in top view, so the box is not centred on the body). Head and
+    // mouth (charged particle cannon) up front, clawed arms reaching forward
+    // either side of the head, thighs at w ~0.45, spikes/intake fans on the
+    // back, long tail behind that curls left.
+    return [
+      { part: "head", u: 0.65, v: 0.55, w: 0.08, su: 0.07, sv: 0.2, sw: 0.09 },
+      { part: "headWeapon", u: 0.65, v: 0.45, w: 0.0, su: 0.05, sv: 0.1, sw: 0.03 },
+      { part: "core", u: 0.65, v: 0.55, w: 0.38, su: 0.09, sv: 0.25, sw: 0.14 },
+      { part: "tail", u: 0.62, v: 0.5, w: 0.85, su: 0.08, sv: 0.3, sw: 0.12 },
+      { part: "tail", u: 0.2, v: 0.5, w: 0.95, su: 0.25, sv: 0.4, sw: 0.08 },
+      { part: "backMount", u: 0.65, v: 0.92, w: 0.38, su: 0.15, sv: 0.12, sw: 0.14 },
+      { part: "leftWeapon", u: 0.46, v: 0.6, w: 0.17, su: 0.05, sv: 0.25, sw: 0.12 },
+      { part: "rightWeapon", u: 0.86, v: 0.6, w: 0.17, su: 0.05, sv: 0.25, sw: 0.12 },
+      { part: "leftLeg", u: 0.49, v: 0.22, w: 0.45, su: 0.06, sv: 0.3, sw: 0.12 },
+      { part: "rightLeg", u: 0.81, v: 0.22, w: 0.45, su: 0.06, sv: 0.3, sw: 0.12 },
+    ];
+  }
+  if (slug === "death-stinger") {
+    // Scorpion: low face and laser fangs at the front, big pincers out front
+    // on each side (left/rightWeapon), legs in rows along the flanks grouped
+    // into front/rear pairs, segmented tail rising at the back, charged
+    // particle cannon in the tail tip pointing forward (backMount).
+    return [
+      { part: "head", u: 0.5, v: 0.3, w: 0.2, su: 0.1, sv: 0.15, sw: 0.1 },
+      { part: "headWeapon", u: 0.5, v: 0.25, w: 0.03, su: 0.08, sv: 0.1, sw: 0.05 },
+      { part: "core", u: 0.5, v: 0.4, w: 0.55, su: 0.1, sv: 0.25, sw: 0.15 },
+      { part: "tail", u: 0.5, v: 0.55, w: 0.93, su: 0.1, sv: 0.3, sw: 0.08 },
+      { part: "backMount", u: 0.5, v: 0.9, w: 0.84, su: 0.12, sv: 0.1, sw: 0.09 },
+      { part: "leftWeapon", u: 0.15, v: 0.3, w: 0.17, su: 0.12, sv: 0.3, sw: 0.14 },
+      { part: "rightWeapon", u: 0.85, v: 0.3, w: 0.17, su: 0.12, sv: 0.3, sw: 0.14 },
+      { part: "leftFrontLeg", u: 0.18, v: 0.3, w: 0.52, su: 0.12, sv: 0.3, sw: 0.06 },
+      { part: "rightFrontLeg", u: 0.82, v: 0.3, w: 0.52, su: 0.12, sv: 0.3, sw: 0.06 },
+      { part: "leftRearLeg", u: 0.18, v: 0.3, w: 0.68, su: 0.12, sv: 0.3, sw: 0.06 },
+      { part: "rightRearLeg", u: 0.82, v: 0.3, w: 0.68, su: 0.12, sv: 0.3, sw: 0.06 },
+      { part: "leftRearLeg", u: 0.32, v: 0.3, w: 0.86, su: 0.06, sv: 0.3, sw: 0.08 },
+      { part: "rightRearLeg", u: 0.68, v: 0.3, w: 0.86, su: 0.06, sv: 0.3, sw: 0.08 },
+    ];
+  }
   return quad;
 }
 
@@ -223,6 +279,9 @@ const PRE_ROT = {
   "command-wolf": [0, 0, 0],
   "geno-saurer": [-Math.PI / 2, 0, 0],
   "iron-kong": [-Math.PI / 2, -Math.PI / 2, 0],
+  // Authored Z-up (Sketchfab export), nose on +X.
+  "death-saurer": [-Math.PI / 2, 0, 0],
+  "death-stinger": [-Math.PI / 2, 0, 0],
 };
 
 function preRotFor(slug) {
@@ -512,7 +571,7 @@ function centroid(v) {
 
 // These layouts score by distance only; the generic quad bonuses below were
 // tuned for lions and pulled the raptor arms and the gorilla split apart.
-const CUSTOM_SPLIT = new Set(["geno-saurer", "iron-kong", "blade-liger", "command-wolf"]);
+const CUSTOM_SPLIT = new Set(["geno-saurer", "iron-kong", "blade-liger", "command-wolf", "death-saurer", "death-stinger"]);
 
 function legPart(part) {
   return part.endsWith("Leg");
@@ -563,6 +622,10 @@ function splitParts(tris, slug) {
       }
     }
     buckets[best].push(tri);
+  }
+  if (process.env.DUMP_UVW) {
+    const sample = tris.filter((_, i) => i % 6 === 0).map((t) => t.uvw.map((n) => +n.toFixed(3)));
+    writeFileSync(`/tmp/glb-views/uvw-${slug}.json`, JSON.stringify(sample));
   }
   const minCount = Math.max(36, Math.floor(tris.length * 0.006));
   const primary = Object.fromEntries(targets.map((t) => [t.part, t]));
@@ -793,13 +856,13 @@ function pngChunk(type, data) {
   out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
   return out;
 }
-function writeSide(slug, buckets) {
+function writeSide(slug, buckets, view = "side") {
   const W = 420;
   const H = 280;
   const img = Buffer.alloc(W * H * 3, 8);
   const tris = Object.values(buckets).flat();
   const box = boundsOf(tris);
-  const span = Math.max(box.size[1], box.size[2]) * 1.12 || 1;
+  const span = Math.max(box.size[1], box.size[2], view === "top" ? box.size[0] : 0) * 1.12 || 1;
   const midY = (box.min[1] + box.max[1]) / 2;
   const midZ = (box.min[2] + box.max[2]) / 2;
   const colors = {
@@ -821,8 +884,8 @@ function writeSide(slug, buckets) {
     const col = colors[part] || [200, 200, 200];
     for (const tri of list) {
       const c = centroid(tri.v);
-      const su = c[2] - midZ;
-      const sv = c[1] - midY;
+      const su = view === "top" ? c[0] - (box.min[0] + box.max[0]) / 2 : c[2] - midZ;
+      const sv = view === "top" ? -(c[2] - midZ) : c[1] - midY;
       const px = Math.floor((su / span + 0.5) * (W - 10)) + 4;
       const py = Math.floor((0.5 - sv / span) * (H - 10)) + 4;
       if (px < 1 || py < 1 || px >= W - 2 || py >= H - 2) continue;
@@ -851,7 +914,7 @@ function writeSide(slug, buckets) {
   ihdr[9] = 2;
   const png = Buffer.concat([sig, pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND", Buffer.alloc(0))]);
   mkdirSync("/tmp/glb-views", { recursive: true });
-  writeFileSync(`/tmp/glb-views/out-${slug}-side.png`, png);
+  writeFileSync(`/tmp/glb-views/out-${slug}-${view}.png`, png);
 }
 
 function mb(file) {
@@ -904,6 +967,7 @@ async function main() {
     postProcess(slug, buckets);
     recenterXZ(slug, buckets);
     writeSide(slug, buckets);
+    writeSide(slug, buckets, "top");
     assertParts(slug, buckets);
     const finalDoc = writeDoc(buckets, api);
     await finalDoc.transform(

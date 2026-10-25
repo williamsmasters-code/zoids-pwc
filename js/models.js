@@ -30,6 +30,8 @@ const GLB_SLUG = {
   bladeLiger: "blade-liger",
   ironKong: "iron-kong",
   genoSaurer: "geno-saurer",
+  deathSaurer: "death-saurer",
+  deathStinger: "death-stinger",
 };
 
 const glbTemplates = new Map();
@@ -483,7 +485,7 @@ function buildGorilla(visual, def, store, anim, anchors) {
 // project, no third-party assets). Each has its own part split and layout.
 // Notes: docs/NEW_ZOIDS_NOTES.txt
 // ---------------------------------------------------------------------------
-const NEW_BUILDS = ["sniper", "elephant", "fuhrer", "molga", "pteras"];
+const NEW_BUILDS = ["sniper", "elephant", "fuhrer", "molga", "pteras", "stinger"];
 
 function addEyes(torso, store, c, x, y, z, s = 0.1) {
   const eyeOpts = { emissive: c.eye, emissiveIntensity: 1.4, metalness: 0.1, roughness: 0.25 };
@@ -733,8 +735,56 @@ function buildPteras(visual, def, store, anim, anchors) {
   anim.kind = "biped";
 }
 
+// Death Stinger: low wide scorpion. Six legs drawn (middle pair counted as
+// front legs for damage), big laser-scissor pincers (left/rightWeapon), a
+// segmented tail arching over the back with the particle cannon in the tip
+// (backMount).
+function buildStinger(visual, def, store, anim, anchors) {
+  const c = def.colors;
+  const leg = { tw: 0.22, th: 0.2, td: 0.7, sw: 0.18, sh: 0.32, sd: 0.22, knee: 0.3, fw: 0.24, fh: 0.08, fd: 0.3 };
+  const hipY = leg.th + leg.sh + leg.fh;
+  addLeg(visual, store, anim, "leftFrontLeg", -0.95, hipY, -0.35, leg, c);
+  addLeg(visual, store, anim, "rightFrontLeg", 0.95, hipY, -0.35, leg, c);
+  addLeg(visual, store, anim, "leftRearLeg", -0.95, hipY, 0.75, leg, c);
+  addLeg(visual, store, anim, "rightRearLeg", 0.95, hipY, 0.75, leg, c);
+  addBox(visual, store, "leftFrontLeg", 0.9, 0.12, 0.18, -1.1, hipY - 0.1, 0.2, c.secondary, { rot: [0, 0, 0.5] });
+  addBox(visual, store, "rightFrontLeg", 0.9, 0.12, 0.18, 1.1, hipY - 0.1, 0.2, c.secondary, { rot: [0, 0, -0.5] });
+  const torso = new Group();
+  visual.add(torso);
+  anim.torso = torso;
+  const bodyY = hipY + 0.05;
+  addBox(torso, store, "core", 1.5, 0.55, 1.9, 0, bodyY, 0.15, c.primary);
+  addBox(torso, store, "core", 1.3, 0.14, 1.6, 0, bodyY + 0.33, 0.15, c.plate);
+  const headY = bodyY - 0.02, headZ = -1.05;
+  addBox(torso, store, "head", 1.1, 0.45, 0.6, 0, headY, headZ, c.secondary);
+  addEyes(torso, store, c, 0.28, headY + 0.12, headZ - 0.31, 0.08);
+  addBox(torso, store, "headWeapon", 0.4, 0.12, 0.3, 0, headY - 0.18, headZ - 0.35, c.accent);
+  addAnchor(torso, anchors, "headWeapon", 0, headY - 0.18, headZ - 0.55);
+  for (const side of [-1, 1]) {
+    const id = side < 0 ? "leftWeapon" : "rightWeapon";
+    addBox(torso, store, id, 0.3, 0.28, 0.9, side * 0.95, headY, -1.0, c.primary, { rot: [0, side * -0.35, 0] });
+    addBox(torso, store, id, 0.5, 0.3, 0.7, side * 1.1, headY, -1.75, c.plate);
+    addBox(torso, store, id, 0.14, 0.12, 0.7, side * 0.95, headY + 0.08, -2.35, c.accent, { metalness: 0.8 });
+    addBox(torso, store, id, 0.14, 0.12, 0.7, side * 1.25, headY - 0.08, -2.35, c.accent, { metalness: 0.8 });
+    addAnchor(torso, anchors, id, side * 1.1, headY, -2.7);
+  }
+  const tail = new Group();
+  tail.position.set(0, bodyY + 0.1, 1.1);
+  torso.add(tail);
+  anim.tail = tail;
+  const segs = [[0, 0.15, 0.35, 0.5], [0, 0.55, 0.75, 0.45], [0, 1.05, 0.95, 0.4], [0, 1.6, 0.85, 0.38]];
+  for (const [x, y, z, w] of segs) addBox(tail, store, "tail", w, 0.4, 0.45, x, y, z, c.primary);
+  addBox(tail, store, "backMount", 0.45, 0.42, 0.6, 0, 2.0, 0.55, c.secondary);
+  addBarrel(tail, store, "backMount", 0.09, 0.5, 0, 2.0, 0.1, c.accent);
+  addAnchor(tail, anchors, "backMount", 0, 2.0, -0.2);
+  addEyeAnchor(torso, anchors, 0, headY + 0.3, headZ + 0.1);
+  // The pincers reach far forward: shift everything back so the footprint is centred.
+  for (const child of visual.children) child.position.z += 0.85;
+  anim.kind = "quad";
+}
+
 function buildNewZoid(visual, def, store, anim, anchors) {
-  const fn = { sniper: buildSniper, elephant: buildElephant, fuhrer: buildFuhrer, molga: buildMolga, pteras: buildPteras }[def.build];
+  const fn = { sniper: buildSniper, elephant: buildElephant, fuhrer: buildFuhrer, molga: buildMolga, pteras: buildPteras, stinger: buildStinger }[def.build];
   fn(visual, def, store, anim, anchors);
 }
 

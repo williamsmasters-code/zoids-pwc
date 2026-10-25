@@ -604,13 +604,39 @@ export const ZOIDS = {
     price: 2100000,
     scale: 1.82,
     radius: 5.4,
-    blurb: "Huge purple siege Zoid. Enormous armor and a back mount built for a particle cannon.",
+    blurb: "Huge purple tyrant. Charged particle cannon in the mouth, Hyper Killer Claws, a missile pod on the back. Slow and almost impossible to stop head-on.",
     colors: { primary: 0x4a2468, secondary: 0x1a1020, accent: 0xc43b4e, dark: 0x100810, eye: 0xff3300, plate: 0x6e3a78 },
     hardpoints: [
-      { id: "headWeapon", name: "Mouth Cannon", size: "L" },
-      { id: "leftWeapon", name: "Left Plate", size: "M" },
-      { id: "rightWeapon", name: "Right Plate", size: "M" },
-      { id: "backMount", name: "Main Cannon", size: "XL" },
+      { id: "headWeapon", name: "Mouth Particle Cannon", size: "XL" },
+      { id: "leftWeapon", name: "Left Killer Claw", size: "M" },
+      { id: "rightWeapon", name: "Right Claw Gun", size: "M" },
+      { id: "backMount", name: "Back Missile Pod", size: "L", turret: { arc: Math.PI * 1.2, speed: 1.0 } },
+    ],
+  },
+  deathStinger: {
+    id: "deathStinger",
+    name: "Death Stinger",
+    layout: "quad",
+    build: "stinger",
+    role: "Heavy assault",
+    canonKph: 185,
+    speed: standardSpeed(185),
+    accel: 10,
+    brake: 13,
+    turn: 0.72,
+    armorScale: 1.85,
+    baseWeight: 134,
+    maxTonnage: 190,
+    price: 1750000,
+    scale: 1.5,
+    radius: 3.6,
+    blurb: "Sea scorpion (KFD). Charged particle cannon in the tail tip, laser scissor pincers, heavy carapace. Low, wide and nasty up close.",
+    colors: { primary: 0x5a5f6b, secondary: 0x2a2d33, accent: 0xd0a030, dark: 0x121316, eye: 0xff4422, plate: 0x7a808c },
+    hardpoints: [
+      { id: "headWeapon", name: "Laser Fangs", size: "S" },
+      { id: "leftWeapon", name: "Left Laser Scissor", size: "M" },
+      { id: "rightWeapon", name: "Right Laser Scissor", size: "M" },
+      { id: "backMount", name: "Tail Particle Cannon", size: "XL", turret: { arc: Math.PI * 0.6, speed: 1.4 } },
     ],
   },
   gunSniper: {
@@ -751,7 +777,7 @@ export const ZOIDS = {
 export const ZOID_ORDER = [
   "commandWolf", "zaberFang", "shieldLiger", "bladeLiger",
   "ironKong", "genoSaurer", "gojulas", "deathSaurer",
-  "gunSniper", "elephander", "berserkFuhrer", "molga", "pteras",
+  "gunSniper", "elephander", "berserkFuhrer", "molga", "pteras", "deathStinger",
 ];
 
 export const STRUCTURES = {
@@ -868,9 +894,16 @@ export function stockWeaponsFor(def, rng = Math.random) {
       { type: rng() > 0.45 ? "chargedParticle" : "beamCannon", mount: "backMount", group: 2 },
     ],
     deathSaurer: [
+      { type: "chargedParticle", mount: "headWeapon", group: 1 },
+      { type: "missilePack", mount: "backMount", group: 2 },
+      { type: "strikeLaserClaw", mount: "leftWeapon", group: 3 },
+      { type: "pulseLaser", mount: "rightWeapon", group: 2 },
+    ],
+    deathStinger: [
       { type: "chargedParticle", mount: "backMount", group: 1 },
-      { type: "shockCannon", mount: "headWeapon", group: 2 },
-      { type: "missilePack", mount: "leftWeapon", group: 2 },
+      { type: "pulseLaser", mount: "headWeapon", group: 2 },
+      { type: "laserBlade", mount: "leftWeapon", group: 3 },
+      { type: "laserBlade", mount: "rightWeapon", group: 3 },
     ],
     gunSniper: [
       { type: "sniperRifle", mount: "backMount", group: 1 },

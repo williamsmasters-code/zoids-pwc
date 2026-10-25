@@ -186,7 +186,7 @@ try {
   console.log("screenshot screenshots/hangar-skills.png");
 
   const ids = await page.$$eval("#zoid-select option", (els) => els.map((el) => el.value));
-  if (ids.length !== 13) note("hangar", `expected 13 Zoids in the dropdown, saw ${ids.length}`);
+  if (ids.length !== 14) note("hangar", `expected 14 Zoids in the dropdown, saw ${ids.length}`);
   // Hangar rework: no roster column, compact contract buttons, banded tonnage bar.
   const layout = await page.evaluate(() => {
     const canvas = document.querySelector("#preview-canvas").getBoundingClientRect();

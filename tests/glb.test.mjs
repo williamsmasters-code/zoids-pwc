@@ -21,7 +21,13 @@ const FILES = {
   bladeLiger: "blade-liger",
   ironKong: "iron-kong",
   genoSaurer: "geno-saurer",
+  deathSaurer: "death-saurer",
+  deathStinger: "death-stinger",
 };
+// Canon-relative size check (2026-10-25 models): ~0.31 game units per canon
+// metre, same ratio as Geno Saurer (23 m) and Shield Liger (21.6 m).
+const CANON_LENGTH_M = { genoSaurer: 23, shieldLiger: 21.6, deathSaurer: 32.4, deathStinger: 22 };
+const sizes = {};
 
 function center(meshes) {
   const box = new Box3();
@@ -89,10 +95,30 @@ for (const [id, slug] of Object.entries(FILES)) {
     const right = center(model.partMeshes.rightLeg);
     if (!(left.x < right.x)) throw new Error(`${slug} legs are swapped`);
   }
+  // Orientation: up axis (feet on y = 0, legs below the core), centred,
+  // forward along -Z (checked above via the head), and size.
+  const whole = new Box3().setFromObject(model.visual);
+  const size = whole.getSize(new Vector3());
+  const mid = whole.getCenter(new Vector3());
+  if (Math.abs(whole.min.y) > 0.05) throw new Error(`${slug} is not standing on y = 0 (min y ${whole.min.y.toFixed(3)})`);
+  if (Math.abs(mid.x) > 0.05 || Math.abs(mid.z) > 0.05) throw new Error(`${slug} is not centred (${mid.x.toFixed(2)}, ${mid.z.toFixed(2)})`);
+  const legIds = partListFor(def).filter((id) => /Leg$/.test(id));
+  const legY = legIds.reduce((y, id) => y + center(model.partMeshes[id]).y, 0) / legIds.length;
+  if (!(legY < center(model.partMeshes.core).y)) throw new Error(`${slug} legs are not below the core (upside down?)`);
+  if (!(size.y < Math.max(size.x, size.z) * 1.6)) throw new Error(`${slug} looks stood on end (${size.toArray().map((n) => n.toFixed(1))})`);
+  sizes[id] = size;
+  if (CANON_LENGTH_M[id]) {
+    const perM = size.z / CANON_LENGTH_M[id];
+    if (perM < 0.25 || perM > 0.38) throw new Error(`${slug} length ${size.z.toFixed(2)} is off canon scale (${perM.toFixed(3)}/m)`);
+  }
   model.animate(0.4, 0.8, null);
   disposeTree(model.root);
   console.log("glb ok", slug, "dot", dot.toFixed(3), "parse+build", elapsed.toFixed(0), "ms");
 }
+
+if (!(sizes.deathSaurer.z > sizes.genoSaurer.z * 1.2)) throw new Error("Death Saurer should be much longer than Geno Saurer");
+if (!(sizes.deathSaurer.y > sizes.genoSaurer.y)) throw new Error("Death Saurer should stand taller than Geno Saurer");
+console.log("canon sizes ok", Object.entries(sizes).map(([k, v]) => `${k} ${v.x.toFixed(1)}x${v.y.toFixed(1)}x${v.z.toFixed(1)}`).join(", "));
 
 clearGlbTemplates();
 rememberGlbTemplate("shieldLiger", null);

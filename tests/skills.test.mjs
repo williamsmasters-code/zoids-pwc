@@ -15,8 +15,8 @@ import {
   radarMul,
 } from "../js/skills.js";
 
-assert.equal(Object.keys(SKILLS).length, 13);
-assert.equal(ZOID_ORDER.length, 13);
+assert.equal(Object.keys(SKILLS).length, 14);
+assert.equal(ZOID_ORDER.length, 14);
 for (const id of ZOID_ORDER) {
   const spec = SKILLS[id];
   assert.ok(spec, id);
@@ -28,7 +28,7 @@ for (const id of ZOID_ORDER) {
   assert.ok(spec.active.cost, `${id} cost`);
   assert.ok(spec.active.kind, `${id} kind`);
   const names = new Set(ZOID_ORDER.map((other) => SKILLS[other].active.name));
-  assert.equal(names.size, 13);
+  assert.equal(names.size, 14);
 }
 
 function shieldUnit() {

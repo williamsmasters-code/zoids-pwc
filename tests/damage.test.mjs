@@ -236,12 +236,12 @@ check("condition round-trips and armor level raises the max", () => {
   assert.ok(plated.core.maxArmor > createParts(ZOIDS.genoSaurer).core.maxArmor);
 });
 
-check("thirteen Zoids have distinct stats and stock weapons fit", () => {
-  assert.equal(ZOID_ORDER.length, 13);
+check("fourteen Zoids have distinct stats and stock weapons fit", () => {
+  assert.equal(ZOID_ORDER.length, 14);
   // Canon speeds can tie (Command Wolf, Gun Sniper, Molga = 200 km/h); the
   // speed/accel/turn mix still differs per Zoid.
   const mixes = new Set(ZOID_ORDER.map((id) => `${ZOIDS[id].speed}/${ZOIDS[id].accel}/${ZOIDS[id].turn}`));
-  assert.equal(mixes.size, 13);
+  assert.equal(mixes.size, 14);
   for (const id of ZOID_ORDER) {
     const def = ZOIDS[id];
     assert.ok(def.price > 0);

@@ -13,9 +13,9 @@ export const DIFFICULTY = {
        aimError: 6,   react: 1.9, preferred: 54, aggro: 85,  fireRate: 0.8,  armorLevel: 0, truckArmor: 1.7 },
   3: { label: "Veteran", pay: 110000, enemies: 3, pool: ["shieldLiger", "bladeLiger", "zaberFang", "ironKong", "gunSniper"],
        aimError: 4,   react: 1.4, preferred: 48, aggro: 100, fireRate: 1.0,  armorLevel: 0, truckArmor: 1.45 },
-  4: { label: "Elite",   pay: 165000, enemies: 3, pool: ["bladeLiger", "ironKong", "genoSaurer", "gojulas", "berserkFuhrer", "elephander"],
+  4: { label: "Elite",   pay: 165000, enemies: 3, pool: ["bladeLiger", "ironKong", "genoSaurer", "gojulas", "berserkFuhrer", "elephander", "deathStinger"],
        aimError: 2.5, react: 1.0, preferred: 44, aggro: 115, fireRate: 1.1,  armorLevel: 1, truckArmor: 1.25 },
-  5: { label: "Ace",     pay: 260000, enemies: 4, pool: ["ironKong", "genoSaurer", "gojulas", "deathSaurer", "berserkFuhrer", "elephander"],
+  5: { label: "Ace",     pay: 260000, enemies: 4, pool: ["ironKong", "genoSaurer", "gojulas", "deathSaurer", "berserkFuhrer", "elephander", "deathStinger"],
        aimError: 1.5, react: 0.7, preferred: 40, aggro: 130, fireRate: 1.2,  armorLevel: 2, truckArmor: 1.1 },
 };
 

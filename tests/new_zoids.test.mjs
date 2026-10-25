@@ -10,7 +10,7 @@ import { buildUnitModel, disposeTree } from "../js/models.js";
 import { DIFFICULTY } from "../js/difficulty.js";
 import { SKILLS } from "../js/skills.js";
 
-const NEW = ["gunSniper", "elephander", "berserkFuhrer", "molga", "pteras"];
+const NEW = ["gunSniper", "elephander", "berserkFuhrer", "molga", "pteras", "deathStinger", "deathSaurer"];
 const box = (obj) => new Box3().setFromObject(obj);
 const sizeOf = (id) => {
   const m = buildUnitModel(ZOIDS[id], [], "player");
@@ -51,5 +51,9 @@ const liger = sizeOf("shieldLiger");
 assert.ok(sizeOf("molga") < liger, "Molga smaller than Shield Liger");
 assert.ok(sizeOf("pteras") < liger * 1.6, "Pteras small body (wings are wide)");
 assert.ok(sizeOf("elephander") > sizeOf("ironKong"), "Elephander larger than Iron Kong");
+assert.ok(sizeOf("deathStinger") > sizeOf("genoSaurer") * 0.8, "Death Stinger is a big Zoid");
+assert.ok(sizeOf("deathSaurer") > sizeOf("deathStinger"), "Death Saurer biggest");
+assert.equal(ZOIDS.deathStinger.canonKph, 185);
+assert.ok(ZOIDS.deathStinger.accel < ZOIDS.ironKong.accel && ZOIDS.deathStinger.accel > ZOIDS.deathSaurer.accel, "Death Stinger accel sits between Iron Kong and Death Saurer");
 ok("relative sizes");
 console.log(`new zoid tests passed: ${n}`);

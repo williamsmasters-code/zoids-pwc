@@ -25,11 +25,13 @@ function rollEnemies(type, difficulty, rng) {
   const out = [];
   for (let i = 0; i < count; i++) {
     let zoidId = pool[Math.floor(rng() * pool.length)];
-    if (zoidId === "deathSaurer" && out.some((e) => e.zoidId === "deathSaurer")) zoidId = "gojulas";
+    // Bosses: at most one Death Saurer and one Death Stinger, never both.
+    const boss = (id) => id === "deathSaurer" || id === "deathStinger";
+    if (boss(zoidId) && out.some((e) => boss(e.zoidId))) zoidId = zoidId === "deathSaurer" ? "gojulas" : "genoSaurer";
     out.push({ zoidId, name: `${ZOIDS[zoidId].name} ${i + 1}` });
   }
   // One Death Saurer is a lance on its own: cap the escort at 3 total.
-  if (out.some((e) => e.zoidId === "deathSaurer") && out.length > 3) out.length = 3;
+  if (out.some((e) => e.zoidId === "deathSaurer" || e.zoidId === "deathStinger") && out.length > 3) out.length = 3;
   return out;
 }
 
