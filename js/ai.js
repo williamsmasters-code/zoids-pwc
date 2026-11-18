@@ -134,6 +134,14 @@ export function updateBrain(unit, brain, ctx, dt) {
     strafe = -brain.flank;
     brain.flank *= -1;
     brain.stuckT = 0;
+    brain.stuckEvents = (brain.stuckEvents || 0) + 1;
+    // Stuck again soon after: break away on a fresh heading for a while.
+    if (time - (brain.lastStuck || -99) < 5) {
+      const r = brain.rng || Math.random;
+      brain.escapeYaw = yawToFace(tx - x, tz - z) + (r() < 0.5 ? -1 : 1) * (1.2 + r() * 1.2);
+      brain.escapeUntil = time + 1.6;
+    }
+    brain.lastStuck = time;
   }
   const maxRange = unit.weapons.reduce((m, w) => Math.max(m, w.range || 0), 40);
   const bracing = unit.weapons.some((weapon) => weapon.delivery === "charge" || weapon.chargeTime);
@@ -143,6 +151,68 @@ export function updateBrain(unit, brain, ctx, dt) {
   }
   let face = yawToFace(tx - x, tz - z);
   let climb = 0;
+  // Battlefield awareness (ctx.nav, js/battlefield.js via the mission):
+  // hold fire without line of sight, push on toward a hidden target, duck
+  // behind hard cover to cool hot weapons, and steer around cover and cliffs.
+  const nav = ctx.nav;
+  let visible = true;
+  if (nav) {
+    visible = nav.los(unit, target);
+    brain.unseenT = visible ? 0 : (brain.unseenT || 0) + dt;
+    if (!unit.def.immobile && !unit.flight && !(bracing && dist < maxRange * 0.98)) {
+      const heat = nav.heatFrac(unit);
+      if (!brain.cover && heat > 0.78 && time > (brain.coverCd || 0)) {
+        brain.cover = nav.cover(unit, target);
+        brain.coverUntil = time + 6;
+        brain.coverCd = time + 3;
+        if (brain.cover) brain.coverUses = (brain.coverUses || 0) + 1;
+      }
+      if (brain.cover) {
+        if (time > brain.coverUntil || heat < 0.3) {
+          brain.cover = null;
+          brain.coverCd = time + 8;
+        } else {
+          const cdx = brain.cover.x - x;
+          const cdz = brain.cover.z - z;
+          if (Math.hypot(cdx, cdz) > 4) {
+            face = yawToFace(cdx, cdz);
+            throttle = 1;
+          } else throttle = 0;
+          strafe = 0;
+        }
+      } else if (!visible && brain.unseenT > 1.5 && dist > 14) {
+        throttle = 1;
+        strafe = brain.flank * 0.3;
+      }
+      // Closing on the target or a cover spot: follow a planned route when
+      // the straight walk is blocked (around blocks, along the canyon).
+      if (throttle > 0.5 && nav.route && (!brain.escapeUntil || time >= brain.escapeUntil)) {
+        const goal = brain.cover || (dist > 30 ? { x: tx, z: tz } : null);
+        const wp = goal && nav.route(unit, goal.x, goal.z);
+        if (wp) {
+          face = yawToFace(wp.x - x, wp.z - z);
+          strafe = 0;
+        }
+      }
+      if (brain.escapeUntil && time < brain.escapeUntil) {
+        face = brain.escapeYaw;
+        throttle = 1;
+        strafe = 0;
+      }
+      if (Math.abs(throttle) > 0.3) {
+        const heading = throttle > 0 ? face : face + Math.PI;
+        const steer = nav.steer(unit, heading, brain.flank);
+        if (steer && steer.offset !== 0) {
+          face = throttle > 0 ? steer.yaw : steer.yaw - Math.PI;
+          strafe = 0;
+          brain.detours = (brain.detours || 0) + 1;
+        } else if (!steer) {
+          throttle = -throttle * 0.8;
+          brain.flank *= -1;
+        }
+      }
+    }
+  }
   if (unit.flight) {
     // Flyer pilot: never hover (keep airspeed over the stall), hold a
     // cruise altitude, dive to attack height on the run in, and break off
@@ -183,7 +253,7 @@ export function updateBrain(unit, brain, ctx, dt) {
     strafe,
     yaw: face,
     climb,
-    fire: dist < maxRange * 0.98,
+    fire: dist < maxRange * 0.98 && visible,
     skill: useSkill,
     aim: {
       x: tx + brain.jx * scatter,

@@ -994,10 +994,16 @@ export function weightOf(def, weapons, armorLevels, mods) {
   return w;
 }
 
+// Battlefields (js/battlefield.js). The old desert / plains / arctic ids are
+// retired; they map to the nearest new battlefield if an old contract shows up.
 export const BIOMES = {
-  desert: "Red Dune Expanse",
-  plains: "Verdant Reach",
-  arctic: "White Shelf",
+  city: "Abandoned City",
+  denseJungle: "Dense Jungle",
+  sparseJungle: "Sparse Jungle",
+  pass: "Rocky Mountain Pass",
+  desert: "Rocky Mountain Pass",
+  plains: "Sparse Jungle",
+  arctic: "Rocky Mountain Pass",
 };
 
 export function mulberry32(seed) {

@@ -3,6 +3,7 @@
 import { partColor, partRatio } from "./damage.js";
 import { headingFromYaw } from "./frame.js";
 import { minimapProject } from "./indicators.js";
+import { rightFromForward } from "./frame.js";
 import { skillHelpItems } from "./skills.js";
 
 const QUAD_BOXES = [
@@ -239,7 +240,7 @@ export function createHUD(root) {
         if (!mark) return "";
         return `<div class="aim-mark ${key}" style="left:${mark.x}px;top:${mark.y}px"><b></b><span>${mark.label}</span></div>`;
       }).join("");
-      root.querySelector("#boost-flag").textContent = data.boosting ? "BOOST" : data.boostReady ? "BOOST READY" : "";
+      root.querySelector("#boost-flag").textContent = data.boosting ? "BOOST" : data.wading ? "WADING · COOLING +50%" : data.boostReady ? "BOOST READY" : "";
       const skill = data.skill;
       const skillRoot = root.querySelector("#skill-hud");
       if (!skill) {
@@ -326,6 +327,26 @@ function drawMini(ctx, mini) {
   const cx = w / 2;
   const cy = h / 2;
   const scale = mini.scale || 0.28;
+  if (mini.layer && mini.layer.canvas) {
+    // Static battlefield layer (cover, cliffs, water), rotated heading-up
+    // with the same mapping as minimapProject.
+    const L = mini.layer;
+    const right = rightFromForward(mini.fwd);
+    const fwd = mini.fwd;
+    const k = scale / L.ppm;
+    const wx = L.origin / L.ppm; // world offset of image pixel 0
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(1, 1, w - 2, h - 2);
+    ctx.clip();
+    ctx.setTransform(
+      k * right.x, -k * fwd.x, k * right.z, -k * fwd.z,
+      cx - scale * (right.x * (wx + mini.px) + right.z * (wx + mini.pz)),
+      cy + scale * (fwd.x * (wx + mini.px) + fwd.z * (wx + mini.pz)),
+    );
+    ctx.drawImage(L.canvas, 0, 0);
+    ctx.restore();
+  }
   for (const mark of mini.marks || []) {
     const p = minimapProject(mini.fwd, mini.px, mini.pz, mark.x, mark.z, scale, w, h, 6);
     ctx.fillStyle = mark.color;

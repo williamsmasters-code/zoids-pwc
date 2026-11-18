@@ -273,8 +273,16 @@ export const HAZARD_KINDS = {
   dust: { label: "DUST", absorb: 0.024, scatter: 0.0014, color: 0xd9b98a },
   smoke: { label: "SMOKE", absorb: 0.03, scatter: 0.0018, color: 0x55595e },
   snow: { label: "ICE FOG", absorb: 0.02, scatter: 0.0012, color: 0xe6f2fa },
+  mist: { label: "MIST", absorb: 0.026, scatter: 0.0017, color: 0xdfece4 },
+  // Water (battlefields): beams that travel under the surface lose power fast.
+  water: { label: "WATER", absorb: 0.09, scatter: 0.004, color: 0x7fc4e0 },
 };
-export const BIOME_HAZARD = { desert: "dust", plains: "smoke", arctic: "snow" };
+// Battlefields (js/battlefield.js): city smoke and dust, jungle mist, pass
+// dust. Old ids kept so old saves and tests still resolve.
+export const BIOME_HAZARD = {
+  city: "smoke", denseJungle: "mist", sparseJungle: "mist", pass: "dust",
+  desert: "dust", plains: "smoke", arctic: "snow",
+};
 export const MIN_TRANSMISSION = 0.2;
 export const MAX_REFRACT = 0.08; // rad (about 4.6 degrees)
 
@@ -310,11 +318,39 @@ export function rayCylinder(origin, dir, maxDist, hz) {
   return t1 > t0 ? [t0, t1] : null;
 }
 
+// Box rotated by `yaw` about Y: { x, z, hw (along yaw), hd, yaw, y0, h }.
+export function rayBox(origin, dir, maxDist, hz) {
+  const c = Math.cos(hz.yaw || 0);
+  const s = Math.sin(hz.yaw || 0);
+  const ox = origin.x - hz.x;
+  const oz = origin.z - hz.z;
+  // local u along (cos, sin), v along (-sin, cos)
+  const lo = { u: ox * c + oz * s, v: -ox * s + oz * c, y: origin.y };
+  const ld = { u: dir.x * c + dir.z * s, v: -dir.x * s + dir.z * c, y: dir.y };
+  const y0 = hz.y0 == null ? -Infinity : hz.y0;
+  const y1 = y0 + (hz.h == null ? Infinity : hz.h);
+  let t0 = 0;
+  let t1 = maxDist;
+  for (const [o, d, a, b] of [[lo.u, ld.u, -hz.hw, hz.hw], [lo.v, ld.v, -hz.hd, hz.hd], [lo.y, ld.y, y0, y1]]) {
+    if (Math.abs(d) < 1e-9) {
+      if (o < a || o > b) return null;
+    } else {
+      let ta = (a - o) / d;
+      let tb = (b - o) / d;
+      if (ta > tb) [ta, tb] = [tb, ta];
+      t0 = Math.max(t0, ta);
+      t1 = Math.min(t1, tb);
+      if (t1 <= t0) return null;
+    }
+  }
+  return [t0, t1];
+}
+
 // Total hazard path along a ray. absorb / scatter are summed coefficient x length.
 export function hazardPath(origin, dir, dist, hazards) {
   const out = { length: 0, absorb: 0, scatter: 0, first: null, kinds: [] };
   for (const hz of hazards || []) {
-    const seg = rayCylinder(origin, dir, dist, hz);
+    const seg = hz.shape === "box" ? rayBox(origin, dir, dist, hz) : rayCylinder(origin, dir, dist, hz);
     if (!seg) continue;
     const len = seg[1] - seg[0];
     const kind = HAZARD_KINDS[hz.kind] || HAZARD_KINDS.dust;

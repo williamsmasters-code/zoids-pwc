@@ -84,7 +84,7 @@ export function generateContracts(state) {
   const rng = mulberry32((state.contractSeed + state.wins * 17) >>> 0);
   const diffCenter = Math.min(5, 1 + Math.floor(state.wins / 2));
   const types = shuffle(["destroy", "defend", "recon", "assault"], rng).slice(0, 3);
-  const biomes = shuffle(["desert", "plains", "arctic"], rng);
+  const biomes = shuffle(["city", "denseJungle", "sparseJungle", "pass"], rng);
   return types.map((type, i) => {
     let difficulty = Math.max(1, Math.min(5, diffCenter + (i === 2 ? 1 : 0)));
     if (state.wins < 2) difficulty = Math.min(difficulty, 2);

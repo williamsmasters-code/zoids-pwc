@@ -39,6 +39,7 @@ import {
   stockWeaponsFor,
   weightOf,
   mulberry32,
+  BIOMES,
 } from "./catalog.js";
 import {
   createParts,
@@ -50,7 +51,23 @@ import {
   sensorsFromHead,
   repairCost,
 } from "./damage.js";
-import { createMap } from "./maps.js";
+import { createMap, minimapLayer } from "./maps.js";
+import {
+  biomeId,
+  pointBlocked,
+  findFreeSpot,
+  findPath,
+  walkClear,
+  nextWaypoint,
+  lineBlocked,
+  steerYaw,
+  coverPoint,
+  rayBlockers,
+  rayGround,
+  wadeSpeedMul,
+  wadeCoolMul,
+  PLAY_LIMIT,
+} from "./battlefield.js";
 import { buildUnitModel, tagOwner, refreshPartColors, disposeTree, setTurretYaw } from "./models.js";
 import { turretSpecFor, relativeBearing, stepTurret, turretTrigger } from "./turret.js";
 import { createInput } from "./input.js";
@@ -60,6 +77,7 @@ import { aiTuning, difficultySpec } from "./difficulty.js";
 import { escortLayout } from "./escort.js";
 import { bandOf, rangeDamageMul, rangeSpreadMul, rangeAimMul, rangeLockMul } from "./rangebands.js";
 import { displaySpeed, unitLabel } from "./units.js";
+import { probeRenderQuality } from "./quality.js";
 import { flightSpec, createFlight, stepFlight, floorAt, shouldFall, meleeReaches } from "./flight.js";
 import {
   addWeaponHeat,
@@ -108,7 +126,6 @@ import {
   bendDir,
   lockBlocked,
   insideHazard,
-  placeHazards,
 } from "./weaponsys.js";
 import {
   initSkill,
@@ -145,8 +162,10 @@ export function startMission(state, contract, hooks) {
   host.classList.remove("hidden");
   host.innerHTML = `<div id="view"></div><div id="hud"></div>`;
 
-  const renderer = new WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  // MSAA off on software GL and high-DPI phones (js/quality.js).
+  const quality = probeRenderQuality();
+  const renderer = new WebGLRenderer({ antialias: quality.antialias, powerPreference: "high-performance" });
+  renderer.setPixelRatio(quality.pixelRatio);
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.08;
@@ -155,15 +174,21 @@ export function startMission(state, contract, hooks) {
   const scene = new Scene();
   const camera = new PerspectiveCamera(60, 1, 0.15, 2500);
   const clock = new Clock();
-  const map = createMap(contract.biome, contract.mapSeed);
+  // Test-only biome override (window.__ZOIDS__.forceBiome), like pacifyOnStart.
+  const forcedBiome = window.__ZOIDS__ && window.__ZOIDS__.forceBiome;
+  if (window.__ZOIDS__) window.__ZOIDS__.forceBiome = null;
+  const biome = biomeId(forcedBiome || contract.biome);
+  const map = createMap(biome, contract.mapSeed);
+  const field = map.field;
   if (map.ground) map.ground.userData.ground = true;
   scene.add(map.group);
   scene.background = new Color(map.palette.sky);
   scene.fog = new FogExp2(map.palette.fog, map.palette.density);
   scene.add(new HemisphereLight(map.palette.hemiSky, map.palette.hemiGround, 0.9));
-  const sun = new DirectionalLight(map.palette.sun, 1.45);
-  sun.position.set(-90, 160, 70);
+  const sun = new DirectionalLight(map.palette.sun, map.palette.sunIntensity || 1.45);
+  sun.position.copy(map.sunDir).multiplyScalar(200);
   scene.add(sun);
+  const miniLayer = minimapLayer(field);
   const fill = new DirectionalLight(0x9eb4c8, 0.35);
   fill.position.set(50, 40, -30);
   scene.add(fill);
@@ -234,7 +259,12 @@ export function startMission(state, contract, hooks) {
     }
   }
 
-  for (const spec of placeHazards(contract.biome, hazardRng, contract.type === "defend" ? 3 : 4)) addHazard(spec);
+  // Biome clouds come with the battlefield (city smoke and dust over fires,
+  // jungle mist, pass dust). Water volumes refract beams but never blind
+  // seekers, so they live in their own list (js/battlefield.js).
+  for (const spec of field.hazards) addHazard(spec);
+  const waterVolumes = field.waterVolumes;
+  const beamVolumes = () => (waterVolumes.length ? hazards.concat(waterVolumes) : hazards);
   let hitMeshes = [];
   let uid = 1;
   let ended = false;
@@ -478,6 +508,11 @@ export function startMission(state, contract, hooks) {
     const parts = createParts(def, armorLevels);
     applyCondition(parts, opts.condition);
     const mods = opts.mods || { speed: 0, maneuver: 0, booster: 0 };
+    // Spawn validity: never inside cover, on a cliff or in deep water.
+    if (!opts.scripted && !opts.exact) {
+      const spot = findFreeSpot(field, opts.x, opts.z, def.radius || 2);
+      opts = { ...opts, x: spot.x, z: spot.z };
+    }
     const model = buildUnitModel(def, opts.weapons || [], opts.team);
     tagOwner(model.root, id);
     model.root.position.set(opts.x, map.heightAt(opts.x, opts.z), opts.z);
@@ -604,7 +639,7 @@ export function startMission(state, contract, hooks) {
     mesh.position.set(x, y + h / 2, z);
     mesh.userData.block = true;
     scene.add(mesh);
-    obstacles.push({ shape: "aabb", x, z, hw: w / 2, hd: d / 2, mesh });
+    field.addBlocker({ shape: "aabb", x, z, hw: w / 2, hd: d / 2, h, base: y, kind: "building", mesh });
   }
 
   function spawnWave(wave, index) {
@@ -652,10 +687,9 @@ export function startMission(state, contract, hooks) {
   }
 
   function rebuildHits() {
+    // Only Zoid part meshes are raycast; terrain and hard cover are tested
+    // analytically (js/battlefield.js rayGround / rayBlockers).
     hitMeshes = [];
-    for (const obstacle of obstacles) {
-      if (obstacle.mesh) hitMeshes.push(obstacle.mesh);
-    }
     for (const unit of units) {
       if (!unit.alive) continue;
       unit.model.root.traverse((obj) => {
@@ -663,6 +697,58 @@ export function startMission(state, contract, hooks) {
       });
     }
   }
+
+  // AI battlefield helpers (js/ai.js ctx.nav). Line of sight is cached per
+  // unit for 0.25 s; steering probes ahead for cover, cliffs and the map edge.
+  function eyeOf(unit) {
+    const p = unit.model.root.position;
+    return { x: p.x, y: p.y + (unit.radius || 2) * 0.9, z: p.z };
+  }
+  function losBetween(a, b) {
+    const t = lockAimPoint(b);
+    return !lineBlocked(field, eyeOf(a), { x: t.x, y: t.y, z: t.z });
+  }
+  const nav = {
+    los(unit, target) {
+      const c = unit.losCache;
+      if (c && c.id === target.id && missionTime - c.t < 0.25) return c.v;
+      const v = losBetween(unit, target);
+      unit.losCache = { id: target.id, t: missionTime, v };
+      return v;
+    },
+    heatFrac(unit) {
+      let m = 0;
+      for (const w of unit.weapons) m = Math.max(m, (w.heatGauge || 0) / 100);
+      return m;
+    },
+    cover(unit, target) {
+      const p = unit.model.root.position;
+      const t = target.model.root.position;
+      return coverPoint(field, { x: p.x, z: p.z }, { x: t.x, y: t.y + (target.radius || 2), z: t.z }, unit.radius || 2.5, 70);
+    },
+    steer(unit, yaw, prefer) {
+      const p = unit.model.root.position;
+      return steerYaw(field, p.x, p.z, yaw, unit.radius || 2.5, 10 + (unit.radius || 2.5) * 2, prefer || 1);
+    },
+    // Next waypoint toward (gx, gz) when the straight walk is blocked
+    // (city blocks, canyon walls, deep water); null when the way is clear.
+    // Routes are re-planned at most every 1.5 s or when the goal moves 25 m.
+    route(unit, gx, gz) {
+      const p = unit.model.root.position;
+      let r = unit.navRoute;
+      if (!r || missionTime > r.until || Math.hypot(r.gx - gx, r.gz - gz) > 25) {
+        const direct = walkClear(field, p, { x: gx, z: gz }, unit.radius || 2.5);
+        r = unit.navRoute = { until: missionTime + 1.5, gx, gz, pts: direct ? null : findPath(field, p, { x: gx, z: gz }, unit.radius || 2.5), i: 0 };
+        if (r.pts) unit.navRoutes = (unit.navRoutes || 0) + 1;
+      }
+      if (!r.pts) return null;
+      if (missionTime >= (r.nextCheck || 0)) {
+        r.i = nextWaypoint(field, p, r.pts, r.i, unit.radius || 2.5);
+        r.nextCheck = missionTime + 0.3;
+      }
+      return r.pts[r.i];
+    },
+  };
 
   function plant(unit) {
     const pos = unit.model.root.position;
@@ -689,7 +775,7 @@ export function startMission(state, contract, hooks) {
     const pos = unit.model.root.position;
     st.y = pos.y;
     const ground = map.heightAt(pos.x, pos.z);
-    const floor = floorAt(pos.x, pos.z, ground, obstacleTops(), unit.radius);
+    const floor = floorAt(pos.x, pos.z, ground, field.near(pos.x, pos.z, unit.radius + 20, []), unit.radius);
     if (st.y < floor - 0.5 && !st.airborne) st.y = floor;
     const yaw = unit.model.root.rotation.y;
     const turnRate = dt > 0 ? wrapAngle(yaw - (unit.prevYaw ?? yaw)) / dt : 0;
@@ -705,20 +791,26 @@ export function startMission(state, contract, hooks) {
     }
   }
 
+  const nearScratch = [];
   function resolveObstacles(unit) {
     const pos = unit.model.root.position;
-    for (const obstacle of obstacles) {
+    const airborne = unit.flight && unit.flight.airborne;
+    for (const obstacle of field.near(pos.x, pos.z, unit.radius + 20, nearScratch)) {
       // Flyers above an obstacle's top pass over it.
       if (unit.flight && obstacle.top != null && pos.y >= obstacle.top - 0.3) continue;
+      let overlap = false;
       if (obstacle.shape === "circle") {
         const dx = pos.x - obstacle.x;
         const dz = pos.z - obstacle.z;
         const dist = Math.hypot(dx, dz) || 0.0001;
         const min = obstacle.r + unit.radius * 0.65;
         if (dist < min) {
-          const push = (min - dist) / dist;
-          pos.x += dx * push;
-          pos.z += dz * push;
+          overlap = true;
+          if (!crushProp(unit, obstacle)) {
+            const push = (min - dist) / dist;
+            pos.x += dx * push;
+            pos.z += dz * push;
+          }
         }
       } else if (obstacle.shape === "aabb") {
         const hx = obstacle.hw + unit.radius * 0.7;
@@ -726,16 +818,59 @@ export function startMission(state, contract, hooks) {
         const dx = pos.x - obstacle.x;
         const dz = pos.z - obstacle.z;
         if (Math.abs(dx) < hx && Math.abs(dz) < hz) {
-          const penX = hx - Math.abs(dx);
-          const penZ = hz - Math.abs(dz);
-          if (penX < penZ) pos.x += Math.sign(dx || 1) * penX;
-          else pos.z += Math.sign(dz || 1) * penZ;
+          overlap = true;
+          if (!crushProp(unit, obstacle)) {
+            const penX = hx - Math.abs(dx);
+            const penZ = hz - Math.abs(dz);
+            if (penX < penZ) pos.x += Math.sign(dx || 1) * penX;
+            else pos.z += Math.sign(dz || 1) * penZ;
+          }
         }
       }
+      if (overlap) unit.bumped = missionTime;
     }
-    const limit = map.half - 28;
+    // Canyon walls: ground Zoids cannot climb cliffs. Slide back along the
+    // free axis, else stay where we were.
+    if (!airborne && !unit.scripted && unit.prevPos && Math.hypot(pos.x - unit.prevPos.x, pos.z - unit.prevPos.z) < 10 && field.blockedAt(pos.x, pos.z)) {
+      const px = unit.prevPos.x;
+      const pz = unit.prevPos.z;
+      if (!field.blockedAt(px, pos.z)) pos.x = px;
+      else if (!field.blockedAt(pos.x, pz)) pos.z = pz;
+      else {
+        pos.x = px;
+        pos.z = pz;
+      }
+      unit.bumped = missionTime;
+    }
+    const limit = PLAY_LIMIT;
     pos.x = clamp(pos.x, -limit, limit);
     pos.z = clamp(pos.z, -limit, limit);
+  }
+
+  // Destructible props (cars, barriers, saplings, small boulders).
+  let propsDestroyed = 0;
+  function destroyProp(blocker, by) {
+    if (blocker.dead) return;
+    blocker.dead = true;
+    propsDestroyed += 1;
+    map.hideProp(blocker);
+    const at = new Vector3(blocker.x, blocker.base + Math.min(3, blocker.h * 0.5), blocker.z);
+    flash(at, blocker.kind === "sapling" ? 0x7aa04a : 0xffaa55, blocker.kind === "car" ? 1.6 : 0.9);
+    if (blocker.kind === "car") burst(at);
+    if (by === player && blocker.kind !== "sapling") pushMessage(`${blocker.kind === "car" ? "Wreck" : blocker.kind === "barrier" ? "Barrier" : "Boulder"} destroyed`);
+  }
+  function damageProp(blocker, amount, by) {
+    if (!blocker || !blocker.hp || blocker.dead) return;
+    blocker.hp -= amount;
+    if (blocker.hp <= 0) destroyProp(blocker, by);
+  }
+  // Superheavies (and anything at least the prop's crush radius) walk
+  // straight through small props.
+  function crushProp(unit, blocker) {
+    if (!blocker.crush || blocker.dead || (unit.flight && unit.flight.airborne)) return false;
+    if ((unit.radius || 0) < blocker.crush) return false;
+    destroyProp(blocker, unit);
+    return true;
   }
 
   function separateUnits() {
@@ -806,7 +941,7 @@ export function startMission(state, contract, hooks) {
     }
     const boost = input.boost && input.forward > 0 && perf.boosterReady;
     const skillMul = skillSpeedMul(player);
-    const maxSpeed = perf.speed * (boost ? perf.boostMul : 1) * (input.forward < 0 ? 0.55 : 1) * skillMul;
+    const maxSpeed = perf.speed * (boost ? perf.boostMul : 1) * (input.forward < 0 ? 0.55 : 1) * skillMul * (player.wadeMul || 1);
     if (player.flight && player.flight.airborne) {
       // In the air W/S trim airspeed (no reverse); it keeps what it has.
       const goal = input.forward > 0 ? maxSpeed : input.forward < 0 ? 0 : player.speed;
@@ -816,7 +951,7 @@ export function startMission(state, contract, hooks) {
       player.speed = approach(player.speed, input.forward * maxSpeed, speedRate(player.speed, input.forward * maxSpeed, perf) * dt);
     }
     player.climbCmd = input.climb || 0;
-    player.strafeVel = approach(player.strafeVel, input.strafe * perf.speed * 0.62 * skillMul, 28 * perf.accelMul * dt);
+    player.strafeVel = approach(player.strafeVel, input.strafe * perf.speed * 0.62 * skillMul * (player.wadeMul || 1), 28 * perf.accelMul * dt);
     moveChassis(player, dt);
     player.boosting = boost;
   }
@@ -841,7 +976,7 @@ export function startMission(state, contract, hooks) {
       return;
     }
     const skillMul = skillSpeedMul(unit);
-    const maxSpeed = perf.speed * (cmd.throttle < 0 ? 0.55 : 1) * skillMul;
+    const maxSpeed = perf.speed * (cmd.throttle < 0 ? 0.55 : 1) * skillMul * (unit.wadeMul || 1);
     const goal = (cmd.throttle || 0) * maxSpeed;
     unit.speed = approach(unit.speed, goal, speedRate(unit.speed, goal, perf) * 0.85 * dt);
     unit.climbCmd = cmd.climb || 0;
@@ -879,6 +1014,10 @@ export function startMission(state, contract, hooks) {
     return f.applyAxisAngle(axis, maxAngle);
   }
 
+  // Nearest hit along a ray: Zoid parts (three.js raycast), hard cover and
+  // terrain (analytic). Cover and ground hits carry a stand-in object whose
+  // userData marks block / ground, so callers keep one code path.
+  const coverHitObject = { userData: { block: true } };
   function raycast(origin, dir, ignoreId, maxDist) {
     const direction = dir.clone();
     if (direction.lengthSq() < 1e-10) return null;
@@ -886,18 +1025,30 @@ export function startMission(state, contract, hooks) {
     raycaster.set(origin, direction);
     raycaster.near = 0.15;
     raycaster.far = maxDist;
-    const list = map.ground ? hitMeshes.concat([map.ground]) : hitMeshes;
-    const raw = raycaster.intersectObjects(list, false);
+    const raw = hitMeshes.length ? raycaster.intersectObjects(hitMeshes, false) : [];
     const tagged = raw.map((hit) => {
       const data = hit.object.userData || {};
       return {
         ownerId: data.ownerId || null,
         partId: data.partId || null,
         block: !!data.block,
-        ground: !!(data.ground || hit.object === map.ground),
+        ground: !!data.ground,
         hit,
       };
     });
+    const cover = rayBlockers(field, origin, direction, maxDist);
+    if (cover && cover.t >= 0.15) {
+      tagged.push({ ownerId: null, partId: null, block: true, ground: false, hit: {
+        distance: cover.t, point: new Vector3(cover.point.x, cover.point.y, cover.point.z), object: coverHitObject, blocker: cover.blocker,
+      } });
+    }
+    const g = rayGround(field, origin, direction, maxDist);
+    if (g) {
+      tagged.push({ ownerId: null, partId: null, block: false, ground: true, hit: {
+        distance: g.t, point: new Vector3(g.point.x, g.point.y, g.point.z), object: map.ground,
+      } });
+    }
+    tagged.sort((a, b) => a.hit.distance - b.hit.distance);
     const chosen = selectAimHit(tagged, ignoreId);
     return chosen ? chosen.hit : null;
   }
@@ -1195,7 +1346,7 @@ export function startMission(state, contract, hooks) {
   function hitInfo(hit) {
     if (!hit) return null;
     const data = hit.object.userData || {};
-    return { owner: data.ownerId || null, part: data.partId || null, ground: !!(data.ground || hit.object === map.ground), block: !!data.block, dist: hit.distance };
+    return { owner: data.ownerId || null, part: data.partId || null, ground: !!(data.ground || hit.object === map.ground), block: !!data.block, cover: hit.blocker ? hit.blocker.kind : null, dist: hit.distance };
   }
 
   // Instant shot (beams, claws). Beams refract through hazards: the beam
@@ -1204,7 +1355,7 @@ export function startMission(state, contract, hooks) {
   function hitscan(unit, weapon, origin, dir, frac = 1) {
     const range = weapon.range;
     const refract = weapon.kind === "energy" ? (weapon.refract == null ? 1 : weapon.refract) : 0;
-    let path = refract ? hazardPath(origin, dir, range, hazards) : null;
+    let path = refract ? hazardPath(origin, dir, range, beamVolumes()) : null;
     let hit = null;
     let start = origin;
     let travel = dir;
@@ -1224,7 +1375,7 @@ export function startMission(state, contract, hooks) {
         hit = raycast(start, travel, unit.id, Math.max(0.5, range - entryT));
         // Damage loss is measured along the bent path actually travelled.
         const remaining = hit ? hit.distance : range - entryT;
-        path = hazardPath(start, travel, remaining, hazards);
+        path = hazardPath(start, travel, remaining, beamVolumes());
       }
     } else {
       hit = raycast(origin, dir, unit.id, range);
@@ -1246,6 +1397,7 @@ export function startMission(state, contract, hooks) {
     const hitData = hit.object.userData || {};
     if (hitData.block || hitData.ground || hit.object === map.ground) {
       if (!thin || rng() < 0.3) flash(hit.point, 0xffcc88, 0.45);
+      if (hit.blocker) damageProp(hit.blocker, weapon.damage * frac * transmission, unit);
       return;
     }
     const victim = units.find((u) => u.id === hit.object.userData.ownerId);
@@ -1358,8 +1510,10 @@ export function startMission(state, contract, hooks) {
         if (hit) {
           shot.life = 0;
           const hitData = hit.object.userData || {};
-          if (hitData.block || hitData.ground || hit.object === map.ground) flash(hit.point, shot.color, 0.5);
-          else {
+          if (hitData.block || hitData.ground || hit.object === map.ground) {
+            flash(hit.point, shot.color, 0.5);
+            if (hit.blocker) damageProp(hit.blocker, shot.damage, units.find((u) => u.id === shot.ownerId));
+          } else {
             const victim = units.find((u) => u.id === hit.object.userData.ownerId);
             const attacker = units.find((u) => u.id === shot.ownerId);
             if (victim && victim.alive && attacker) {
@@ -1768,7 +1922,8 @@ export function startMission(state, contract, hooks) {
     }
   }
 
-  let hudObjective = contract.brief;
+  // A forced biome (tests) or an old-biome contract: name the field actually loaded.
+  let hudObjective = String(contract.brief || "").replace(BIOMES[contract.biome] || "\u0000", map.palette.label || "");
 
   function placeCamera() {
     const eye = new Vector3();
@@ -1926,7 +2081,7 @@ export function startMission(state, contract, hooks) {
         if (unit === player || !unit.alive) continue;
         if (unit.script) unit.script(unit, dt);
         else if (unit.brain) {
-          updateBrain(unit, unit.brain, { units, time: missionTime }, dt);
+          updateBrain(unit, unit.brain, { units, time: missionTime, nav }, dt);
           if (unit.cmd && unit.cmd.skill) resolveSkillAction(unit, activateSkill(unit), null);
           driveAI(unit, dt);
         }
@@ -1941,6 +2096,10 @@ export function startMission(state, contract, hooks) {
       resolveObstacles(unit);
       if (unit.flight) flyUnit(unit, dt);
       else plant(unit);
+      // Wading: slower legs, faster weapon cooling (js/battlefield.js WATER).
+      const wet = unit.flight && unit.flight.airborne ? 0 : field.waterAt(p0.x, p0.z).depth;
+      unit.wade = wet;
+      unit.wadeMul = wadeSpeedMul(wet, unit.radius);
       if (dt > 0 && unit.prevPos) {
         unit.vel3.x = (p0.x - unit.prevPos.x) / dt;
         unit.vel3.y = (p0.y - unit.prevPos.y) / dt;
@@ -1978,7 +2137,7 @@ export function startMission(state, contract, hooks) {
       // Overloaded chassis shed heat slower (tonnage zones, js/tonnage.js).
       const loadCool = (unit.perf && unit.perf.coolMul) || 1;
       for (const weapon of unit.weapons) {
-        const mul = (weapon.kind === "energy" ? coolMul : 1) * loadCool;
+        const mul = (weapon.kind === "energy" ? coolMul : 1) * loadCool * wadeCoolMul(unit.wade || 0);
         coolWeapon(weapon, dt * mul, unit.speed);
         recoverBloom(weapon, dt);
         weapon.rateMul = unit !== player ? (unit.fireRateMul || 1) : 1;
@@ -2023,6 +2182,7 @@ export function startMission(state, contract, hooks) {
     updateHazards(dt);
     applyFpvWeapons();
     updateEffects(dt);
+    map.update(missionTime);
     pushHud(input);
     cullFarUnits();
     if (showcaseView) {
@@ -2136,8 +2296,14 @@ export function startMission(state, contract, hooks) {
         const to = lockAimPoint(tu).sub(eye);
         const d = to.length();
         if (d > 1e-3) {
+          const tp = lockAimPoint(tu);
+          const solid = lineBlocked(field, { x: eye.x, y: eye.y, z: eye.z }, { x: tp.x, y: tp.y, z: tp.z });
           const path = hazardPath(eye, to.multiplyScalar(1 / d), d, hazards);
-          if (lockBlocked(path)) {
+          if (solid) {
+            // Seekers need line of sight: terrain or hard cover breaks the track.
+            unit.rocketBlocked = solid.by === "terrain" ? "TERRAIN" : "COVER";
+            track = null;
+          } else if (lockBlocked(path)) {
             unit.rocketBlocked = path.kinds.map((k) => (HAZARD_KINDS[k] || {}).label || k).join("/");
             track = null;
           }
@@ -2246,7 +2412,7 @@ export function startMission(state, contract, hooks) {
     const view = new Vector3();
     camera.getWorldDirection(view);
     const camDist = camera.position.distanceTo(aimPoint);
-    const path = hazardPath(camera.position, view, Math.min(camDist, 260), hazards);
+    const path = hazardPath(camera.position, view, Math.min(camDist, 260), beamVolumes());
     const hasBeam = player.weapons.some((w) => w.kind === "energy" && mountUsable(player, w));
     const warns = [];
     if (hasBeam && path.length > 1) warns.push(`BEAM SCATTER · ${path.kinds.map((k) => (HAZARD_KINDS[k] || {}).label || k).join("/")} ${Math.round(path.length)} m`);
@@ -2599,7 +2765,9 @@ export function startMission(state, contract, hooks) {
         pz: player.model.root.position.z,
         scale: 0.55,
         marks,
+        layer: miniLayer,
       },
+      wading: player.alive && (player.wade || 0) > 0.3,
     });
   }
 
@@ -3146,6 +3314,7 @@ export function startMission(state, contract, hooks) {
     pushHud();
   };
   window.__ZOIDS__.turretDebug = () => ({
+    id: player.id,
     lockId: player.lockId || null,
     chassisYaw: player.model.root.rotation.y,
     speed: planarSpeed(player),
@@ -3249,6 +3418,53 @@ export function startMission(state, contract, hooks) {
     const u = units.find((x) => x.id === id);
     return u ? Object.values(u.parts).reduce((sum, part) => sum + part.armor + part.structure, 0) : null;
   };
+  // Battlefields (js/battlefield.js).
+  window.__ZOIDS__.battlefield = () => {
+    const f = field;
+    const count = (k) => f.blockers.filter((b) => b.kind === k && !b.dead).length;
+    return {
+      biome: f.biome,
+      label: f.look.label,
+      blockers: f.blockers.filter((b) => !b.dead).length,
+      kinds: { building: count("building"), rubble: count("rubble"), tree: count("tree"), sapling: count("sapling"), boulder: count("boulder"), spire: count("spire"), car: count("car") + count("barrier") },
+      water: f.water.map((w) => ({ name: w.name, shape: w.shape, x: w.x, z: w.z, r: w.r, points: w.points ? w.points.map((p) => [p.x, p.z]) : null, halfWidth: w.halfWidth })),
+      hazards: hazards.map((h) => h.kind),
+      propsDestroyed,
+      fog: scene.fog.density,
+      quality: { antialias: quality.antialias, pixelRatio: quality.pixelRatio, software: quality.software, gpu: quality.gpu },
+    };
+  };
+  window.__ZOIDS__.coverList = (x, z, r = 200) => field.near(x, z, r, []).map((b) => ({ kind: b.kind, shape: b.shape, x: b.x, z: b.z, r: b.r, hw: b.hw, hd: b.hd, base: b.base, top: b.top, hp: b.hp || 0, dead: !!b.dead }));
+  window.__ZOIDS__.waterAt = (x, z) => field.waterAt(x, z);
+  window.__ZOIDS__.losCheck = (a, b) => {
+    const r = lineBlocked(field, a, b);
+    return r ? { by: r.by, t: r.t, x: r.blocker ? r.blocker.x : null, z: r.blocker ? r.blocker.z : null } : null;
+  };
+  window.__ZOIDS__.pointBlocked = (x, z, r) => pointBlocked(field, x, z, r);
+  window.__ZOIDS__.groundAt = (x, z) => map.heightAt(x, z);
+  // The game's own shot ray (units + cover + terrain) from a to b.
+  window.__ZOIDS__.shotTest = (a, b, ignoreId = null) => {
+    const o = new Vector3(a.x, a.y, a.z);
+    const d = new Vector3(b.x - a.x, b.y - a.y, b.z - a.z);
+    const hit = raycast(o, d, ignoreId, d.length() + 5);
+    return hit ? hitInfo(hit) : null;
+  };
+  window.__ZOIDS__.damageCover = (x, z, amount = 999) => {
+    const b = field.near(x, z, 12, []).filter((k) => k.hp).sort((p, q) => Math.hypot(p.x - x, p.z - z) - Math.hypot(q.x - x, q.z - z))[0];
+    if (!b) return null;
+    damageProp(b, amount, player);
+    return { kind: b.kind, dead: !!b.dead, x: b.x, z: b.z };
+  };
+  window.__ZOIDS__.unitNav = () => units.filter((u) => u.alive).map((u) => ({
+    id: u.id, name: u.name, team: u.team, x: u.model.root.position.x, z: u.model.root.position.z, y: u.model.root.position.y,
+    radius: u.radius, wade: u.wade || 0, wadeMul: u.wadeMul || 1, speed: u.speed,
+    inside: !u.flight && pointBlocked(field, u.model.root.position.x, u.model.root.position.z, u.radius * 0.6),
+    brain: u.brain ? { stuck: u.brain.stuckEvents || 0, detours: u.brain.detours || 0, routes: u.navRoutes || 0, cover: u.brain.coverUses || 0, unseen: u.brain.unseenT || 0 } : null,
+    rocketBlocked: u.rocketBlocked || null,
+  }));
+  window.__ZOIDS__.mapParts = (hide) => map.group.children.map((o, i) => { if (hide && hide.includes(o.name || `#${i}`)) o.visible = false; return `${o.name || `#${i}`}:${o.visible ? 1 : 0}`; });
+  window.__ZOIDS__.debugScene = () => ({ scene, map, renderer, camera });
+  window.__ZOIDS__.setLive = (on) => { pacify = !on; return !pacify; };
   window.__ZOIDS__.showcase = (view) => { showcaseView = view || null; return !!showcaseView; };
   window.__ZOIDS__.drawLine = (a, b, color = 0xff3344, life = 2) => { beam(new Vector3(a.x, a.y, a.z), new Vector3(b.x, b.y, b.z), color, true, 0.6, life); return true; };
   window.__ZOIDS__.aimInfo = () => {
