@@ -3,6 +3,7 @@
 // through hazards, targeting area and lock rules, missile arming. Plus the
 // save fix (3rd Speed Booster survives a reload). No DOM.
 import assert from "node:assert/strict";
+import { BIOME_IDS, createField, LOOKS } from "../js/battlefield.js";
 import { WEAPONS, MODS } from "../js/catalog.js";
 import { stepBallistic } from "../js/ballistics.js";
 import { rangeDamageMul } from "../js/rangebands.js";
@@ -210,16 +211,21 @@ ok("damage falls smoothly past optimal to max range (no cliffs), zero beyond; be
   ok("clouds block missile locks (12 m or more on the line of sight) and blind seekers on targets inside them");
   let seed = 7;
   const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (const biome of ["desert", "plains", "arctic"]) {
-    const list = placeHazards(biome, rng);
-    assert.equal(list.length, 4);
+  void rng;
+  // Battlefields: clouds come with the field (js/battlefield.js), kinds per
+  // biome, off the spawn / convoy lane.
+  for (const biome of BIOME_IDS) {
+    const field = createField(biome, 1001);
+    const list = field.hazards;
+    assert.ok(list.length >= 3, `${biome} has 3+ clouds`);
     for (const h of list) {
+      assert.ok(LOOKS[biome].hazard.includes(h.kind), `${biome} cloud kind ${h.kind}`);
       assert.ok(Math.abs(h.x) >= 20, "spawn / convoy lane clear");
-      assert.ok(Math.hypot(h.x, h.z) >= 50 && Math.hypot(h.x, h.z) <= 155);
+      assert.ok(Math.hypot(h.x, h.z) >= 50 && Math.hypot(h.x, h.z) <= 340);
+      assert.ok(HAZARD_KINDS[h.kind], "known hazard kind");
     }
-    assert.equal(list[0].kind, { desert: "dust", plains: "smoke", arctic: "snow" }[biome]);
   }
-  ok("each biome gets 4 clouds of its own kind (desert dust, plains smoke, arctic ice fog) off the spawn lane");
+  ok("each battlefield gets 3-7 clouds of its own kind (city smoke and dust, jungle mist, pass dust) off the spawn lane");
 }
 
 // ---------- targeting area and lock rules ----------

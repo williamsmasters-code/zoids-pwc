@@ -51,16 +51,16 @@ for (const def of Object.values(STRUCTURES)) {
   console.log("structure ok", def.id);
 }
 
-for (const biome of ["desert", "plains", "arctic"]) {
+for (const biome of ["city", "denseJungle", "sparseJungle", "pass"]) {
   const map = createMap(biome, 1001);
-  if (!map.obstacles.length) throw new Error(`${biome} has no rock colliders`);
+  if (!map.obstacles.length) throw new Error(`${biome} has no cover colliders`);
   for (const obstacle of map.obstacles) {
     if (!obstacle.mesh) throw new Error(`${biome} collider has no mesh`);
   }
   const y = map.heightAt(12, -40);
   if (!Number.isFinite(y)) throw new Error(`${biome} height is not finite`);
   disposeTree(map.group);
-  console.log("map ok", biome, map.obstacles.length, "rocks");
+  console.log("map ok", biome, map.obstacles.length, "cover pieces");
 }
 
 console.log("models and maps ok");
