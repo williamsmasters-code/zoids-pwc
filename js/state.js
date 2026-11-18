@@ -83,9 +83,11 @@ function sanitize(raw) {
     const slot = base.hangar[id];
     slot.owned = !!saved.owned;
     slot.mods = {
-      speed: clampLevel(saved.mods && saved.mods.speed, 2),
-      maneuver: clampLevel(saved.mods && saved.mods.maneuver, 2),
-      booster: clampLevel(saved.mods && saved.mods.booster, 2),
+      // Caps come from MODS (Speed Boosters go to 3). A hard-coded 2 used to
+      // drop the 3rd Speed Booster on every load.
+      speed: clampLevel(saved.mods && saved.mods.speed, MODS.speed.max),
+      maneuver: clampLevel(saved.mods && saved.mods.maneuver, MODS.maneuver.max),
+      booster: clampLevel(saved.mods && saved.mods.booster, MODS.booster.max),
     };
     for (const partId of Object.keys(slot.armorLevel)) {
       slot.armorLevel[partId] = clampLevel(saved.armorLevel && saved.armorLevel[partId], MAX_ARMOR_LEVEL);
