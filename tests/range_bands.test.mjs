@@ -32,10 +32,14 @@ for (const id of beams) {
   const w = WEAPONS[id];
   const [i, l, e] = ["ideal", "long", "extreme"].map((b) => rangeDamageMul(w, mid(w, b)));
   assert.equal(i, 1);
-  assert.ok(l <= 0.5 && e <= 0.25 && e < l, `${id} beam damage drops drastically: ${l}, ${e}`);
+  assert.ok(l <= 0.7 && e <= 0.25 && e < l, `${id} beam damage drops drastically: ${l}, ${e}`);
+  // Curve (weapons overhaul): x0.3 AT longRange, x0.1 AT max, smooth between.
+  assert.ok(Math.abs(rangeDamageMul(w, w.longRange) - 0.3) < 1e-9 && Math.abs(rangeDamageMul(w, w.range) - 0.1) < 1e-9, `${id} beam curve anchors`);
+  const a = rangeDamageMul(w, w.optimal + 1), b = rangeDamageMul(w, w.optimal + 2);
+  assert.ok(a < 1 && b < a, `${id} beam falls off smoothly right after optimal (${a}, ${b})`);
   assert.ok(rangeSpreadMul(w, mid(w, "extreme")) <= 1.3, `${id} beam spread stays tight`);
 }
-ok("beams: steep damage falloff (x0.5 long, x0.2 extreme), spread at most x1.25");
+ok("beams: steep smooth falloff (1 at optimal, x0.3 at longRange, x0.1 at max), spread at most x1.25");
 
 for (const id of ballistic) {
   const w = WEAPONS[id];
@@ -46,7 +50,7 @@ for (const id of ballistic) {
   assert.ok(s[0] === 1 && s[1] >= 2 && s[2] >= 4, `${id} spread grows: ${s}`);
   assert.ok(hitChanceMul(w, mid(w, "extreme")) < 0.45, `${id} extreme hit chance`);
 }
-ok("ballistics: gentle damage falloff (x0.9 / x0.75), spread x2.5 long and x5 extreme");
+ok("ballistics: gentle damage falloff (x0.85 at longRange, x0.7 at max), spread x3 at longRange and x6 at max");
 
 const m = WEAPONS.missilePack;
 assert.ok(rangeDamageMul(m, mid(m, "extreme")) >= 0.85);
@@ -67,9 +71,15 @@ for (const id of ["sniperRifle", "chargedParticle"]) {
   const w = WEAPONS[id];
   assert.equal(bandOf(w, 20), "short");
   assert.ok(rangeDamageMul(w, 20) < 1 && rangeDamageMul(w, 20) >= 0.7, `${id} short penalty is small`);
+  assert.ok(rangeDamageMul(w, 5) < rangeDamageMul(w, 20), `${id} short penalty ramps toward minRange`);
 }
 assert.equal(bandOf(WEAPONS.gatling, 5), "ideal", "no short band without a minRange");
-ok("short-range penalty only for the sniper rifle and particle cannon");
+// Missiles: warheads arm at 25 m. Under that a hit does 25%, flat.
+assert.equal(bandOf(m, 10), "short");
+assert.equal(rangeDamageMul(m, 5), 0.25);
+assert.equal(rangeDamageMul(m, 24), 0.25);
+assert.equal(rangeDamageMul(m, 26), 1);
+ok("short-range penalty: sniper rifle and particle cannon ramp, missiles do 25% before arming at 25 m");
 
 // AI aim error: the mission adds aimError * dist/100 * (aimMul - 1) on top of
 // the pilot's base scatter. Ballistic error must grow per increment, beams
@@ -85,6 +95,8 @@ ok(`AI aim error grows per band for ballistics (${gs.map((v) => v.toFixed(2)).jo
 // Bands stack with the armour multipliers (beam x0.7 / ballistic x1.3 vs plating).
 const beamVsArmorLong = rangeDamageMul(WEAPONS.beamCannon, 110) * DAMAGE_VS_ARMOR[damageClassOf(WEAPONS.beamCannon)].armor;
 const shellVsArmorLong = rangeDamageMul(WEAPONS.shockCannon, 60) * DAMAGE_VS_ARMOR[damageClassOf(WEAPONS.shockCannon)].armor;
-assert.ok(Math.abs(beamVsArmorLong - 0.35) < 1e-9 && Math.abs(shellVsArmorLong - 1.17) < 1e-9);
-ok("bands multiply with the armour class (beam long vs plating x0.35, shell long x1.17)");
+// Beam cannon at 110 m: 1 - 0.7 * (15 / 35) = 0.7 -> x0.49 on plating.
+// Shock cannon at 60 m: 1 - 0.15 * (15 / 30) = 0.925 -> x1.2025.
+assert.ok(Math.abs(beamVsArmorLong - 0.49) < 1e-9 && Math.abs(shellVsArmorLong - 1.2025) < 1e-9, `${beamVsArmorLong} ${shellVsArmorLong}`);
+ok("range curve multiplies with the armour class (beam at 110 m vs plating x0.49, shell at 60 m x1.20)");
 console.log(`range band tests passed: ${n}`);

@@ -164,7 +164,8 @@ export function stepRocket(p, dt, target) {
   } else {
     p.phase = "dive";
     const speed = target && target.speed != null ? target.speed : 0;
-    const strength = target ? lockStrength(speed) : 0;
+    // target.blind: the target is inside a hazard cloud (js/weaponsys.js).
+    const strength = target ? lockStrength(speed) * (target.blind ? 0.3 : 1) : 0;
     p.strength = strength;
     p.turn = rocketTurn(strength);
     if (target && p.turn > 0) {

@@ -4,7 +4,8 @@
 // Defaults to js/catalog.js. Pass an older copy to compare before/after.
 //
 // Model (deliberately simple, same for both versions):
-//   burst DPS     damage * volley * rate (charge: damage / (chargeTime + 1/rate))
+//   burst DPS     damage * volley * burst * rate (charge: damage / (chargeTime + 1/rate));
+//                 burst = shots per pulse / salvo cycle (weapons overhaul)
 //   sustained DPS burst * min(1, cooling / (heat * rate))  (per-weapon heat gauge)
 //   hit factor    beam .85, ballistic .65, rocket .9 (locked), charge .9, melee .75
 //   effective     sustained * hit factor, counted only if the weapon reaches
@@ -35,7 +36,8 @@ function rangeFactor(w, r) {
 
 function weaponStats(w) {
   const vol = w.volley || 1;
-  const burst = w.chargeTime ? w.damage / (w.chargeTime + 1 / w.rate) : w.damage * vol * w.rate;
+  const cyc = w.fireMode === "pulse" || w.fireMode === "salvo" ? (w.burst || 1) : 1;
+  const burst = w.chargeTime ? w.damage / (w.chargeTime + 1 / w.rate) : w.damage * vol * cyc * w.rate;
   const heatPerSec = w.chargeTime ? w.heat / (w.chargeTime + 1 / w.rate) : (w.heat || 0) * w.rate;
   const sustain = burst * Math.min(1, (w.cooling || 12) / Math.max(1e-6, heatPerSec));
   const hit = HIT[w.kind === "melee" ? "melee" : w.delivery] || 0.8;

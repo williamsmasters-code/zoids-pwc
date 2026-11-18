@@ -13,6 +13,8 @@ export function createBrain(rng, tune = {}) {
     react: (tune.react != null ? tune.react : 1.15) + rng() * 1.35,
     preferred: (tune.preferred != null ? tune.preferred - 10 : 38) + rng() * 20,
     aimError: tune.aimError || 0,
+    // Share of ballistic drop past zero range this pilot aims over (js/weaponsys.js).
+    holdover: tune.holdover != null ? tune.holdover : 0.7,
     aggroRange: tune.aggroRange || 0,
     guard: tune.guard || null,
     alerted: !tune.guard,

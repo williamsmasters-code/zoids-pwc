@@ -31,15 +31,35 @@ export function bandOf(weapon, distance) {
   return "extreme";
 }
 
+// Continuous curve through the profile values (see RANGE_PROFILES):
+// short at 0 m ramping to ideal at minRange (flat for shortFlat profiles),
+// ideal to optimal, then straight lines to long at longRange and extreme at
+// max range. null past max range.
+export function rangeCurve(weapon, distance, table, shortFlat = false) {
+  const d = Math.max(0, Number(distance) || 0);
+  const max = weapon.range;
+  if (d > max) return null;
+  if (rangeClassOf(weapon) === "melee") return table.ideal;
+  const minR = weapon.minRange || 0;
+  if (minR && d < minR) return shortFlat ? table.short : table.short + (table.ideal - table.short) * (d / minR);
+  const opt = weapon.optimal;
+  // Skill shots carry no bands: full damage out to their range.
+  if (opt == null || d <= opt) return table.ideal;
+  const long = weapon.longRange ?? max;
+  if (d <= long) return table.ideal + (table.long - table.ideal) * ((d - opt) / Math.max(1e-6, long - opt));
+  return table.long + (table.extreme - table.long) * ((d - long) / Math.max(1e-6, max - long));
+}
+
 export function rangeDamageMul(weapon, distance) {
-  const band = bandOf(weapon, distance);
-  if (band === "out") return 0;
-  return profileOf(weapon).damage[band];
+  const p = profileOf(weapon);
+  const v = rangeCurve(weapon, distance, p.damage, !!p.shortFlat);
+  return v == null ? 0 : v;
 }
 
 export function rangeSpreadMul(weapon, distance) {
-  const band = bandOf(weapon, distance);
-  return profileOf(weapon).spread[band === "out" ? "extreme" : band];
+  const p = profileOf(weapon);
+  const v = rangeCurve(weapon, distance, p.spread, !!p.shortFlat);
+  return v == null ? p.spread.extreme : v;
 }
 
 export function rangeAimMul(weapon, distance) {

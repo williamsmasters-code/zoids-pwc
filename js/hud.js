@@ -72,6 +72,10 @@ export function createHUD(root) {
     <div class="hit left"></div>
     <div class="hit right"></div>
     <div class="reticle"><span></span></div>
+    <div class="group-pips" id="group-pips"><i data-g="1"></i><i data-g="2"></i><i data-g="3"></i><i data-g="4"></i></div>
+    <div class="aim-range" id="aim-range"></div>
+    <div class="hazard-warn hidden" id="hazard-warn"></div>
+    <div class="target-box hidden" id="target-box"><span></span></div>
     <svg id="lock-ring" class="lock-ring hidden" viewBox="0 0 100 100" data-lock="0">
       <circle cx="50" cy="50" r="42" pathLength="100"></circle>
     </svg>
@@ -108,13 +112,16 @@ export function createHUD(root) {
         <li>Flyers (Pteras): Space — climb, C — descend. W builds airspeed, S slows it (no reverse in the air). Below the stall speed it cannot climb and sinks; slow down on the ground to land and walk. Ceiling 70 m above the terrain. It flies over rocks and buildings. The HUD shows ALT and AIR speed.</li>
         <li>Shift — boost, if back boosters are fitted and the back mount still stands.</li>
         <li>Left mouse or 1 — weapon group 1. Right mouse or 2 — group 2. 3 and 4 — the other groups.</li>
-        <li>Beams (pulse laser, beam cannon) hit instantly along the crosshair. A short tracer shows the shot.</li>
-        <li>Cannons, autocannons, and shell guns are ballistic. The shell travels and drops. The barrel lifts so the arc meets the crosshair point when the gun can reach it. The HUD marks that impact, the drop of an uncompensated shot, and a lead bracket on the target.</li>
-        <li>Missiles need a 1.5 s lock on the enemy under the crosshair, or on the targeted enemy if it sits within a few degrees of the crosshair. The ring around the crosshair fills as the lock builds. A still target locks in 1.5 s. Faster targets lock slower, and anything at 30 m/s or more breaks the lock. Missiles cannot fire until the lock completes. They launch upward, then arc down onto the target. Lock strength sets how hard they can turn.</li>
+        <li>Targeting: Tab cycles enemies inside sensor range (about 190 m, more with good sensors), nearest first. R locks the enemy closest to the crosshair inside the 12 degree targeting box, or the nearest one. A box marks the locked enemy with its range. A lock survives 3 s outside sensor range, then drops. Turrets fire only at the locked enemy.</li>
+        <li>Reticle: the circle grows with your current spread (sustained fire, moving, hot barrels). Its colour and the four pips around it show each weapon group's range band on the target. The number under it is the range to the crosshair point.</li>
+        <li>Fire modes: the gatling spins up and fires fast; cannons and the sniper rifle fire single heavy shells; the pulse laser fires 3-pulse bursts; the beam cannon fires a sustained beam you must hold on target; missiles ripple a 4-missile salvo; the particle cannon charges.</li>
+        <li>Beams hit instantly and lose damage past their ideal range. Dust, smoke and ice fog clouds (and burning wrecks) bend and scatter beams and soak up damage; the HUD warns BEAM SCATTER. Energy shields scatter beams completely.</li>
+        <li>Ballistic guns are zeroed at their ideal range: inside it the shell meets the crosshair, past it the shell drops. The IMPACT diamond shows where it really lands and DROP says by how much, so aim high. The LEAD box shows where to aim at a moving locked target, drop included. Spread grows with sustained fire and while moving.</li>
+        <li>Missiles need a 2.2 s lock on the enemy under the crosshair, or on the targeted enemy inside the 8 degree seeker circle. The ring fills as the lock builds and drains twice as fast when you slip off. Faster targets lock slower, anything at 30 m/s or more breaks the lock, and a thick cloud between you blocks it (SEEKER BLOCKED). Missiles cannot fire until the lock completes. They launch upward, then arc down onto the target; a target hiding in a cloud is much harder for them to track. Warheads arm after 25 m.</li>
         <li>The Charged Particle Cannon fires only after you hold its button for 3 seconds while stationary (under 0.75 m/s). Moving or releasing early clears the charge bar and does not fire. A full charge fires on its own at full damage. Geno Saurer's Q skill is a separate instant bolt.</li>
         <li>Range bands: every weapon has an IDEAL band, then LONG and EXTREME out to its max range (the hangar lists them). Beams lose power fast past ideal but stay accurate. Cannons, gatlings and the sniper rifle keep their punch but spread more and more. Missiles keep their damage but lock slower. Claws, blades and rams hit only in melee reach. The sniper rifle and the particle cannon are weaker at SHORT range. The dock shows each group's band on the locked target and the crosshair is tinted by group 1: green ideal, yellow long, orange extreme or short, red out of range. That is separate from OUT OF SENSOR RANGE.</li>
         <li>Q — active skill. The skill panel shows the name, the key, and heat or cooldown. The Shield Liger's energy shield blocks weapons while it is up.</li>
-        <li>V — first person / third person. Tab — cycle target. R — nearest hostile.</li>
+        <li>V — first person / third person. Tab — cycle targets in sensor range. R — lock the enemy under the crosshair, else the nearest.</li>
         <li>H — this list. Esc — pause and release the mouse.</li>
       </ul>
       <p>There is no Zoid health bar. Green, yellow, orange, red, then black on the paper doll are armor and structure per part. Core destruction kills. Leg damage slows you. Head damage scrambles the HUD. A destroyed mount kills its weapons. Each weapon has its own heat gauge. The PEAK bar is the hottest gun. A gun that maxes its heat locks until it cools below 55. The others keep firing.</p>
@@ -178,10 +185,45 @@ export function createHUD(root) {
       // Reticle tint: range band of weapon group 1 on the locked target.
       const g1 = (data.weapons || []).find((row) => row.group === 1 && row.band);
       reticle.dataset.band = g1 ? g1.band : "";
+      const ret = data.reticle;
+      if (ret) {
+        reticle.style.width = `${Math.round(ret.bloomPx)}px`;
+        reticle.style.height = `${Math.round(ret.bloomPx)}px`;
+        reticle.dataset.spread = ret.spread.toFixed(4);
+        const range = root.querySelector("#aim-range");
+        range.textContent = `${Math.round(ret.aimDist)} m`;
+        range.style.top = `calc(50% + ${Math.round(ret.bloomPx / 2 + 6)}px)`;
+        const warn = root.querySelector("#hazard-warn");
+        warn.classList.toggle("hidden", !ret.warn);
+        warn.textContent = ret.warn || "";
+        const tb = root.querySelector("#target-box");
+        tb.classList.toggle("hidden", !ret.box);
+        if (ret.box) {
+          tb.style.left = `${ret.box.x}px`;
+          tb.style.top = `${ret.box.y}px`;
+          tb.style.width = `${Math.round(ret.box.size)}px`;
+          tb.style.height = `${Math.round(ret.box.size)}px`;
+          tb.dataset.band = ret.box.band || "";
+          tb.querySelector("span").textContent = `${Math.round(ret.box.dist)} m`;
+        }
+      }
+      const pipsRoot = root.querySelector("#group-pips");
+      const pipR = ret ? Math.round(ret.bloomPx / 2 + 7) : 18;
+      pipsRoot.style.setProperty("--pip-r", `${pipR}px`);
+      for (const pip of pipsRoot.querySelectorAll("i")) {
+        const row = (data.weapons || []).find((r) => String(r.group) === pip.dataset.g);
+        const live = row && row.state !== "empty" && row.state !== "disabled";
+        pip.dataset.band = live ? (row.band || "none") : "empty";
+      }
       const ring = root.querySelector("#lock-ring");
       const lock = data.lock;
       const showLock = !!(lock && (lock.tracking || lock.value > 0.01));
-      ring.classList.toggle("hidden", !showLock);
+      ring.classList.toggle("hidden", !showLock && !(ret && ret.conePx));
+      ring.classList.toggle("idle", !showLock);
+      if (ret && ret.conePx) {
+        ring.style.width = `${Math.round(ret.conePx)}px`;
+        ring.style.height = `${Math.round(ret.conePx)}px`;
+      }
       ring.classList.toggle("locked", !!(lock && lock.value >= 1));
       const lockValue = lock ? lock.value : 0;
       ring.style.setProperty("--lock", String(lockValue));

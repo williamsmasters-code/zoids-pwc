@@ -266,6 +266,34 @@ button:disabled { opacity: 0.45; cursor: default; }
   transform: translate(-50%, -50%);
 }
 .reticle.oor { border-color: #ff6677; box-shadow: 0 0 0 1px #ff6677; }
+/* Weapons overhaul: bloom-sized reticle, group pips, range, target box, warnings. */
+.reticle { transition: width 0.08s linear, height 0.08s linear; pointer-events: none; }
+.group-pips { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+.group-pips i { position: absolute; width: 8px; height: 3px; background: #556; transform: translate(-50%, -50%); box-shadow: 0 0 2px #000; }
+.group-pips i[data-g="1"] { left: 0; top: calc(-1 * var(--pip-r, 18px)); width: 3px; height: 8px; }
+.group-pips i[data-g="2"] { left: var(--pip-r, 18px); top: 0; }
+.group-pips i[data-g="3"] { left: 0; top: var(--pip-r, 18px); width: 3px; height: 8px; }
+.group-pips i[data-g="4"] { left: calc(-1 * var(--pip-r, 18px)); top: 0; }
+.group-pips i[data-band="empty"] { display: none; }
+.group-pips i[data-band="none"] { background: #cfd8de; }
+.group-pips i[data-band="ideal"] { background: #5dff9a; }
+.group-pips i[data-band="long"] { background: #ffd35a; }
+.group-pips i[data-band="extreme"], .group-pips i[data-band="short"] { background: #ff9a3c; }
+.group-pips i[data-band="out"] { background: #ff5566; }
+.aim-range { position: absolute; left: 50%; top: calc(50% + 20px); transform: translateX(-50%); font-size: 11px; font-weight: 700; color: #e8f6ff; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.hazard-warn { position: absolute; left: 50%; top: calc(50% - 74px); transform: translateX(-50%); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; color: #ffb35a; text-shadow: 0 1px 2px #000; pointer-events: none; white-space: nowrap; }
+.hazard-warn.hidden, .target-box.hidden { display: none; }
+.target-box { position: absolute; transform: translate(-50%, -50%); pointer-events: none; border: 2px solid transparent; --c: #ff5566;
+  background:
+    linear-gradient(var(--c), var(--c)) top left / 12px 2px no-repeat, linear-gradient(var(--c), var(--c)) top left / 2px 12px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 12px 2px no-repeat, linear-gradient(var(--c), var(--c)) top right / 2px 12px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 12px 2px no-repeat, linear-gradient(var(--c), var(--c)) bottom left / 2px 12px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 12px 2px no-repeat, linear-gradient(var(--c), var(--c)) bottom right / 2px 12px no-repeat; }
+.target-box span { position: absolute; left: 100%; top: 0; margin-left: 4px; font-size: 11px; font-weight: 700; color: var(--c); text-shadow: 0 1px 2px #000; white-space: nowrap; }
+.target-box[data-band="ideal"] { --c: #5dff9a; }
+.target-box[data-band="long"] { --c: #ffd35a; }
+.target-box[data-band="extreme"], .target-box[data-band="short"] { --c: #ff9a3c; }
+.lock-ring.idle circle { stroke: rgba(255, 204, 102, 0.35); stroke-width: 1.5; stroke-dasharray: 4 3; stroke-dashoffset: 0; }
 .lock-ring {
   position: absolute;
   left: 50%;
@@ -302,7 +330,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aim-mark.lead { color: #7dffb2; }
 .aim-mark.lead b { width: 26px; height: 16px; border: 2px solid #7dffb2; }
 .aim-mark.drop { color: #ff8844; }
-.aim-mark.drop b { width: 2px; height: 22px; background: #ff8844; }
+.aim-mark.drop b { width: 2px; height: 22px; background: #ff8844; opacity: 0; }
+.aim-mark.drop span { transform: translate(52px, -14px); }
 .aim-mark span { display: block; margin-top: 2px; white-space: nowrap; }
 .charge-bar {
   position: absolute;

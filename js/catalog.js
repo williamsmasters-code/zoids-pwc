@@ -94,8 +94,10 @@ export const MODS = {
 // Weapons Guide, https://zoidsfanon.fandom.com/wiki/Weapons_Guide).
 //
 // delivery is how the round travels. range is the hard max. optimal is full damage.
-// Past optimal, damage falls toward 30% at max and is zero beyond it.
-// heat is per shot (per volley) into that weapon's own 0-100 gauge; cooling is per second.
+// Past optimal, damage follows the class curve in RANGE_PROFILES down to max
+// range and is zero beyond it. Fire modes, bloom, zeroing, refraction and
+// lock cones: js/weaponsys.js and docs/WEAPONS_NOTES.txt.
+// heat is per fire CYCLE (a pulse or salvo splits it over its shots) into that weapon's own 0-100 gauge; cooling is per second.
 // kind "melee" weapons are short hitscan strikes (claws, blades).
 // turret (optional): { arc: radians up to 2*PI, speed: rad/s }. Only honoured
 // on the back mount; tracks and fires at the locked target only (js/turret.js).
@@ -136,10 +138,14 @@ export function damageClassOf(weapon) {
 // beam: power drops hard, accuracy holds. ballistic: power holds, accuracy
 // collapses. missile: power holds, lock takes longer. melee: ideal only.
 export const RANGE_PROFILES = {
-  beam:      { damage: { short: 0.75, ideal: 1, long: 0.5, extreme: 0.2 },  spread: { short: 1, ideal: 1, long: 1.1, extreme: 1.25 }, aim: { short: 1, ideal: 1, long: 1.1, extreme: 1.25 }, lock: null },
-  ballistic: { damage: { short: 0.85, ideal: 1, long: 0.9, extreme: 0.75 }, spread: { short: 2, ideal: 1, long: 2.5, extreme: 5 },     aim: { short: 1.5, ideal: 1, long: 2, extreme: 3.5 },  lock: null },
-  missile:   { damage: { short: 1, ideal: 1, long: 0.95, extreme: 0.85 },   spread: { short: 1, ideal: 1, long: 1, extreme: 1 },        aim: { short: 1, ideal: 1, long: 1, extreme: 1 },      lock: { short: 1, ideal: 1, long: 1.3, extreme: 1.8 } },
-  melee:     { damage: { short: 1, ideal: 1, long: 0, extreme: 0 },         spread: { short: 1, ideal: 1, long: 1, extreme: 1 },        aim: { short: 1, ideal: 1, long: 1, extreme: 1 },      lock: null },
+  // damage / spread are CURVES since the weapons overhaul: the value at 0 m
+  // (short, only below a minRange), 1 through ideal, the long value AT
+  // longRange and the extreme value AT max range, straight lines between.
+  // shortFlat: the short value holds all the way to minRange (missile arming).
+  beam:      { damage: { short: 0.75, ideal: 1, long: 0.3, extreme: 0.1 },   spread: { short: 1, ideal: 1, long: 1.1, extreme: 1.25 }, aim: { short: 1, ideal: 1, long: 1.1, extreme: 1.25 }, lock: null },
+  ballistic: { damage: { short: 0.85, ideal: 1, long: 0.85, extreme: 0.7 },  spread: { short: 2, ideal: 1, long: 3, extreme: 6 },       aim: { short: 1.5, ideal: 1, long: 2, extreme: 3.5 },  lock: null },
+  missile:   { damage: { short: 0.25, ideal: 1, long: 0.95, extreme: 0.85 }, spread: { short: 1, ideal: 1, long: 1, extreme: 1 },        aim: { short: 1, ideal: 1, long: 1, extreme: 1 },      lock: { short: 1, ideal: 1, long: 1.3, extreme: 1.8 }, shortFlat: true },
+  melee:     { damage: { short: 1, ideal: 1, long: 0, extreme: 0 },          spread: { short: 1, ideal: 1, long: 1, extreme: 1 },        aim: { short: 1, ideal: 1, long: 1, extreme: 1 },      lock: null },
 };
 
 export const WEAPONS = {
@@ -151,15 +157,22 @@ export const WEAPONS = {
     delivery: "beam",
     hitscan: true,
     damage: 4.5,
-    rate: 7.5,
+    // Pulse: 3 pulses 0.07 s apart per cycle, 2.5 cycles/s (same 33.75 DPS
+    // and 52.5 heat/s as the old 7.5 shots/s). Heat is per cycle.
+    fireMode: "pulse",
+    burst: 3,
+    burstGap: 0.07,
+    rate: 2.5,
     optimal: 55,
     range: 90,
     // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
     // < long <= longRange < extreme <= range (max).
     minRange: 0,
     longRange: 75,
-    heat: 7,
+    heat: 21,
     cooling: 22,
+    bloom: { perShot: 0.0006, max: 0.004, recover: 0.02 },
+    refract: 1,
     weight: 2,
     size: "S",
     price: 16000,
@@ -174,6 +187,9 @@ export const WEAPONS = {
     delivery: "beam",
     hitscan: true,
     damage: 18,
+    // Sustained beam: 18 damage spread over a 0.45 s beam you hold on target.
+    fireMode: "beam",
+    beamTime: 0.45,
     rate: 1.4,
     optimal: 95,
     range: 160,
@@ -187,6 +203,7 @@ export const WEAPONS = {
     size: "M",
     price: 52000,
     spread: 0.004,
+    refract: 0.8,
     color: 0x3aa0ff,
   },
   doubleBeamCannon: {
@@ -199,6 +216,8 @@ export const WEAPONS = {
     hitscan: true,
     damage: 9,
     volley: 2,
+    fireMode: "beam",
+    beamTime: 0.3,
     rate: 1.5,
     optimal: 70,
     range: 120,
@@ -213,6 +232,7 @@ export const WEAPONS = {
     price: 48000,
     spread: 0.004,
     turret: { arc: Math.PI * 2, speed: 2.8 },
+    refract: 0.85,
     color: 0x58b8ff,
   },
   missilePack: {
@@ -224,13 +244,17 @@ export const WEAPONS = {
     delivery: "rocket",
     hitscan: false,
     damage: 10,
-    volley: 4,
+    // Salvo: 4 missiles rippled 0.14 s apart per cycle. Warheads arm after
+    // 25 m (minRange); closer hits do 25%.
+    fireMode: "salvo",
+    burst: 4,
+    burstGap: 0.14,
     rate: 0.4,
     optimal: 90,
     range: 200,
     // Range bands (js/rangebands.js): short < minRange <= ideal <= optimal
     // < long <= longRange < extreme <= range (max).
-    minRange: 0,
+    minRange: 25,
     longRange: 150,
     heat: 12,
     cooling: 10,
@@ -241,6 +265,7 @@ export const WEAPONS = {
     speed: 60,
     popTime: 0.52,
     lockTime: 2.2,
+    lockCone: 8,
     homing: true,
     color: 0xffcc66,
   },
@@ -252,6 +277,9 @@ export const WEAPONS = {
     delivery: "ballistic",
     hitscan: false,
     damage: 2.2,
+    // Automatic: spins up from 35% rate to 16 rounds/s over 0.6 s.
+    fireMode: "auto",
+    spinUp: 0.6,
     rate: 16,
     optimal: 35,
     range: 100,
@@ -264,9 +292,11 @@ export const WEAPONS = {
     weight: 5,
     size: "M",
     price: 34000,
-    spread: 0.04,
+    spread: 0.03,
+    bloom: { perShot: 0.0025, max: 0.045, recover: 0.08 },
     speed: 170,
     gravity: 12,
+    zero: 35,
     homing: false,
     color: 0xffe08a,
   },
@@ -279,6 +309,7 @@ export const WEAPONS = {
     delivery: "ballistic",
     hitscan: false,
     damage: 40,
+    fireMode: "single",
     rate: 0.55,
     optimal: 140,
     range: 230,
@@ -291,9 +322,12 @@ export const WEAPONS = {
     weight: 7,
     size: "L",
     price: 98000,
-    spread: 0.004,
+    spread: 0.003,
+    bloom: { perShot: 0.012, max: 0.02, recover: 0.025, delay: 0.3 },
+    moveSpread: 0.03,
     speed: 220,
     gravity: 4,
+    zero: 140,
     homing: false,
     color: 0xfff0a0,
   },
@@ -306,6 +340,7 @@ export const WEAPONS = {
     delivery: "ballistic",
     hitscan: false,
     damage: 46,
+    fireMode: "single",
     rate: 0.5,
     optimal: 45,
     range: 105,
@@ -319,8 +354,10 @@ export const WEAPONS = {
     size: "L",
     price: 76000,
     spread: 0.02,
-    speed: 75,
-    gravity: 12,
+    bloom: { perShot: 0.01, max: 0.02, recover: 0.02 },
+    speed: 80,
+    gravity: 10,
+    zero: 45,
     homing: false,
     color: 0xff8844,
   },
@@ -347,6 +384,7 @@ export const WEAPONS = {
     price: 190000,
     spread: 0.004,
     chargeTime: 3,
+    refract: 0.35,
     color: 0xd56bff,
   },
   strikeLaserClaw: {

@@ -389,7 +389,7 @@ try {
   if (hiddenGuns.length) note("fpv", `third person hid weapons: ${hiddenGuns.join(",")}`);
 
   async function waitCool() {
-    const deadline = Date.now() + 900;
+    const deadline = Date.now() + 1500; // pulse laser cycle is 0.4 s since the weapons overhaul (was 0.13 s)
     while (Date.now() < deadline) {
       const hot = await page.evaluate(() => window.__ZOIDS__.weaponCooldowns().some((row) => row.cooldown > 0.02));
       if (!hot) return;
@@ -731,6 +731,9 @@ try {
 
   await page.evaluate(() => window.__ZOIDS__.installWeapon("headWeapon", "shockCannon"));
   await page.evaluate(() => window.__ZOIDS__.aimAtEnemy(0.5, -0.04));
+  // Weapons overhaul: the LEAD box needs a target lock (R = enemy under the
+  // reticle). The rocket seeker lock above is separate from the target lock.
+  await page.evaluate(() => window.__ZOIDS__.lockKey("r"));
   await sleep(280);
   let ballistic = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
   if (!ballistic.markers || !ballistic.markers.drop) {
@@ -743,7 +746,9 @@ try {
   console.log("screenshot screenshots/ballistic-aim.png", markText.replace(/\s+/g, " "));
   if (!/IMPACT|SHORT/.test(markText)) note("ballistic", `no impact marker ${markText}`);
   if (!/LEAD/.test(markText)) note("ballistic", `no lead marker ${markText}`);
-  if (!/DROP/.test(markText)) note("ballistic", `no drop marker ${JSON.stringify(ballistic.markers)}`);
+  // Weapons overhaul: guns are zeroed at optimal, so the drop mark reads
+  // DROP past zero range and ZERO inside it.
+  if (!/DROP|ZERO/.test(markText)) note("ballistic", `no drop marker ${JSON.stringify(ballistic.markers)}`);
 
   await page.evaluate(() => {
     window.__ZOIDS__.installWeapon("headWeapon", "chargedParticle");
