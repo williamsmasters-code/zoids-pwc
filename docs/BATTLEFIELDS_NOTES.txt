@@ -1,0 +1,241 @@
+BATTLEFIELDS NOTES
+Zoids Mercenaries, November 2026
+
+This pass replaces the three open maps with four battlefields built for
+cover fighting in a MechWarrior 5 style: an abandoned city, a dense jungle,
+a sparse jungle and a rocky mountain pass. Terrain and cover now stop
+shots and line of sight, water changes how Zoids move, cool and shoot, small
+props break, and enemy pilots find their way around all of it.
+
+All battlefield rules live in js/battlefield.js, which has no three.js in it,
+so the node tests and the game use the same data and maths. js/maps.js only
+draws what js/battlefield.js generates. Everything you see is procedural:
+no new models, textures or sounds were added, so CREDITS.txt, README.txt and
+the hangar credits button are unchanged (the existing CC-BY credits stay as
+they were).
+
+
+1. AUDIT OF THE OLD MAPS
+
+Desert (Red Dune Expanse), plains (Verdant Reach) and arctic (White Shelf)
+were one rolling heightfield each with a few rocks, two or three decorative
+ridges and a handful of boxes for the assault outpost. Problems found:
+  Cover did nothing for line of sight. Missile locks and AI fire went
+  straight through rocks and hills; only the shot ray hit meshes.
+  Shots raycast against every map mesh, which would be far too slow with
+  real cities or forests (about 9,000 triangles tested per ray).
+  Ridges had no collision; only round rocks and box buildings did.
+  Spawns were fixed points with no check, so a unit could start inside a
+  rock if the layout changed.
+  AI pilots drove straight at the target and only reversed when stuck.
+  No water, no destructibles, one sky colour and one flat fog per map.
+
+Old contract ids still load: desert and arctic open the Rocky Mountain Pass,
+plains opens the Sparse Jungle (BIOME_ALIAS in js/battlefield.js).
+
+
+2. THE FOUR BATTLEFIELDS
+
+All maps: playable box 1224 m square (units clamp at +-612 m), drawn ground
+2000 m square with distant backdrop (skyline, hills or snow peaks). Fixed
+clear zones keep the mission objectives open: spawn (0, 60) r 82, centre
+r 42, the three survey beacons r 26, the assault outpost (0, -80) r 58, and
+the convoy start and exit (0, +-300). The convoy road runs along x = 0 from
+z = 340 to z = -330 and is 28 m wide.
+
+Abandoned City
+  Blocks on a 70 m grid, 44 m square, so streets are 26 m wide; the
+  central avenue is 68 m wide between block faces (28 m paved road).
+  Per block: 10% empty lot, 18% collapsed (rubble heap plus a fallen slab
+  tilted 60-75 degrees), towers 32-58 m tall, or 2-4 mid-rise buildings
+  10-28 m tall; 40% of buildings are visibly broken. A skyline ring of
+  buildings stands outside the play box.
+  Seed 1001: 376 building pieces, 34 rubble heaps, 70 cars and barriers,
+  480 cover pieces in all.
+  Hazards: 6 clouds alternating smoke and dust, placed over burning wrecks
+  (flickering flames). Water: a flooded canal across the map at z = -150,
+  22 m wide, 2.6 m deep. The convoy wades through it.
+  Look: dusty amber sky, fog density 0.0052, warm low sun.
+
+Dense Jungle
+  About 285 big trees (trunks 12-17 m, 1.6-2.7 m radius, canopy blobs on
+  top), 180 saplings, 260 undergrowth bushes, 18 boulders. Trees also
+  crowd the outer 45% of the clear zones, so the drop zone is a small
+  clearing, not a lawn. Trunks, mist and fog keep sightlines short.
+  Hazards: 7 mist banks out to 320 m. Water: a winding river around
+  z = 195 (26 m wide, 2.4 m deep) and a pool (r 22).
+  Look: green-grey sky, fog density 0.0078, soft sun.
+
+Sparse Jungle
+  26 tree clusters (3-7 trees each) around open clearings, 40 lone giants,
+  70 saplings, 140 bushes, 260 grass tufts, 26 boulders. 243 cover pieces.
+  Long sightlines across the clearings.
+  Hazards: 3 mist banks. Water: two ponds (r 30 and r 24) and two streams.
+  Look: blue sky, light haze (fog density 0.0036), bright sun.
+
+Rocky Mountain Pass
+  A winding canyon: centre line x = 26 sin(0.0065 z + 0.8), floor 110-265 m
+  wide, with two chokepoints about 110 m wide at z = 200 and z = -270.
+  The walls are an 8 m talus slope, then cliffs that climb 3.4 m per metre
+  to about 95 m; anything steeper than 3 m above the talus is a wall ground
+  Zoids cannot climb (they slide back). Two 5.5-7.5 m rock ridges cross
+  half the floor (one each side, gap at the road) for hull-down fighting.
+  8 rock spires (24-46 m tall), 64 boulders on the floor (the small ones
+  break). Snow only on the far backdrop peaks.
+  Hazards: 5 dust clouds. Water: two meltwater pools (r 19) at the cliff
+  feet.
+  Look: deep blue sky, fog density 0.0034, hard white sun.
+
+Scale checks (tests/battlefields.test.mjs): the whole convoy road and
+every clear zone are free for a Death Saurer (radius 5.4 m); more than 55%
+of sampled city side-street points fit one; both chokes fit one; the
+tallest cover (58 m) is under the Pteras ceiling (70 m above the ground).
+
+
+3. COVER AND LINE OF SIGHT
+
+Cover is data, not meshes: circles (trees, saplings, boulders, spires) and
+boxes (buildings, rubble, cars, barriers), each with a base and top height,
+kept in a 32 m spatial grid.
+  Shots: the shot ray tests the cover pieces analytically through the grid
+  (rayBlockers) and the terrain by marching the heightfield in 3 m steps
+  with a 7-step bisection (rayGround). Only Zoid parts still go through
+  the three.js raycaster. Shells and beams stop on the first thing hit.
+  Line of sight: lineBlocked() samples the terrain every 4 m and tests the
+  cover pieces along the line. Used by missile locks (SEEKER BLOCKED:
+  COVER or TERRAIN), AI fire and the AI cover search.
+  Collision: units are pushed out of cover pieces and slid back off cliffs.
+  Pteras flies over cover (its floor is the top of the cover under it).
+
+Destructible props: cars (30 hp), barriers (60 hp), saplings (35 hp) and
+small boulders (90 hp, under 2.8 m radius). Any shot or beam damages
+them; a Zoid at least as wide as the prop (crush radius 3.0-4.0 m)
+walks straight through and flattens it. Gojulas, Death Saurer and the other
+big Zoids crush cars and saplings underfoot. Buildings, big trees, big
+rocks and spires are indestructible.
+
+
+4. WATER AND HAZARDS
+
+Water (WATER in js/battlefield.js)
+  Speed: x(1 - 0.4 * min(1, depth / max(1.5, 0.9 * radius))). Deep water
+  costs a light Zoid 40% of its speed; a Death Saurer in 2 m of water
+  loses about 16%. Flyers in the air are not affected.
+  Cooling: weapons cool 50% faster while standing in 0.3 m or more of
+  water. The HUD shows WADING, COOLING +50%.
+  Beams: under the surface a beam loses power fast (absorb 0.09 per m,
+  scatter 0.004 rad per m), like a very thick cloud. Shells, missiles and
+  seekers ignore water.
+  Spawns never land in water deeper than 1.2 m.
+Clouds (HAZARD_KINDS in js/weaponsys.js)
+  City smoke (absorb 0.03/m) and dust (0.024/m), jungle mist (0.026/m),
+  pass dust. Beams bend and lose power through them and 12 m of cloud on
+  the line of sight blocks a missile lock, as in the weapons overhaul.
+
+
+5. SPAWNS
+
+Every spawn request goes through findFreeSpot(): if the requested point is
+inside cover, on a cliff or in deep water, it walks a spiral outwards in
+4 m rings until it finds a dry, free spot for that Zoid's radius (plus
+1.5 m). Scripted units (convoy trucks, outpost turrets, generator) keep
+their exact places inside the clear zones. The node test checks every
+place the missions actually spawn units (wave lines ahead of the player,
+the outpost, 40 escort ambush layouts) on four maps and three seeds: no
+invalid spot, under 5% moved more than 40 m, and every spot can walk to the
+player start.
+
+
+6. AI NAVIGATION
+
+Enemy pilots get a nav helper from the mission (ctx.nav):
+  LOS: checked from the pilot's eye to the target's aim point, cached for
+  0.25 s. Without sight the pilot holds fire; after 1.5 s unseen it pushes
+  toward the target to regain contact.
+  Routes: when the straight walk to the target (or to a cover spot) is
+  blocked, the pilot plans a route with A* on an 8 m grid (8 neighbours,
+  no corner cutting, deep water costs 3x), string-pulled to a few
+  waypoints. Re-planned every 1.5 s or when the goal moves 25 m. The pilot
+  heads for the furthest waypoint (up to 3 ahead) it can walk to straight
+  (checked every 0.3 s). The grid is built lazily per size class (normal
+  and superheavy), about 30 ms in the city, and dropped when cover is
+  added.
+  Steering: feelers at 1.5 m, 3.5 m, 45% and 100% of 10 + 2 x radius m
+  ahead, trying 0, +-20, +-40, +-60, +-86 and +-120 degrees off the wanted
+  heading, the flank side first.
+  Cover: when its hottest weapon passes 78% heat the pilot looks for a spot
+  behind hard cover (4 m or taller, not destructible) within 70 m that
+  hides it from the target, goes there, and comes out when heat drops
+  under 30% or after 6 s (cooldown 3 s to look again, 8 s after leaving).
+  Stuck: no progress for 0.8 s means reverse and flip the flank side;
+  stuck twice within 5 s means a 1.6 s break-away on a fresh heading.
+  Flyers, turrets and bracing charge-cannon pilots skip all of this.
+In the node test a pilot following the same rules reaches 8 of 8 far
+goals on every map for a normal and a superheavy Zoid with no stalls; in
+the browser test, enemies 150-180 m away close to 60-90 m in 20 s on every
+map with 0 stuck events and never inside cover.
+
+
+7. LOOK
+
+Per map: sky dome with a vertex gradient (top and horizon colours), a sun
+disc, hemisphere light colours, sun colour, direction and strength, fog
+colour and density (all in LOOKS in js/battlefield.js). The ground has
+vertex colours for low and high ground, cliff faces and mud under water.
+City facades use a procedural canvas texture (windows, some lit, some
+blown out); the avenue uses a procedural asphalt texture (lane lines,
+cracks, patches). Water is a translucent surface. Instanced meshes draw
+trees, saplings, bushes, grass, boulders and spires; the city is two
+merged meshes plus instanced cars.
+
+Minimap: a static layer drawn once per mission at 0.5 px per m (cliffs,
+water, indestructible cover), rotated with the player under the live
+contacts.
+
+
+8. PERFORMANCE
+
+Measured in headless Chrome with SwiftShader (software GL), 1280 x 720,
+average of 40 frames in the browser test:
+  Abandoned City about 56 ms, Dense Jungle about 64 ms, Sparse Jungle
+  about 50 ms, Rocky Mountain Pass about 42-47 ms (budget 100 ms).
+  tests/glb_browser.mjs (escort in the city): 65.8 ms.
+How:
+  Shots and LOS use analytic cover tests, not mesh raycasts.
+  Lambert materials everywhere, merged city meshes, instancing for all
+  vegetation and rocks, a coarse skirt beyond the play box with the part
+  under the detailed ground removed, and draw order cover, ground, skirt,
+  sky so hidden pixels are skipped.
+  MSAA is off on software GL and on high-DPI phones (js/quality.js). On
+  SwiftShader 4x MSAA alone cost about 35 ms of a 100 ms city frame.
+  Real GPUs keep MSAA. ?aa=1 or ?aa=0 in the URL forces it on or off.
+  The dense jungle draws one canopy blob per tree (two cost about 8 ms).
+Without the MSAA change the new maps measured 95-115 ms in the same
+harness, so the budget depends on it on software GL.
+
+
+9. TESTS
+
+tests/battlefields.test.mjs (node): field generation time, cover and
+hazard counts, old biome aliases, wading rules, clear zones and the convoy
+road free for superheavies, real spawn requests valid and reachable,
+beams weakened through water, building and canyon wall blocking LOS and
+shots, a cover spot found behind a building, pass width and cliffs, city
+street width, A* plus steering reaching 8 far goals per map and size.
+tests/battlefields_browser.mjs (browser, each map forced in turn):
+frame time under 100 ms, no unit spawned inside cover, the game's own shot
+ray stopped by cover, missile lock blocked by cover, canyon wall stopping a
+shot, wading slowing the player (about 25% less distance in 2 s), a prop
+destroyed, live AI closing in without getting stuck, and screenshots in
+screenshots/battlefields/ (wide, third person, cockpit and wading per map).
+
+
+10. KNOWN LIMITS
+
+Buildings, big trees and spires cannot be destroyed.
+Fallen slabs and leaning ruins collide as upright boxes.
+The minimap layer does not update when a prop breaks (props are not on it).
+AI routes are planned on an 8 m grid, so pilots keep about 4 m off walls
+and will not squeeze through gaps narrower than about 9 m.
+The convoy trucks drive straight down the road at their fixed speed,
+including through the city canal (2.6 m deep); water does not slow them.

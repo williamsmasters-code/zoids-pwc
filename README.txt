@@ -20,8 +20,9 @@ RUN
   tests/reset.test.mjs, tests/models_check.mjs, tests/heat.test.mjs,
   tests/skills.test.mjs, tests/indicators.test.mjs, tests/weapons.test.mjs,
   tests/glb.test.mjs, tests/headless.mjs, tests/glb_browser.mjs, and the
-  rest listed in package.json, ending with tests/weapons_overhaul.test.mjs
-  and tests/weapons_overhaul_browser.mjs.
+  rest listed in package.json, including tests/weapons_overhaul.test.mjs,
+  tests/battlefields.test.mjs, tests/weapons_overhaul_browser.mjs and,
+  last, tests/battlefields_browser.mjs.
   The browser test serves this directory on port 8080, so stop any other
   server on that port first. Screenshots land in screenshots/.
 
@@ -86,7 +87,7 @@ WEAPONS
 
   Beam. Pulse Laser, Beam Cannon, Double Beam Cannon, Charged Particle
   Cannon. Instant, no drop, but damage falls fast past ideal (30% at the
-  long mark, 10% at max). Dust, smoke and ice-fog clouds on every map, and
+  long mark, 10% at max). Smoke, dust and mist clouds on every map, and
   smoke from wrecks, refract beams: they bend, scatter visibly and lose
   power (about 38% lost through 20 m of dust for a Pulse Laser; the
   Charged Particle Cannon only loses about 15%). Shells and missiles ignore
@@ -144,13 +145,43 @@ FEATURES
   or past radar range, an arrow with the distance sits on the screen edge.
   The minimap keeps that contact clamped to its own edge.
   The HUD paper doll shows the player and the locked target, color coded.
-  Three open biomes: Red Dune Expanse, Verdant Reach, White Shelf. A few
-  rocks and ridges, large terrain, distance fog.
+  Four battlefields (see BATTLEFIELDS below): Abandoned City, Dense Jungle,
+  Sparse Jungle, Rocky Mountain Pass. Hard cover stops shots and line of
+  sight, water slows Zoids and cools weapons, small props break.
   Contracts: destroy a lance, escort supply trucks, scan three beacons, or
   assault a generator. Win for a payout and a small salvage bonus, then pay
   repair costs or take a field loan if the core is gone. Enemy Zoids move,
   flank, aim, and shoot. Enemy pilots may use their Zoid skill when a target
   is close. A missing skill does nothing.
+
+BATTLEFIELDS
+  Every map is 1224 m square inside a terrain rim (canyon walls in the
+  pass). Buildings, trees, rocks and terrain are hard cover: shells and
+  beams stop on them, missile locks need a clear line of sight (SEEKER
+  BLOCKED: COVER or TERRAIN), and enemy pilots hold fire without sight.
+  Abandoned City: ruined blocks on a 70 m grid with 26 m streets, a 68 m
+  central avenue (28 m paved) for the convoy, towers up to 58 m, collapsed
+  blocks and fallen slabs, burning wrecks, smoke and dust clouds, and a
+  flooded canal. Wrecked cars and barriers break (and superheavies walk
+  through them).
+  Dense Jungle: about 280 big trees, 180 saplings, thick undergrowth,
+  heavy fog and seven mist banks, a river and a pool. Short sightlines.
+  Sparse Jungle: tree clusters around open clearings, lone giants, ponds
+  and streams, light haze. Long sightlines.
+  Rocky Mountain Pass: a winding canyon 110-265 m wide with cliffs up to
+  about 95 m that ground Zoids cannot climb, two 110 m chokepoints, low ridges,
+  rock spires, boulders, meltwater pools and dust.
+  Water: wading slows a ground Zoid up to 40% (big Zoids less), weapons
+  cool 50% faster while wading (HUD: WADING), and beams through water
+  lose power fast. Mist scatters beams like dust.
+  Destructible: cars, barriers, saplings and small boulders (shoot them, or
+  walk through them with a Zoid at least as wide as the prop).
+  Enemy pilots plan routes around blocks, cliffs and deep water, step
+  around cover, duck behind hard cover to cool hot weapons, and break away
+  when stuck. Pteras flies over all cover (tallest cover 58 m, ceiling
+  70 m above the ground). All set dressing is procedural (no new assets).
+  MSAA is switched off on software GL and high-DPI phones (?aa=1 forces it
+  on, ?aa=0 off). See docs/BATTLEFIELDS_NOTES.txt.
 
 SKILLS
   Q is the active skill. The HUD names it and shows cooldown or heat.
@@ -288,14 +319,15 @@ KNOWN GAPS
   to brace while the target is in range.
   Salvage is a C-bill bonus, not a recovered weapon.
   Enemy pilots are simple: close, circle, face the target, fire in range.
-  Mission variety is four contract types on three heightfield maps.
+  Mission variety is four contract types on four battlefields.
   Sound is short synthesized beeps. There is no music.
   Keyboard and mouse only. No joystick.
-  Terrain collision is a radial rock and an axis-aligned building. Ridges
-  are decorative. The first-person view is a camera at the head, not a
-  cockpit interior.
+  Cover collision is circles and axis-aligned boxes (fallen slabs and
+  tilted ruins collide as boxes). Buildings cannot be destroyed. The
+  first-person view is a camera at the head, not a cockpit interior.
   Friendly fire is possible. The convoy trucks do not fight.
 
 Speed: canon-relative top speeds, 3 Speed Booster levels (full set = canon top speed), per-Zoid acceleration, KM/H / MPH toggle. See docs/SPEED_NOTES.txt.
 Install: hangar "Add to Home Screen" button; see docs/HOME_SCREEN_NOTES.txt.
 Weapons: targeting box and lock rules, bloom reticle, fire modes, zeroing and drop, beam refraction in clouds, missile arming. See docs/WEAPONS_NOTES.txt.
+Battlefields: abandoned city, dense and sparse jungle, rocky mountain pass; cover, LOS, water, destructible props, AI routing. See docs/BATTLEFIELDS_NOTES.txt.
