@@ -197,9 +197,10 @@ contacts.
 
 Measured in headless Chrome with SwiftShader (software GL), 1280 x 720,
 average of 40 frames in the browser test:
-  Abandoned City about 56 ms, Dense Jungle about 64 ms, Sparse Jungle
-  about 50 ms, Rocky Mountain Pass about 42-47 ms (budget 100 ms).
-  tests/glb_browser.mjs (escort in the city): 65.8 ms.
+  Final npm test run: Abandoned City 65.8 ms, Dense Jungle 57.7 ms,
+  Sparse Jungle 51.7 ms, Rocky Mountain Pass 56.8 ms (budget 100 ms;
+  earlier runs 42-67 ms). tests/glb_browser.mjs (escort in the city)
+  69.2 ms, tests/shield_anim_browser.mjs 73.5 ms.
 How:
   Shots and LOS use analytic cover tests, not mesh raycasts.
   Lambert materials everywhere, merged city meshes, instancing for all
