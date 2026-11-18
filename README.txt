@@ -19,7 +19,9 @@ RUN
   That runs tests/damage.test.mjs, tests/aim.test.mjs, tests/input.test.mjs,
   tests/reset.test.mjs, tests/models_check.mjs, tests/heat.test.mjs,
   tests/skills.test.mjs, tests/indicators.test.mjs, tests/weapons.test.mjs,
-  tests/glb.test.mjs, tests/headless.mjs, and tests/glb_browser.mjs.
+  tests/glb.test.mjs, tests/headless.mjs, tests/glb_browser.mjs, and the
+  rest listed in package.json, ending with tests/weapons_overhaul.test.mjs
+  and tests/weapons_overhaul_browser.mjs.
   The browser test serves this directory on port 8080, so stop any other
   server on that port first. Screenshots land in screenshots/.
 
@@ -40,17 +42,19 @@ CONTROLS
   weapon fires from its own mount toward the world point under that
   crosshair. If the center ray hits nothing, the mounts aim 1000 m out
   along it. The player's own Zoid is ignored by that ray. Beams use that
-  ray directly. Ballistic guns raise the barrel so the shell's arc passes
-  through the same point when a solution exists. The weapon dock shows
-  groups 1-4 as ready, cooling, charging, overheated, disabled, or empty,
-  plus that group's max range.
+  ray directly. Ballistic guns are zeroed at their ideal range: inside it
+  the shell meets the crosshair, past it the shell lands low (see WEAPONS).
+  The crosshair circle grows with spread (bloom), shows the range to the
+  point under it, and has four group pips coloured by range band. The
+  weapon dock shows groups 1-4 as ready, cooling, charging, overheated,
+  disabled, or empty, plus that group's max range.
   Each weapon has its own heat gauge, heat per shot, and cooling rate.
   A weapon that reaches 100 heat locks until it cools below 55. The other
   weapons keep firing. The PEAK bar is the hottest weapon, not a shared pool.
     Shift                      boost, if back boosters are fitted and the back mount stands
     V                          first person / third person
-    Tab                        cycle target
-    R                          nearest hostile
+    Tab                        cycle targets in sensor range, nearest first
+    R                          lock the enemy under the crosshair (12 degree box), else nearest
     H                          control list, weapon rules, and every Zoid skill
     Esc                        pause and release the mouse
 
@@ -58,27 +62,41 @@ CONTROLS
   the legs catch up at the Zoid's turn rate. There is no overall health bar.
 
 WEAPONS
-  Four deliveries. Keyboard and mouse only. Heat and crosshair aim stay.
+  Full rules and the stat table: docs/WEAPONS_NOTES.txt. Short version:
 
-  Beam. Pulse Laser and Beam Cannon. The shot is hitscan: damage lands
-  along the aim ray in the same instant, with a brief tracer. No travel
-  time and no drop.
+  Targeting. Sensor lock range is 190 m (more with sensor skills). R locks
+  the enemy inside a 12 degree box round the crosshair, else the nearest;
+  Tab cycles. A target outside sensor range keeps the lock for 3 s, then it
+  drops. Turrets fire only at the locked target. Corner brackets mark the
+  locked enemy.
 
-  Ballistic. Gatling Gun and Shock Cannon. A real shell with speed and
-  gravity (12 m/s^2). The barrel is elevated by the low-arc solution so
-  the shell meets the crosshair point when the gun can reach it. The HUD
-  shows that impact, a drop marker for an uncompensated shot, and a lead
-  bracket from the target's velocity and the shell speed. Drop and travel
-  time make close, fast targets harder.
+  Fire modes. Gatling: automatic, spins up over 0.6 s. Pulse Laser: bursts
+  of 3. Beam Cannon: a sustained 0.45 s beam you hold on the target.
+  Missile Pack: salvo of 4. Shock Cannon and Sniper Rifle: single heavy
+  shots. Charged Particle Cannon: 3 s stationary charge, unchanged.
 
-  Rocket. Missile Pack. Homing, but it will not launch until a lock
-  finishes. The lock takes 1.5 s on a still target under the crosshair, or
-  on the targeted enemy when that enemy is within about 6 degrees of the
-  crosshair. Strength is 1 at 0 m/s and 0 at 30 m/s, and the lock builds at
-  strength / 1.5 s. A target at 30 m/s or more breaks a lock and cannot be
-  tracked. There is no dumb-fire. A locked missile pops upward for 0.52 s,
-  then arcs down. Turn rate is 0.6 + strength * 3.2, so a fast target is
-  easy to miss.
+  Spread. Every shot scatters inside a cone that grows with sustained fire
+  (bloom), movement, heat above 60%, and range past ideal for guns.
+
+  Ballistic. Gatling, Shock Cannon, Sniper Rifle. Real shells with travel
+  time and gravity. Guns are zeroed at their ideal range; past it shells
+  land low (Shock Cannon about 4.3 m low at 100 m), so aim high or use the
+  LEAD box. The HUD shows the real IMPACT point, DROP or ZERO, and LEAD for
+  the locked target. Damage falls to 85% at the long mark and 70% at max.
+
+  Beam. Pulse Laser, Beam Cannon, Double Beam Cannon, Charged Particle
+  Cannon. Instant, no drop, but damage falls fast past ideal (30% at the
+  long mark, 10% at max). Dust, smoke and ice-fog clouds on every map, and
+  smoke from wrecks, refract beams: they bend, scatter visibly and lose
+  power (about 38% lost through 20 m of dust for a Pulse Laser; the
+  Charged Particle Cannon only loses about 15%). Shells and missiles ignore
+  clouds.
+
+  Rocket. Missile Pack. Will not launch until a lock finishes: 2.2 s on a
+  still target under the crosshair or within the 8 degree seeker cone.
+  Speed weakens the lock and 30 m/s breaks it. A cloud on the line of
+  sight blocks the lock (SEEKER BLOCKED), and a target inside a cloud
+  blinds missiles in flight. Warheads arm after 25 m (25% damage closer).
 
   Charge. Charged Particle Cannon. Hold the fire button for 3 seconds
   while stationary (planar speed under 0.75 m/s). The charge bar fills.
@@ -88,20 +106,21 @@ WEAPONS
   separate instant bolt on Q. Q is a tap, not a hold, so that skill does
   not use this 3 second rule.
 
-  Range. Every weapon has its own optimal range and a hard max. Damage is
-  full up to optimal, falls linearly to 30% at the max, and is zero past
-  it. The hangar cards, the equipped readout, and the weapon dock list the
-  max. If the locked target is past a group's max, that dock row reads
+  AI pilots use the same spread, drop, falloff, refraction and lock rules.
+  Higher difficulty pilots compensate for shell drop better.
+
+  Range. If the locked target is past a group's max, that dock row reads
   OUT OF RANGE. If it is past every fitted weapon, the crosshair turns red
   and the target line says OUT OF RANGE. Sensor range is a different line:
   OUT OF SENSOR RANGE.
 
-  Pulse Laser              beam       opt 50 m    max 85 m    hitscan
-  Beam Cannon              beam       opt 90 m    max 150 m   hitscan
-  Gatling Gun              ballistic  opt 40 m    max 110 m   170 m/s
-  Shock Cannon             ballistic  opt 60 m    max 130 m   82 m/s
-  Missile Pack             rocket     opt 80 m    max 200 m   lock 1.5 s, 68 m/s, volley 4
-  Charged Particle Cannon  charge     opt 110 m   max 220 m   hold 3 s, then hitscan
+  Pulse Laser              beam       ideal 55 m   max 90 m    bursts of 3
+  Beam Cannon              beam       ideal 95 m   max 160 m   0.45 s beam
+  Gatling Gun              ballistic  ideal 35 m   max 100 m   170 m/s, zero 35 m
+  Shock Cannon             ballistic  ideal 45 m   max 105 m   80 m/s, zero 45 m
+  Sniper Rifle             ballistic  ideal 140 m  max 230 m   220 m/s, zero 140 m
+  Missile Pack             rocket     ideal 90 m   max 200 m   lock 2.2 s, salvo 4, arms 25 m
+  Charged Particle Cannon  charge     ideal 130 m  max 240 m   hold 3 s, then hitscan
 
 FEATURES
   Thirteen playable Zoids: Shield Liger, Blade Liger, Command Wolf, Gojulas,
@@ -263,8 +282,8 @@ KNOWN GAPS
   See docs/NEW_ZOIDS_NOTES.txt.
   No multiplayer. Melee is the Blade Liger's laser-blade dash only.
   Weapons have no ammo count. Heat is per weapon, and there is no magazine.
-  Beams hit instantly. Cannons and the gatling drop. Missiles need a 1.5 s
-  lock and cannot launch without one. The charged particle cannon fires
+  Beams hit instantly but refract in clouds. Shells drop past zero range.
+  Missiles need a 2.2 s lock and cannot launch without one. The charged particle cannon fires
   only after a 3 s stationary hold. Enemy pilots carrying that cannon stop
   to brace while the target is in range.
   Salvage is a C-bill bonus, not a recovered weapon.
@@ -279,3 +298,4 @@ KNOWN GAPS
 
 Speed: canon-relative top speeds, 3 Speed Booster levels (full set = canon top speed), per-Zoid acceleration, KM/H / MPH toggle. See docs/SPEED_NOTES.txt.
 Install: hangar "Add to Home Screen" button; see docs/HOME_SCREEN_NOTES.txt.
+Weapons: targeting box and lock rules, bloom reticle, fire modes, zeroing and drop, beam refraction in clouds, missile arming. See docs/WEAPONS_NOTES.txt.

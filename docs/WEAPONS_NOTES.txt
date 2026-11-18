@@ -1,0 +1,321 @@
+WEAPONS OVERHAUL NOTES
+Zoids Mercenaries, November 2026
+
+This pass reworks how weapons aim, fire, travel and lose power, in a
+MechWarrior 5 style. Every Zoid keeps its existing loadout; the per-shot
+damage of every weapon is unchanged, and the sustained damage per second of
+every weapon is the same as before. What changed is how hard it is to land
+that damage, and where.
+
+All the rules live in one file, js/weaponsys.js, which has no three.js in it,
+so the node tests and the game use exactly the same maths. The player and
+the AI pilots go through the same functions.
+
+
+1. TARGETING
+
+Sensor lock range
+  190 m, multiplied by the Zoid's sensor quality and any radar skill. You can
+  only lock enemies inside it. The target panel still says OUT OF SENSOR
+  RANGE for a contact you can see but not lock.
+
+Targeting box
+  R locks the enemy closest to the crosshair inside a 12 degree box around
+  the crosshair. If nobody is inside the box, R locks the nearest enemy in
+  sensor range. If nobody is in range at all, you get "No contacts in sensor
+  range".
+
+Target cycling
+  Tab steps through enemies inside sensor range, nearest first, and wraps.
+
+Lock loss
+  A dead target drops at once. A target outside sensor range keeps your lock
+  for 3 seconds, then the lock drops with "Target lock lost". Coming back
+  into range inside the 3 seconds resets the timer.
+
+At mission start you are only locked if an enemy is already inside sensor
+range (before, the nearest enemy was locked from any distance).
+
+Turrets still fire ONLY at the locked target, exactly as before.
+
+Missile seeker cone
+  Missiles lock on the enemy under the crosshair, or on your locked target if
+  it sits inside the weapon's 8 degree seeker cone (was 6 degrees). The cone
+  is drawn as a faint dashed circle round the crosshair whenever a missile
+  weapon is fitted, and it fills as the lock builds.
+
+
+2. RETICLE AND HUD
+
+  Bloom circle   The crosshair circle grows with group 1's current spread:
+                 sustained fire, moving and hot barrels all widen it. It
+                 shrinks back when you stop.
+  Group pips     Four small ticks round the circle (top = group 1, right = 2,
+                 bottom = 3, left = 4), each coloured by that group's range
+                 band on the target: green ideal, yellow long, orange extreme
+                 or short, red out of range.
+  Range          The number under the circle is the distance to whatever the
+                 crosshair is on.
+  Target box     Corner brackets round the locked enemy with its range,
+                 coloured by group 1's band.
+  IMPACT         For ballistic guns, a diamond where the shell will REALLY
+                 land at the crosshair distance.
+  DROP / ZERO    How far below the crosshair that is ("DROP 4.0m"), or
+                 "ZERO 45m" when you are inside the gun's zero range and the
+                 shell meets the crosshair.
+  LEAD           A box showing where to put the crosshair to hit the locked
+                 enemy if it keeps moving, with shell travel time AND drop
+                 worked in.
+  Warnings       "BEAM SCATTER, DUST 20 m" when your line of fire crosses a
+                 cloud with a beam weapon fitted, and "SEEKER BLOCKED, DUST"
+                 when a cloud stops your missile lock.
+
+
+3. FIRE MODES AND FIRING SPEED
+
+Heat in the catalog is now per CYCLE. A pulse or a salvo splits that heat
+evenly over its shots.
+
+  auto    Gatling Gun. Spins up from 35% of its rate to the full 16 rounds a
+          second over 0.6 s, and spins down when released.
+  single  Shock Cannon (0.5 a second), Sniper Rifle (0.55 a second). One
+          heavy shell per pull.
+  pulse   Pulse Laser. Bursts of 3 pulses 0.07 s apart, 2.5 bursts a second.
+          Once a burst starts it finishes even if you let go.
+  beam    Beam Cannon and the Double-Barreled Beam Cannon turret. A sustained
+          beam you have to hold on the target: the Beam Cannon's 18 damage is
+          spread over a 0.45 s beam, the twin turret's over 0.3 s. Damage
+          lands every frame the beam touches something.
+  salvo   Missile Pack. A ripple of 4 missiles 0.14 s apart, one salvo every
+          2.5 s, only once the lock is complete.
+  charge  Charged Particle Cannon. Unchanged: hold 3 s while standing still,
+          then it fires on its own.
+  melee   Claws and blades. Unchanged.
+
+Losing a weapon mid-burst (overheat or a destroyed mount) cancels the rest
+of the burst.
+
+
+4. SPREAD
+
+Every shot scatters inside a cone. The cone width is:
+
+  (base spread x range-band spread + bloom + movement) x heat haze x skill
+
+  Base spread       per weapon (table below).
+  Range-band spread ballistics widen past ideal: x3 at the long-range mark
+                    and x6 at max range, smoothly in between. Beams barely
+                    widen (x1.1, x1.25).
+  Bloom             each shot adds a little, up to a cap; it recovers when
+                    you stop firing. The gatling blooms most.
+  Movement          extra spread at full speed: 0.014 rad for guns, 0.004
+                    for beams, 0.03 for the Sniper Rifle (it hates moving),
+                    none for missiles.
+  Heat haze         above 60% weapon heat the barrel shimmers: up to x1.35
+                    for guns and x1.5 for beams at 100%.
+  Skill             braced skills (Iron Kong and friends) still tighten it.
+
+
+5. BALLISTIC WEAPONS: TRAVEL, DROP AND FALLOFF
+
+Shells travel at their own speed and fall under gravity, as before. The big
+change is ZEROING:
+
+  Every gun is zeroed at its ideal (optimal) range. Inside that range the
+  barrel lifts just enough for the shell to meet the crosshair. Past it, the
+  barrel keeps the zero-range lift, so the shell crosses the line of sight at
+  the zero distance and then lands LOW. Before this pass the barrel always
+  solved the full arc, so drop never mattered.
+
+  Drop past zero (flat ground, shooting at a target at the same height):
+    Gatling Gun    zero 35 m: about 0.4 m low at 65 m, 1.35 m low at 100 m
+    Shock Cannon   zero 45 m: about 1.8 m low at 75 m, 4.3 m low at 100 m,
+                   4.9 m low at 105 m (max range)
+    Sniper Rifle   zero 140 m: about 0.4 m low at 190 m, 0.9 m low at 230 m
+
+  So with the Shock Cannon at 100 m you aim about one Zoid-height high, or
+  put the LEAD box on the target. The HUD's IMPACT diamond and DROP number
+  tell you exactly where the shell goes.
+
+  Heavy shells (Shock Cannon, Sniper Rifle) leave a 0.9 s tracer so you can
+  see the arc; the gatling shows every 4th round.
+
+  Shock Cannon shells are slightly faster (80 m/s, was 75) and a little less
+  heavy (gravity 10, was 12) so the drop is readable rather than absurd.
+
+Damage falloff (all non-melee weapons)
+  Damage is now a smooth curve rather than steps:
+    full damage up to the ideal range,
+    a straight line down to the long-range mark,
+    a straight line down to max range,
+    nothing past max range.
+  Ballistic:  1.0 at ideal, 0.85 at the long mark, 0.70 at max.
+  Beam:       1.0 at ideal, 0.30 at the long mark, 0.10 at max.
+  Missile:    1.0 at ideal, 0.95 at the long mark, 0.85 at max.
+  Weapons with a minimum range (Sniper Rifle, Charged Particle Cannon) ramp
+  up from 85% / 75% at point blank to full at their minimum range. The range
+  band labels (IDEAL / LONG / EXTREME / SHORT) are unchanged and still used
+  for the HUD, AI aim error and missile lock time.
+
+
+6. ENERGY WEAPONS: FALLOFF AND BEAM REFRACTION
+
+Beams are instant and lose power fast past their ideal range (curve above).
+
+Refraction
+  Every map now has 3 or 4 clouds of its biome's kind (kept off the spawn
+  and convoy lane), and every destroyed Zoid leaves a smoke column that burns
+  for about 25 s (at most 4 at once):
+    Desert   DUST     soaks 2.4% of a beam per metre, bends it 0.0014 rad/m
+    Plains   SMOKE    soaks 3.0% per metre, bends 0.0018 rad/m (thickest)
+    Arctic   ICE FOG  soaks 2.0% per metre, bends 0.0012 rad/m
+    Wrecks   SMOKE
+
+  When a beam enters a cloud it bends at the entry point by up to the bend
+  figure times the cloud path (capped at 0.08 rad, about 4.6 degrees), in a
+  random direction, and throws a spray of short scattered rays you can see.
+  Its damage is multiplied by the light that survives the cloud path
+  (never below 20%).
+
+  Example: 20 m of dust leaves a Pulse Laser about 62% of its damage and
+  bends it up to about 1.6 degrees, so at the far side some pulses miss.
+
+  How much each weapon cares ("refract"): Pulse Laser 1.0, Double Beam
+  Cannon 0.85, Beam Cannon 0.8, Charged Particle Cannon 0.35 (a particle
+  stream punches through; 20 m of dust only takes 15%). Shells, missiles and
+  melee are not refracted at all, which is the point: in a dust storm,
+  bring a gun.
+
+Energy shields
+  A beam that hits a raised Shield Liger shield is scattered: you see a
+  burst of rays off the shield. (The shield already blocked the damage.)
+
+Charged Particle Cannon
+  Keeps its full-charge mechanic exactly as before.
+
+
+7. MISSILES
+
+  Lock          2.2 s on a still target (unchanged), longer at long and
+                extreme range and against fast movers; 30 m/s or more breaks
+                it (unchanged). The seeker cone is 8 degrees.
+  Lock decay    Slipping off the target drains the lock twice as fast as it
+                builds (it used to drain at the build rate).
+  Arming        Warheads arm after 25 m. A hit closer than that does 25%.
+  Salvo         4 missiles rippled 0.14 s apart.
+  Countermeasures
+                A cloud on the line of sight with 12 m or more of thickness
+                blocks the lock (SEEKER BLOCKED). A target standing inside a
+                cloud blinds missiles already in flight: their turning power
+                drops to 30%, so they tend to miss. Moving fast still
+                breaks the lock as before.
+
+
+8. AI USES THE SAME RULES
+
+  Same spread, bloom, movement and heat haze.
+  Same zeroing and drop. AI pilots hold over by a skill share that rises
+  with difficulty: Green 0.45, Regular 0.65, Veteran 0.8, Elite 0.9, Ace 1.0
+  (1.0 = perfect compensation). So a Green pilot's shells land well short at
+  long range; an Ace's land where he aims.
+  Same falloff and refraction, same missile lock rules (cone, cloud block,
+  speed break, arming).
+  Each AI weapon only fires with the target inside that weapon's own max
+  range, and missiles only outside their 25 m arming range.
+  The existing difficulty knobs (aim error, reaction, fire rate, plating)
+  are unchanged.
+  The player's own turrets get a fire-control computer with 0.9 holdover.
+
+
+9. BALANCE
+
+Per-shot damage and sustained DPS are unchanged for every weapon. The paper
+balance report (docs/balance_report_weapons_overhaul.txt, before and after)
+shows time-to-kill at 60 m moving by 0-15% for most pairs, mostly from the
+smooth falloff giving beams a little more just past their ideal range. The
+Blade Liger gains most (its pulse lasers at 60 m are just past ideal):
+12.8 s to 7.4 s against a Command Wolf on paper. The paper model does not
+include bloom, movement, drop or clouds, which pull real hit rates back
+down, so live time-to-kill should land close to before. The whole roster
+still spans roughly 2 to 20 s on paper.
+
+
+10. PER-WEAPON TABLE
+
+Shots = shots per cycle, Cyc/s = cycles per second, Heat/cyc = heat per
+cycle into that weapon's own 0-100 gauge, Cool/s = heat shed per second.
+
+Weapon                       Mode    Dmg/shot Shots Cyc/s DPS    Heat/cyc Cool/s
+Pulse Laser                  pulse   4.5      3     2.5   33.8   21       22
+Beam Cannon                  beam    18       1     1.4   25.2   12       14
+Double-Barreled Beam Cannon  beam    9 x2     1     1.5   27.0   10       15
+Missile Pack                 salvo   10       4     0.4   16.0   12       10
+Gatling Gun                  auto    2.2      1     16    35.2   1.4      18
+Shock Cannon                 single  46       1     0.5   23.0   20       10
+Sniper Rifle                 single  40       1     0.55  22.0   14       10
+Charged Particle Cannon      charge  120      1     0.18  14.0   55       8
+Strike Laser Claw            melee   14       1     1.5   21.0   9        16
+Laser Blade                  melee   26       1     1.2   31.2   14       15
+
+Ranges in metres. Zero = ballistic zero range. Speed in m/s, gravity in
+m/s2. Spread, bloom and move in radians (full cone width). Bloom = added per
+shot, cap, recovered per second. "class" = the class default movement
+spread (guns 0.014, beams 0.004, missiles 0).
+
+Weapon                       Min  Ideal  Long  Max  Zero  Speed Grav Spread Bloom                Move   Refract
+Pulse Laser                  0    55     75    90   -     -     -    0.006  0.0006, 0.004, 0.02  class  1
+Beam Cannon                  0    95     130   160  -     -     -    0.004  -                    class  0.8
+Double-Barreled Beam Cannon  0    70     95    120  -     -     -    0.004  -                    class  0.85
+Missile Pack                 25   90     150   200  -     60    -    0.05   -                    none   -
+Gatling Gun                  0    35     65    100  35    170   12   0.03   0.0025, 0.045, 0.08  class  -
+Shock Cannon                 0    45     75    105  45    80    10   0.02   0.01, 0.02, 0.02     class  -
+Sniper Rifle                 60   140    190   230  140   220   4    0.003  0.012, 0.02, 0.025   0.03   -
+Charged Particle Cannon      50   130    185   240  -     -     -    0.004  -                    class  0.35
+Strike Laser Claw            0    8      12    12   -     -     -    0.02   -                    -      -
+Laser Blade                  0    10     14    14   -     -     -    0.02   -                    -      -
+
+Missile Pack extras: lock 2.2 s, seeker cone 8 degrees, arms at 25 m,
+salvo gap 0.14 s. Gatling extras: spin-up 0.6 s from 35% rate.
+Base spread changes: Gatling 0.04 to 0.03 and Sniper Rifle 0.004 to 0.003,
+because bloom and movement now add on top.
+
+
+11. FILES
+
+  js/weaponsys.js     all the new rules (pure maths)
+  js/catalog.js       new weapon fields: fireMode, burst, burstGap,
+                      beamTime, spinUp, bloom, moveSpread, zero, refract,
+                      lockCone; RANGE_PROFILES are now curve anchors
+  js/rangebands.js    smooth damage and spread curves (rangeCurve)
+  js/mission.js       fire control, sustained beams, zeroed shells and
+                      tracers, refraction and scatter effects, clouds and
+                      wreck smoke, targeting box / Tab / lock loss, seeker
+                      rules, HUD data
+  js/hud.js, css/style.css   bloom reticle, pips, range, target box,
+                      warnings, seeker circle, updated help (H)
+  js/ai.js, js/difficulty.js  AI holdover per difficulty
+  js/ballistics.js    missiles lose turning power on a target inside a cloud
+  tests/weapons_overhaul.test.mjs     node tests (fire rates, spread, drop,
+                      holdover, falloff, refraction, lock area, missiles,
+                      save fix)
+  tests/weapons_overhaul_browser.mjs  live-mission test and screenshots in
+                      screenshots/weapons-overhaul/
+  sw.js               cache bumped to zoids-v11 so players get the update
+
+
+12. SEPARATE FIX: THIRD SPEED BOOSTER LOST ON RELOAD
+
+js/state.js capped every mod level at 2 when a save loaded. Speed Boosters go
+to 3, so the third booster (90,000 C) vanished after a refresh. The caps now
+come from each mod's own max in js/catalog.js (Speed Boosters 3, Maneuver
+Gyros 2, Back Boosters 2). Covered by the last check in
+tests/weapons_overhaul.test.mjs, which fails on the old code.
+
+
+13. SMALL SIDE CHANGES
+
+  Pacified test missions (a test-only mode) now still fly the player's
+  shells, so shell tests and screenshots work. Normal play is unaffected.
+  Skill shots without range bands (Geno Saurer's Q bolt) now do full damage
+  out to their range; before, they were read as the ballistic "long" band
+  (90%).
