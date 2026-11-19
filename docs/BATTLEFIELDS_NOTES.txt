@@ -74,14 +74,43 @@ Sparse Jungle
   Look: blue sky, light haze (fog density 0.0036), bright sun.
 
 Rocky Mountain Pass
-  A winding canyon: centre line x = 26 sin(0.0065 z + 0.8), floor 110-265 m
-  wide, with two chokepoints about 110 m wide at z = 200 and z = -270.
-  The walls are an 8 m talus slope, then cliffs that climb 3.4 m per metre
-  to about 95 m; anything steeper than 3 m above the talus is a wall ground
-  Zoids cannot climb (they slide back). Two 5.5-7.5 m rock ridges cross
-  half the floor (one each side, gap at the road) for hull-down fighting.
-  8 rock spires (24-46 m tall), 64 boulders on the floor (the small ones
-  break). Snow only on the far backdrop peaks.
+  A winding main canyon: centre line x = 26 sin(0.0065 z + 0.8), floor
+  110-265 m wide (narrowest 111 m), with two chokepoints about 110 m wide at
+  z = 200 and z = -270. The convoy road runs down it and it fits every
+  superheavy. The walls are an 8 m talus slope, then cliffs that climb
+  3.4 m per metre to about 95 m; anything more than 3 m above the floor of
+  the route you are on is a wall ground Zoids cannot climb (they slide
+  back along the free axis). Two 5.5-7.5 m rock ridges cross half the floor
+  (one each side, gap at the road) for hull-down fighting. 8 rock spires
+  (24-46 m tall), 64 boulders on the floor (the small ones break). Snow
+  only on the far backdrop peaks.
+  Branching routes (PASS_BRANCHES in js/battlefield.js). Each one splits
+  off the main canyon and rejoins it further along, behind rock, so it is
+  out of sight of the main route:
+    West Gully: 725 m long, 20 m floor (half-width 10 m) plus talus. Loops
+      west from the north choke to the outpost end. Fits superheavies.
+    East Ledge switchback: 533 m long, 6.8 m floor (half-width 3.4 m, 1 m
+      talus, about 7.3 m walkable). Zig-zags east of the centre. Too narrow
+      for superheavies (Gojulas, Death Saurer, radius 5.4 m): they are kept
+      out by the cliff rule; normal Zoids (radius about 3 m) fit.
+    High Ridge Trail: 1096 m long, 14 m floor, climbs 24 m above the
+      canyon floor (flat for the first and last 70 m, then a 150 m ramp)
+      and swings far east from the spawn end to the exit end. Fits
+      superheavies.
+    South Bypass: 470 m long, 16 m floor. Leaves the main canyon near the
+      outpost and rejoins it at the convoy exit end. Fits superheavies.
+  So there are 4 side routes plus the main canyon. No cave or tunnel: a
+  roofed tunnel would need a second collision layer under the heightfield,
+  which this terrain model does not have.
+  Sight checks (eye height 4 m, main-canyon points within 260 m):
+  West Gully 11 of 13 sampled mid points hidden from the whole main route,
+  East Ledge 13 of 13, High Ridge Trail 13 of 13, South Bypass 8 of 13
+  (its far end opens toward the exit choke).
+  Reachability: every spawn and objective zone (player spawn, centre, the
+  three recon beacons, the outpost, both convoy ends) is reachable from the
+  spawn by A* for a normal Zoid (radius 3.1 m) and a superheavy (5.4 m).
+  Superheavies never spawn inside the East Ledge (findFreeSpot skips it for
+  radius over 4 m).
   Hazards: 5 dust clouds. Water: two meltwater pools (r 19) at the cliff
   feet.
   Look: deep blue sky, fog density 0.0034, hard white sun.
@@ -176,6 +205,38 @@ the browser test, enemies 150-180 m away close to 60-90 m in 20 s on every
 map with 0 stuck events and never inside cover.
 
 
+6b. RADAR OCCLUSION AND STEALTH (js/sensors.js)
+
+One rule for the player's minimap and target lock and for enemy pilots:
+  A contact is seen when it is inside radar range (player: 230 m with a
+  radar, 42 m without, times the Zoid's sensor multipliers; AI: 230 m) AND
+  either the radar line is clear or the contact is inside the close
+  detection radius of 45 m.
+  The radar line runs from 1.5 m above the observer's eye to the target's
+  centre. Terrain (mountains, canyon walls, ridges, the High Ridge), rock
+  spires and buildings at least 40 m tall block it (47 of 376 city
+  buildings). Trees, rubble, cars, boulders and short buildings do not.
+  Flyers high enough to see over a ridge see past it.
+  Memory: after the line breaks the contact stays live (and tracked) for
+  2.5 s, then becomes a last-known marker at the last radar fix that fades
+  out over the next 9.5 s (gone at 12 s).
+  Stealth: a target standing still (under 1 m/s) shrinks both the radar
+  range and the close radius used against it to x0.8; running cool (hottest
+  weapon under 30% heat) gives x0.9; both together x0.72 (close radius
+  about 32 m). The radar line is re-tested at most every 0.2 s per pair.
+  Target lock: Tab and R only offer live contacts; a lock on a contact that
+  goes radar-dark is treated as out of sensor range, so it drops after the
+  usual 3 s grace (5.5 s after the line broke, counting the fresh track).
+  Allies are always on the minimap (shared datalink).
+  AI: a pilot that loses its target heads for the last-known spot (A*
+  routes as usual), and once within 30 m sweeps a circle of about 21 m
+  around it for 10 s. If the target is still dark after that it gives up
+  the search and drifts toward the target's general area again, so a
+  battle cannot stall forever (judgment call). It never fires while it is
+  searching, and it re-acquires the moment the target is seen or comes
+  within the close radius.
+
+
 7. LOOK
 
 Per map: sky dome with a vertex gradient (top and horizon colours), a sun
@@ -190,7 +251,10 @@ merged meshes plus instanced cars.
 
 Minimap: a static layer drawn once per mission at 0.5 px per m (cliffs,
 water, indestructible cover), rotated with the player under the live
-contacts.
+contacts. In the pass every cliff of the branch network is drawn, so the
+side routes show as dark channels. Radar-hidden enemies are not drawn;
+their last-known position shows as a fading red diamond with a "?"
+(pinned to the rim when off the map).
 
 
 8. PERFORMANCE
@@ -229,6 +293,24 @@ ray stopped by cover, missile lock blocked by cover, canyon wall stopping a
 shot, wading slowing the player (about 25% less distance in 2 s), a prop
 destroyed, live AI closing in without getting stuck, and screenshots in
 screenshots/battlefields/ (wide, third person, cockpit and wading per map).
+tests/pass_radar.test.mjs (node): the four branches exist, are carved,
+walkable end to end for a normal Zoid and hidden from the main canyon; the
+East Ledge keeps superheavies out; every spawn and objective zone is
+reachable for both sizes; the main canyon still fits superheavies; terrain
+blocks the gully-to-canyon radar line, trees never block radar, 40 m
+buildings do; the stealth multipliers, detection, fresh, memory and fade
+timings; an AI brain losing a hidden target, going to the last-known spot,
+searching for 10 s without homing on the real position, and re-acquiring.
+tests/pass_radar_browser.mjs (browser, live pass mission): frame time, a
+contact behind terrain missing from radar and unlockable, a contact in
+line of sight on radar and lockable, the fresh track, the last-known
+marker staying at the last fix while the contact moves on, the lock
+dropping after the grace, the marker expiring, and a live enemy losing
+the player behind the mountain, going to the last-known spot and sweeping
+it. Screenshots: mountain-pass-overview.png (top-down route map drawn from
+the game's terrain functions), mountain-pass-side-gully.png,
+mountain-pass-radar-hidden.png and mountain-pass-radar-minimap.png
+(3x close-up of the minimap with a last-known marker).
 
 
 10. KNOWN LIMITS
@@ -237,6 +319,15 @@ Buildings, big trees and spires cannot be destroyed.
 Fallen slabs and leaning ruins collide as upright boxes.
 The minimap layer does not update when a prop breaks (props are not on it).
 AI routes are planned on an 8 m grid, so pilots keep about 4 m off walls
-and will not squeeze through gaps narrower than about 9 m.
+and will not squeeze through gaps narrower than about 9 m. In the pass the
+grid uses the real radius (3.4 m normal, 5.6 m superheavy) and samples
+7 x 7 spots inside each cell next to a cliff, so normal pilots can take
+the East Ledge; when the full steering feelers find no way on a narrow
+path, the pilot accepts a heading whose near feelers are clear.
+Radar is a line test against the heightfield and cover data, not a
+simulated beam: no partial returns, no jamming, no sound. Enemy pilots
+pick their target with full knowledge (as before); the radar rule only
+decides what they chase and when they may fire.
+No cave or tunnel in the pass (the terrain is a single heightfield).
 The convoy trucks drive straight down the road at their fixed speed,
 including through the city canal (2.6 m deep); water does not slow them.

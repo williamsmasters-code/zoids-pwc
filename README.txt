@@ -21,8 +21,9 @@ RUN
   tests/skills.test.mjs, tests/indicators.test.mjs, tests/weapons.test.mjs,
   tests/glb.test.mjs, tests/headless.mjs, tests/glb_browser.mjs, and the
   rest listed in package.json, including tests/weapons_overhaul.test.mjs,
-  tests/battlefields.test.mjs, tests/weapons_overhaul_browser.mjs and,
-  last, tests/battlefields_browser.mjs.
+  tests/battlefields.test.mjs, tests/pass_radar.test.mjs,
+  tests/weapons_overhaul_browser.mjs, tests/battlefields_browser.mjs and,
+  last, tests/pass_radar_browser.mjs (mountain pass routes and radar).
   The browser test serves this directory on port 8080, so stop any other
   server on that port first. Screenshots land in screenshots/.
 
@@ -170,7 +171,18 @@ BATTLEFIELDS
   and streams, light haze. Long sightlines.
   Rocky Mountain Pass: a winding canyon 110-265 m wide with cliffs up to
   about 95 m that ground Zoids cannot climb, two 110 m chokepoints, low ridges,
-  rock spires, boulders, meltwater pools and dust.
+  rock spires, boulders, meltwater pools and dust. Four side routes split off
+  and rejoin it out of sight of the main canyon: the West Gully (20 m floor),
+  the East Ledge switchback (about 7 m, too narrow for Gojulas and Death
+  Saurer), the High Ridge Trail (14 m, 24 m above the floor) and the South
+  Bypass (16 m). Every spawn and objective stays reachable for every Zoid.
+  Radar: mountains, cliffs, rock spires and buildings 40 m or taller hide
+  enemies from the minimap and target lock unless they are within 45 m. A
+  contact that drops out of sight stays on radar 2.5 s, then leaves a fading
+  red diamond with a ? at its last known position (gone after 12 s). Standing
+  still (x0.8) or running cool (x0.9) shrinks the range you are spotted at.
+  Enemy pilots use the same rule: lose them behind a ridge and they go to
+  where they last saw you, search there for 10 s, then move on.
   Water: wading slows a ground Zoid up to 40% (big Zoids less), weapons
   cool 50% faster while wading (HUD: WADING), and beams through water
   lose power fast. Mist scatters beams like dust.
