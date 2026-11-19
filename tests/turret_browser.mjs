@@ -211,6 +211,11 @@ try {
     return last;
   }
 
+  // Weapon selection: the turret fires only while it is the selected weapon
+  // and the trigger is held. Select it and hold LMB for sections 1-4.
+  await page.evaluate(() => window.__ZOIDS__.selectWeapon("backMount"));
+  await page.mouse.move(640, 360);
+  await page.mouse.down({ button: "left" });
   // 1) No lock: enemy 7 m to the right, running. Turret must not fire.
   await page.evaluate(() => window.__ZOIDS__.setLock(null));
   await page.keyboard.down("KeyW");
@@ -275,7 +280,21 @@ try {
   if (rest.turrets[0].fired !== side.turrets[0].fired) note("release", "turret kept firing after the lock was released");
   await page.screenshot({ path: path.join(shots, "command-wolf-turret-no-lock-rest.png") });
 
-  // 5) AI Zoids use their own turrets on their own lock target.
+  // 4b) Locked and on target but not selected (another slot selected, LMB
+  // held), or selected with the trigger released: holds fire.
+  await page.evaluate((id) => { window.__ZOIDS__.setLock(id); window.__ZOIDS__.selectWeapon(1); }, enemyId);
+  const nsStart = (await page.evaluate(() => window.__ZOIDS__.turretDebug())).turrets[0].fired;
+  const notSel = await run(45, () => placeRelative(-25, 0));
+  if (notSel.turrets[0].fired !== nsStart) note("select", `turret fired ${notSel.turrets[0].fired - nsStart} times while not selected`);
+  await page.mouse.up({ button: "left" });
+  await page.evaluate(() => window.__ZOIDS__.selectWeapon("backMount"));
+  const relStart = notSel.turrets[0].fired;
+  const noTrig = await run(45, () => placeRelative(-25, 0));
+  console.log("gated", JSON.stringify({ notSelected: notSel.turrets[0].fired - nsStart, noTrigger: noTrig.turrets[0].fired - relStart }));
+  if (noTrig.turrets[0].fired !== relStart) note("select", `turret fired ${noTrig.turrets[0].fired - relStart} times with the trigger released`);
+  await page.evaluate(() => window.__ZOIDS__.setLock(null));
+
+  // 5) AI Zoids use their own turrets on their own lock target (when selected).
   const allEnemies = (await page.evaluate(() => window.__ZOIDS__.turretDebug())).enemies;
   console.log("enemies", allEnemies.map((e) => `${e.zoid}:${e.turrets.length}`).join(" "));
   const ai = allEnemies.filter((e) => e.turrets.length);
@@ -286,14 +305,23 @@ try {
       const d = window.__ZOIDS__.turretDebug();
       return window.__ZOIDS__.placeUnit(id, d.pos.x + 20, d.pos.z + 25);
     }, { id: e.id });
+    // AI fires one weapon at a time too. Force each turreted AI onto its
+    // turret (test hook pauses its own picker), then onto slot 1.
+    for (const e of ai) await page.evaluate((id) => window.__ZOIDS__.selectWeapon("backMount", id), e.id);
     for (let i = 0; i < 150; i++) await page.evaluate(() => window.__ZOIDS__.stepSim(1 / 30));
+    const mid = (await page.evaluate(() => window.__ZOIDS__.turretDebug())).enemies;
+    const midFired = Object.fromEntries(mid.map((e) => [e.id, e.turrets[0] ? e.turrets[0].fired : 0]));
+    for (const e of ai) await page.evaluate((id) => window.__ZOIDS__.selectWeapon(1, id), e.id);
+    for (let i = 0; i < 90; i++) await page.evaluate(() => window.__ZOIDS__.stepSim(1 / 30));
     const after = (await page.evaluate(() => window.__ZOIDS__.turretDebug())).enemies;
     for (const e of ai) {
       const now = after.find((x) => x.id === e.id);
       if (!now) { console.log("ai turret", e.zoid, "destroyed during check"); continue; }
-      const shots = now.turrets[0].fired - aiStart[e.id];
-      console.log("ai turret", e.zoid, JSON.stringify({ lockId: now.lockId, fired: shots, yaw: now.turrets[0].yaw.toFixed(2) }));
-      if (now.lockId && !(shots > 0)) note("ai", `${e.zoid} turret did not fire at its lock`);
+      const shots = midFired[e.id] - aiStart[e.id];
+      const unsel = now.turrets[0].fired - midFired[e.id];
+      console.log("ai turret", e.zoid, JSON.stringify({ lockId: now.lockId, firedSelected: shots, firedUnselected: unsel, yaw: now.turrets[0].yaw.toFixed(2) }));
+      if (now.lockId && !(shots > 0)) note("ai", `${e.zoid} turret selected but did not fire at its lock`);
+      if (unsel > 0) note("ai", `${e.zoid} turret fired ${unsel} times while another weapon was selected`);
     }
     await page.evaluate(() => window.__ZOIDS__.setPacified(true));
   } else {

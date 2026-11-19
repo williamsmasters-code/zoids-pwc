@@ -328,19 +328,22 @@ try {
   const dock = await page.evaluate(() => [...document.querySelectorAll("#weapon-dock .wep")].map((el) => ({
     group: el.dataset.group,
     state: el.dataset.state,
+    selected: el.dataset.selected,
+    mount: el.dataset.mount,
+    melee: el.classList.contains("melee"),
     text: el.innerText,
   })));
-  console.log("weapon dock", dock.map((row) => `${row.group}:${row.state}`).join(" "));
-  if (dock.length !== 4) note("weapons", `expected 4 group rows, saw ${dock.length}`);
+  console.log("weapon dock", dock.map((row) => `${row.group}:${row.mount}:${row.state}${row.selected === "1" ? "*" : ""}`).join(" "));
+  // One row per weapon slot (fitted weapons + the standard melee last).
+  const slotsNow = await page.evaluate(() => window.__ZOIDS__.weaponSlots());
+  if (dock.length !== slotsNow.slots.length) note("weapons", `expected ${slotsNow.slots.length} slot rows, saw ${dock.length}`);
   for (const row of dock) {
-    if (!["ready", "cooling", "disabled", "empty"].includes(row.state)) {
-      note("weapons", `group ${row.group} state ${row.state}`);
+    if (!["ready", "cooling", "disabled", "empty", "switching"].includes(row.state)) {
+      note("weapons", `slot ${row.group} state ${row.state}`);
     }
   }
-  if (dock[0] && dock[0].state === "empty") note("weapons", "group 1 is empty");
-  if (dock[1] && dock[1].state === "empty") note("weapons", "group 2 is empty");
-  if (dock[2] && dock[2].state !== "empty") note("weapons", `group 3 is ${dock[2].state}`);
-  if (dock[3] && dock[3].state !== "empty") note("weapons", `group 4 is ${dock[3].state}`);
+  if (!dock.length || !dock[dock.length - 1].melee) note("weapons", "standard melee row missing from the dock");
+  if (dock.filter((row) => row.selected === "1").length !== 1) note("weapons", "dock does not mark exactly one selected slot");
 
   function checkAim(label, aim) {
     console.log("aim", label, aim.mode, "align", aim.align.toFixed(4), "far", aim.far.toFixed(1), aim.hitKind);
@@ -398,58 +401,68 @@ try {
     note("weapons", "cooldown did not clear");
   }
 
-  async function fireGroup(code, groupIndex) {
+  // Selected-weapon fire: a number key / the wheel picks the slot, LMB (or
+  // RMB on a non-sniper weapon) fires only that slot's weapon.
+  async function fireSlot(how, slot, button = "left") {
     await waitCool();
-    if (code === "MouseRight") await page.mouse.move(640, 360);
-    if (code === "MouseRight") await page.mouse.down({ button: "right" });
-    else await page.keyboard.down(code);
-    const deadline = Date.now() + 600;
+    await sleep(260); // past the 0.18 s switch time
+    await page.mouse.move(640, 360);
+    await page.mouse.down({ button });
+    const deadline = Date.now() + 900;
     let sample = null;
     while (Date.now() < deadline) {
-      sample = await page.evaluate((index) => {
-        const rows = window.__ZOIDS__.weaponCooldowns();
-        const groups = window.__ZOIDS__.lastGroups();
-        const mine = rows.filter((row) => row.group === index + 1);
-        const others = rows.filter((row) => row.group !== index + 1);
-        const state = document.querySelector(`#weapon-dock .wep[data-group="${index + 1}"]`)?.dataset.state || "";
-        return {
-          held: !!groups[index],
-          mine: mine.map((row) => row.cooldown),
-          otherMax: others.reduce((max, row) => Math.max(max, row.cooldown), 0),
-          state,
-        };
-      }, groupIndex);
-      if (sample.held && sample.mine.some((cd) => cd > 0.04) && sample.otherMax < 0.02 && sample.state === "cooling") break;
+      sample = await page.evaluate((slot) => {
+        const Z = window.__ZOIDS__;
+        const info = Z.weaponSlots();
+        const mine = info.slots[slot - 1];
+        const rows = Z.weaponCooldowns();
+        const mineCd = rows.filter((row) => mine && row.mount === mine.mount).map((row) => row.cooldown);
+        const otherMax = rows.filter((row) => !mine || row.mount !== mine.mount).reduce((max, row) => Math.max(max, row.cooldown), 0);
+        const state = document.querySelector(`#weapon-dock .wep[data-group="${slot}"]`)?.dataset.state || "";
+        return { selected: info.selected, mine: mineCd, otherMax, state };
+      }, slot);
+      if (sample.selected === slot && sample.mine.some((cd) => cd > 0.04) && sample.otherMax < 0.02 && sample.state === "cooling") break;
       await sleep(20);
     }
-    if (code === "MouseRight") await page.mouse.up({ button: "right" });
-    else await page.keyboard.up(code);
-    console.log("fired", code, JSON.stringify(sample));
-    if (!sample || !sample.held) note("weapons", `${code} did not hold group ${groupIndex + 1}`);
-    else if (!sample.mine.some((cd) => cd > 0.04)) note("weapons", `${code} did not fire group ${groupIndex + 1}`);
-    else if (sample.otherMax >= 0.02) note("weapons", `${code} also cooled another group (${sample.otherMax})`);
-    else if (sample.state !== "cooling") note("weapons", `${code} dock state ${sample.state}`);
+    await page.mouse.up({ button });
+    console.log("fired", how, JSON.stringify(sample));
+    if (!sample || sample.selected !== slot) note("weapons", `${how} did not select slot ${slot}`);
+    else if (!sample.mine.some((cd) => cd > 0.04)) note("weapons", `${how} did not fire slot ${slot}`);
+    else if (sample.otherMax >= 0.02) note("weapons", `${how} also fired another slot (${sample.otherMax})`);
+    else if (sample.state !== "cooling") note("weapons", `${how} dock state ${sample.state}`);
   }
 
-  await fireGroup("Digit1", 0);
-  await fireGroup("Digit2", 1);
-  const toGroup3 = await page.evaluate(() => window.__ZOIDS__.setGroup("leftWeapon", 3));
-  if (!toGroup3 || !toGroup3.some((row) => row.mount === "leftWeapon" && row.group === 3)) {
-    note("weapons", `setGroup 3 failed ${JSON.stringify(toGroup3)}`);
+  await page.keyboard.press("Digit1");
+  await fireSlot("Digit1", 1);
+  await page.keyboard.press("Digit2");
+  await fireSlot("Digit2", 2);
+  // Wheel: up = previous (slot 1), down = next (back to slot 2).
+  await page.mouse.move(640, 360);
+  await page.mouse.wheel({ deltaY: -100 });
+  await sleep(60);
+  await fireSlot("WheelUp", 1);
+  await page.mouse.wheel({ deltaY: 100 });
+  await sleep(60);
+  // RMB on a non-sniper weapon is a second trigger for the selected weapon.
+  await fireSlot("MouseRight", 2, "right");
+  {
+    // Wheel wraps: up from slot 1 lands on the last slot (standard melee).
+    await page.keyboard.press("Digit1");
+    await sleep(60);
+    await page.mouse.wheel({ deltaY: -100 });
+    await sleep(80);
+    const wrap = await page.evaluate(() => window.__ZOIDS__.weaponSlots());
+    if (wrap.selected !== wrap.slots.length || !wrap.slots[wrap.selected - 1].innate) note("weapons", `wheel up from slot 1 did not wrap to melee ${JSON.stringify({ sel: wrap.selected, n: wrap.slots.length })}`);
+    await page.mouse.wheel({ deltaY: 100 });
+    await sleep(80);
+    const back = await page.evaluate(() => window.__ZOIDS__.weaponSlots().selected);
+    if (back !== 1) note("weapons", `wheel down from the last slot did not wrap to 1 (${back})`);
   }
-  await fireGroup("Digit3", 2);
-  const toGroup4 = await page.evaluate(() => window.__ZOIDS__.setGroup("leftWeapon", 4));
-  if (!toGroup4 || !toGroup4.some((row) => row.mount === "leftWeapon" && row.group === 4)) {
-    note("weapons", `setGroup 4 failed ${JSON.stringify(toGroup4)}`);
-  }
-  await fireGroup("Digit4", 3);
-  await page.evaluate(() => window.__ZOIDS__.setGroup("leftWeapon", 2));
-  await fireGroup("MouseRight", 1);
 
   // Drive the sim in fixed steps so the overheat check does not depend on the
   // box's frame rate (swiftshader under load left heat hovering ~86-91).
-  await page.evaluate(() => window.__ZOIDS__.holdSim(true));
-  await page.keyboard.down("Digit1");
+  await page.evaluate(() => { window.__ZOIDS__.holdSim(true); window.__ZOIDS__.selectWeapon(1); });
+  await page.mouse.down({ button: "left" });
   let heatSample = null;
   // Wall-clock cap is generous: with raiders on screen swiftshader can take
   // ~75 ms per sim step. The loop exits as soon as group 1 overheats.
@@ -465,17 +478,17 @@ try {
       }));
       return { rows, dock, peak: document.querySelector("#heat-bar")?.style.width || "" };
     });
-    const hot = heatSample.rows.find((row) => row.group === 1);
-    const other = heatSample.rows.find((row) => row.group === 2);
+    const hot = heatSample.rows.find((row) => row.mount === "headWeapon");
+    const other = heatSample.rows.find((row) => row.mount === "leftWeapon");
     const dock1 = heatSample.dock.find((row) => row.group === "1");
     if (hot && hot.overheated && other && !other.overheated && dock1 && dock1.state === "overheated") break;
     await sleep(40);
   }
-  await page.keyboard.up("Digit1");
+  await page.mouse.up({ button: "left" });
   await page.evaluate(() => window.__ZOIDS__.holdSim(false));
   console.log("weapon heat", JSON.stringify(heatSample));
-  const group1 = heatSample && heatSample.rows.find((row) => row.group === 1);
-  const group2 = heatSample && heatSample.rows.find((row) => row.group === 2);
+  const group1 = heatSample && heatSample.rows.find((row) => row.mount === "headWeapon");
+  const group2 = heatSample && heatSample.rows.find((row) => row.mount === "leftWeapon");
   if (!group1 || !group1.overheated) {
     note("heat", `group 1 did not overheat ${JSON.stringify(heatSample)}`);
   }
@@ -507,11 +520,13 @@ try {
   if (!/cannot fire/i.test(shield.text)) note("skills", `missing hold message ${shield.text}`);
   await page.screenshot({ path: path.join(shots, "skills-hud.png") });
   console.log("screenshot screenshots/skills-hud.png");
-  const beforeShot = await page.evaluate(() => window.__ZOIDS__.weaponCooldowns().find((row) => row.group === 2));
-  await page.keyboard.down("Digit2");
+  await page.keyboard.press("Digit2");
+  await sleep(250);
+  const beforeShot = await page.evaluate(() => window.__ZOIDS__.weaponCooldowns().find((row) => row.mount === "leftWeapon"));
+  await page.mouse.down({ button: "left" });
   await sleep(180);
-  await page.keyboard.up("Digit2");
-  const afterShot = await page.evaluate(() => window.__ZOIDS__.weaponCooldowns().find((row) => row.group === 2));
+  await page.mouse.up({ button: "left" });
+  const afterShot = await page.evaluate(() => window.__ZOIDS__.weaponCooldowns().find((row) => row.mount === "leftWeapon"));
   if (!beforeShot || !afterShot || afterShot.cooldown > beforeShot.cooldown + 0.02) {
     note("skills", `shield let group 2 fire ${beforeShot && beforeShot.cooldown} -> ${afterShot && afterShot.cooldown}`);
   }
@@ -534,8 +549,9 @@ try {
   if (!damage.dock || !damage.dock.some((row) => row.state === "disabled")) {
     note("weapons", `destroyed mount did not show disabled ${JSON.stringify(damage.dock)}`);
   }
-  if (!damage.dock || !damage.dock.some((row) => row.state === "empty")) {
-    note("weapons", `missing empty group while damaged ${JSON.stringify(damage.dock)}`);
+  // Weapon selection has no empty groups: one row per slot, melee included.
+  if (!damage.dock || damage.dock.length !== slotsNow.slots.length) {
+    note("weapons", `dock rows changed while damaged ${JSON.stringify(damage.dock)}`);
   }
 
   const cam = await page.evaluate(() => document.querySelector("#cam-mode")?.textContent);
@@ -694,7 +710,8 @@ try {
   // Fixed-step sim so the lock time is measured in game seconds, not in
   // wall-clock time that depends on how heavy the enemy model is to render.
   await page.evaluate(() => window.__ZOIDS__.holdSim(true));
-  await page.keyboard.down("Digit1");
+  await page.evaluate(() => window.__ZOIDS__.selectWeapon("headWeapon"));
+  await page.mouse.down({ button: "left" });
   const lockStep = 1 / 30;
   let lockSim = 0;
   let partial = null;
@@ -721,7 +738,7 @@ try {
     lockSim += lockStep;
     if (full && full.lock >= 0.99) break;
   }
-  await page.keyboard.up("Digit1");
+  await page.mouse.up({ button: "left" });
   await page.evaluate(() => window.__ZOIDS__.holdSim(false));
   const lockElapsed = Math.round(lockSim * 1000);
   console.log("lock done (sim ms)", lockElapsed, full && full.lock, "strength", full && full.strength);
@@ -756,7 +773,8 @@ try {
   });
   // Fixed-step sim (game seconds), then back to real time for the walk check.
   await page.evaluate(() => window.__ZOIDS__.holdSim(true));
-  await page.keyboard.down("Digit1");
+  await page.evaluate(() => window.__ZOIDS__.selectWeapon("headWeapon"));
+  await page.mouse.down({ button: "left" });
   let chargeSim = 0;
   let charging = null;
   while (chargeSim < 2.7) {
@@ -783,7 +801,7 @@ try {
   await sleep(320);
   const afterWalk = await page.evaluate(() => window.__ZOIDS__.weaponDebug());
   await page.keyboard.up("KeyW");
-  await page.keyboard.up("Digit1");
+  await page.mouse.up({ button: "left" });
   const afterMove = afterWalk.weapons.find((weapon) => weapon.id === "chargedParticle");
   console.log("charge reset", afterWalk.moving, afterMove && afterMove.charge, afterMove && afterMove.cooldown);
   if (!afterMove || afterMove.charge > 0.05) note("charge", `move did not clear charge ${JSON.stringify(afterMove)}`);

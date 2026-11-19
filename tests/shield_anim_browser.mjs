@@ -308,7 +308,10 @@ try {
     note("shield", `shield did not lower (${JSON.stringify(lowered)})`);
   }
 
-  await page.keyboard.down("Digit1");
+  // Fire the selected weapon (slot 1) with the left mouse button.
+  await page.evaluate(() => window.__ZOIDS__.selectWeapon(1));
+  await page.mouse.move(640, 360);
+  await page.mouse.down({ button: "left" });
   const firing = await page.evaluate(() => {
     let state = null;
     for (let i = 0; i < 20; i++) {
@@ -322,7 +325,7 @@ try {
   const fireShot = path.join(shots, "firing.png");
   await page.screenshot({ path: fireShot });
   console.log("screenshot", path.relative(root, fireShot));
-  await page.keyboard.up("Digit1");
+  await page.mouse.up({ button: "left" });
 
   // The service worker would serve already-cached GLBs and hide the blocked
   // requests, so bypass and clear it for the fallback checks.

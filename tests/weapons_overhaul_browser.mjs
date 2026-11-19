@@ -106,13 +106,19 @@ try {
   console.log("hud", JSON.stringify(hud1));
   if (!hud1.box || !/\d+ m/.test(hud1.boxText)) note("target box missing on the locked enemy");
   if (!/\d+ m/.test(hud1.range)) note("no range readout under the reticle");
-  if (hud1.pips.filter((b) => b && b !== "empty").length < 4) note(`expected 4 group pips, got ${hud1.pips}`);
+  // One reticle pip per weapon slot (fitted weapons + standard melee).
+  const slotCount = await Z(() => window.__ZOIDS__.weaponSlots().slots.length);
+  if (hud1.pips.length !== slotCount) note(`expected ${slotCount} slot pips, got ${hud1.pips}`);
   if (!hud1.ring) note("missile seeker circle not shown with a missile pack fitted");
   await page.screenshot({ path: path.join(shots, "hud-reticle-lock.png") });
 
   // 2) Bloom: hold the gatling for 1.5 s; the reticle grows.
   await Z(() => window.__ZOIDS__.installWeapon("leftWeapon", "gatling"));
-  await Z(() => window.__ZOIDS__.setGroup("leftWeapon", 1));
+  await Z(() => (window.__ZOIDS__.setGroup("leftWeapon", 1), window.__ZOIDS__.selectWeapon("leftWeapon")));
+  // Inside the gatling's optimal range, so the reticle shows the weapon's own
+  // bloom rather than its range spread (the lock assist now reads the range to
+  // the locked target, 60 m, which is past optimal).
+  await place(foe, 30, 0);
   await Z(() => window.__ZOIDS__.aimAtEnemy(0, null));
   await step(0.1);
   const before = await Z(() => window.__ZOIDS__.fireDebug().reticle.spread);
@@ -134,7 +140,7 @@ try {
   // the player's own hull does not hide the shell.
   await Z(() => { window.__ZOIDS__.simInput({ camera: true }); window.__ZOIDS__.stepSim(0.02); window.__ZOIDS__.simInput(null); });
   await Z(() => window.__ZOIDS__.installWeapon("leftWeapon", "shockCannon"));
-  await Z(() => window.__ZOIDS__.setGroup("leftWeapon", 1));
+  await Z(() => (window.__ZOIDS__.setGroup("leftWeapon", 1), window.__ZOIDS__.selectWeapon("leftWeapon")));
   await place(foe, 100, 0);
   await Z(() => window.__ZOIDS__.aimAtEnemy(0, null));
   await step(0.1);
