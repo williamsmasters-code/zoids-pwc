@@ -1,6 +1,14 @@
 WEAPONS OVERHAUL NOTES
 Zoids Mercenaries, November 2026
 
+UPDATE (targeting overhaul, zoids-v14): weapon groups are replaced by one
+selected weapon at a time (mouse wheel / 1-9), each fired from its own
+hardpoint; turrets fire only when selected; every Zoid has a standard melee;
+the Sniper Rifle zooms on RMB. Hit volumes, aim point, missile changes and
+the before/after numbers: docs/TARGETING_NOTES.txt. The stat table below
+is unchanged.
+
+
 This pass reworks how weapons aim, fire, travel and lose power, in a
 MechWarrior 5 style. Every Zoid keeps its existing loadout; the per-shot
 damage of every weapon is unchanged, and the sustained damage per second of

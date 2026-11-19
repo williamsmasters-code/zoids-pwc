@@ -1,0 +1,372 @@
+TARGETING OVERHAUL NOTES
+Zoid Mercenaries, November 2026. Plain text. Service worker cache: zoids-v14.
+
+What this covers
+  1. Why most weapons could not hit the Gun Sniper (root causes and evidence)
+  2. Hit volumes and the centre-of-mass aim point
+  3. Lock assist, lead box, impact mark, zeroing
+  4. Missiles
+  5. Per-hardpoint aim and weapon selection (mouse wheel, 1-9)
+  6. Standard melee (every Zoid) and its animations
+  7. Sniper scope on the right mouse button
+  8. AI parity
+  9. Hit rates before and after
+ 10. Time to kill and balance
+ 11. Muzzle positions per Zoid
+ 12. Judgment calls and known gaps
+ 13. Tools and tests
+
+
+1. ROOT CAUSES (WITH EVIDENCE)
+
+Measured from the real GLB part meshes in the mission (not the catalog radius):
+
+  Gun Sniper   0.78 m wide head-on overall, core only 0.40 m wide, 2.49 m tall
+  Command Wolf 1.34 m wide     Iron Kong 4.38 m wide
+
+a) The lock point sat in empty air. The old lock / lead point was 1.64 m above
+   the root of a Gun Sniper, above its thin body. A camera ray through that
+   point missed the model and hit the ground far behind it: target at 25 m ->
+   ray hit at 53 m, 50 m -> 146 m, 100 m -> 253 m, 150 m -> 497 m. A level ray
+   at that height hit nothing. Other Zoids are wide enough that the same ray
+   still struck them.
+b) Convergence on the far ground. Every mount aimed at the world point under
+   the crosshair. With the ray passing the Gun Sniper, that point was 50-350 m
+   behind it, so off-centre mounts (shoulder beam cannons, side guns)
+   converged behind the target and their shots passed either side of a 0.4 m
+   core (parallax). Shield Liger beam cannon: 0% at every range; at 120 m all
+   90 ticks "sailed past".
+c) Hits used the render meshes. Thin barrels and sticks were paper, and the
+   core box was the narrow real core.
+d) The AI and missiles used other heights. AI aim: root + radius x 0.45 =
+   1.03 m. Missile seeker: radius x 0.4 = 0.92 m. Neither matched the lock box.
+e) Missiles at close range climbed over a short target and dived into the
+   ground: Shield Liger missiles 0/8 at 25 m and 0/8 at 50 m, all "ground".
+   Against Iron Kong they also missed at 120-160 m (overshoot then dive).
+f) Swept-segment order. A projectile step that ended below the terrain was
+   counted as a ground hit before the step was tested against units. A tall
+   shooter (Gojulas back gun 9 m up) firing down at a short Gun Sniper passed
+   through it and into the ground in the same 0.05 s step. Gojulas sniper
+   rifle: 0/4 at 50 m, all "ground"; it went to 4/4 once the unit test runs
+   first. (Found during the after-measurement.)
+g) Gatling spread. Its designed cone (0.03 rad + up to 0.045 bloom, wider past
+   its 35 m ideal) is wider than a Gun Sniper past about 25 m. That is a design
+   property, not a bug; see judgment calls.
+
+
+2. HIT VOLUMES AND AIM POINT (js/targeting.js)
+
+  Each Zoid is hit-tested against compound boxes in its own root frame, built
+  once at spawn from its real part meshes: one box per mesh, padded 0.06 m a
+  side, at least 0.22 m thick on every axis. The largest core box is widened
+  to at least 0.5 x radius wide and deep and 0.42 x radius tall, and lifted so
+  it never sinks below the model's lowest point. Big Zoids already exceed that
+  floor, so they keep their own volume (Iron Kong is only padded). Gun Sniper
+  core box: 0.40 m -> 1.15 m wide.
+  Centre of mass: volume-weighted centre of the body boxes (core and head 1,
+  legs 0.35, weapons and tail 0), moved inside a core/head box if it falls in
+  a gap. Gun Sniper aim point: 1.02 m above the root (was 1.64 m).
+  Shots: bounding-sphere reject, then the boxes. The three.js raycaster on
+  render meshes is no longer used for unit hits.
+
+
+3. LOCK ASSIST, LEAD, ZEROING
+
+  Lock range 190 m, the 12 degree R box, R lock / Tab cycle, falloff numbers:
+  unchanged.
+  Assist (modest, only on the locked target): if the crosshair ray passes
+  within snap = 0.3 + 0.22 x radius m of the centre of mass (Gun Sniper
+  0.81 m), the aim point is the centre of mass. Within the lock box
+  (0.6 + 0.75 x radius m) the player's own line is kept but the convergence
+  point is set at the target's range, so mounts converge on the target and not
+  on the ground behind it. Outside that, the crosshair rules as before.
+  The lead box, the IMPACT diamond and ballistic zeroing are solved from the
+  selected weapon's own muzzle to the centre of mass (height included).
+
+
+4. MISSILES
+
+  Pop-up time = clamp(0.1 + d / 220, 0.16 s, stock pop) and dive bias =
+  clamp(0.2 x d, 4, 22) m, from the launch range d. Terminal homing gets
+  1 + 2 x (1 - distance / 35) inside 35 m. Proximity fuse after the 25 m
+  arming range: 0.6 + 0.12 x radius m from the hit volume. Missiles home on
+  the centre of mass. The 2.2 s lock, the cloud rules and the 25 m arming
+  rule are unchanged.
+
+
+5. PER-HARDPOINT AIM AND WEAPON SELECTION
+
+  Every weapon fires from its own muzzle. Aim, lead, zero, convergence and
+  the line-of-sight check (AIM / BLOCKED mark) are solved per muzzle.
+  The trigger fires only the selected weapon.
+    Mouse wheel  down = next weapon, up = previous, wraps around (primary)
+    1-9          select that slot directly (secondary)
+    Left mouse   fire the selected weapon
+    Right mouse  sniper weapon selected: scope zoom (see 7); any other weapon:
+                 a second trigger for the selected weapon
+  Slot order: head, left, right, back, then the standard melee last.
+  Switching takes 0.18 s (the dock row reads SWITCHING). Unselected weapons
+  keep cooling and reloading, so switching between a missile salvo and a
+  beam during its cooldown pays off.
+  The reticle shows the selected weapon's spread circle, rocket cone, impact,
+  drop, lead, range band and melee reach. Pips around the reticle, one per
+  slot, mark the selected slot. The weapon dock has one row per slot (heat,
+  cooldown, state, max range) with the selected row highlighted.
+  The wheel did not zoom in battle before, so nothing had to move. The hangar
+  viewer wheel zoom is unchanged.
+  Turrets keep their own traverse and aim from their own barrel to the
+  centre of mass, but now fire only when selected with the trigger held
+  (they no longer fire on their own).
+  The fire modes (gatling spin-up, pulse bursts, sustained beam, salvo, charge)
+  are unchanged.
+  Legacy weapon groups still exist for scripted input and tests only.
+  No gamepad or touch input exists in this game, so there is no left-trigger
+  scope binding.
+
+
+6. STANDARD MELEE
+
+  Every combat Zoid has a free, always-fitted melee weapon, last in its slot
+  list. No ammo. Heat 4 per swing, cooling 18/s. 0.8 swings per second.
+  Reach = 4 + 2.4 x radius m, measured from the Zoid's contact point (the front
+  of its hit volume at centre-of-mass height) to the target's hit volume.
+  It must be inside the style's arc and in line of sight (cover blocks a
+  swing). Damage = 10 + 0.12 x base weight (Blade Liger x1.15, energy).
+  A swing lunges forward (lunge x 4.5 m/s for 0.22 s). A hit knocks the
+  target back (5 m/s x weight ratio, clamped 0.35-2.2) and staggers it
+  0.3-0.5 s, with an impact flash and a hit sound. A swing that is out of
+  reach still swings and lunges, but does no damage.
+  The reticle shows IN REACH / OUT OF REACH and the distance.
+  If the striking part is destroyed, the melee is lost.
+
+  Zoid            Melee               Style   Damage  Reach   DPS at 0.8/s
+  Command Wolf    Fang Lunge          bite    13.4    9.8 m   10.7
+  Zaber Fang      Saber Fang Bite     bite    15.8    10.5 m  12.6
+  Shield Liger    Strike Claw         claw    14.8    11.4 m  11.8
+  Blade Liger     Laser Blade Charge  blade   17.3    11.6 m  13.8
+  Iron Kong       Hammer Fist         fist    17.4    12.4 m  13.9
+  Geno Saurer     Crusher Bite        bite    17.0    12.2 m  13.6
+  Gojulas         Tail Smash          tail    29.2    14.3 m  23.4
+  Death Saurer    Hell Claw           claw    30.2    17.0 m  24.2
+  Death Stinger   Stinger Strike      sting   26.1    12.6 m  20.9
+  Gun Sniper      Strike Kick         kick    13.6    9.5 m   10.9
+  Elephander      Tusk Ram            ram     23.2    15.0 m  18.6
+  Berserk Fuhrer  Buster Claw         claw    17.2    12.4 m  13.8
+  Molga           Head Ram            ram     15.3    10.2 m  12.2
+  Pteras          Talon Strike        claw    12.4    9.8 m   9.9
+
+  Balance: melee DPS sits at about half of the best single ranged weapon
+  (20-35 DPS) in exchange for no heat trouble, no ammo and the knockback /
+  stagger. The bought melee weapons (Strike Laser Claw, Laser Blade) are
+  unchanged and stronger.
+
+  Animations
+    Shield Liger: a real skinned clip, "Melee" (8 bones, 16 keys at 24 fps,
+      0.62 s), baked into assets/models/shield-liger-anim.glb by
+      tools/add_melee_clip.mjs with gltf-transform. Meshopt compression and
+      the existing clips and credits are kept. It plays additively over the
+      walk / idle like the Fire clip. Verified in the browser: the right
+      front paw goes back and up in the wind-up (root-local z -1.43 ->
+      -0.77 m), then forward and up in the strike (z -3.44 m, y 1.29 m).
+    Every other Zoid: procedural motion. A whole-body rig (lunge, pitch,
+      roll, yaw) plus part swings about pivots on the real part meshes:
+      claw = front leg / arm raise and slash; bite = head rear-up then snap;
+      blade = blades sweep in, head dips (Blade Liger); fist = arm raised
+      overhead and slammed down (Iron Kong); tail = tail and body whip
+      sideways (Gojulas); kick = leg cocked back then kicked forward (Gun
+      Sniper); ram = head-down charge (Elephander, Molga); sting = tail over
+      the back (Death Stinger).
+    Why not more skinned clips: only the Shield Liger GLB is rigged. The
+    others are static part meshes, so a skinned clip would need a new rig per
+    model. Procedural part motion was used for those instead.
+
+
+7. SNIPER SCOPE (RIGHT MOUSE)
+
+  With a sniper-class weapon selected (the Sniper Rifle, or any weapon marked
+  scope), holding RMB zooms smoothly (0.18 s) to 4x (FOV 60 -> 15). A second
+  right click while held steps to 8x (FOV 7.5). The view moves to the cockpit
+  eye while zoomed so the player's own hull never fills a third-person scope.
+  A scope ring overlay shows the zoom, the range and DROP / ZERO; the reticle,
+  lead box and impact mark stay. Look sensitivity is divided by zoom^0.8
+  (4x = 0.33 of normal). Releasing RMB, or switching weapon with the wheel
+  or a number key, leaves the scope. RMB held through a switch is latched: it
+  neither re-zooms nor fires the new weapon until released. The browser
+  context menu stays suppressed. RMB on a non-sniper weapon fires it.
+
+
+8. AI PARITY
+
+  The AI aims at the same centre of mass, from each weapon's own muzzle, with
+  the same spread, drop, falloff and lock rules. It fires one weapon at a
+  time: every 0.5 s it picks the slot with the best
+  DPS x range-damage x heat factor x hit chance (the spread cone at that
+  range against the target's size), charge weapons x0.2 while moving. The
+  standard melee wins outright when it is in reach. Example: a Molga shooting
+  a Pteras 18 m up and 45 m out now uses its pulse laser instead of a gatling
+  that cannot hit it. AI turrets fire only when the AI has selected them.
+
+
+9. HIT RATES, BEFORE AND AFTER
+
+  tools/targeting_hitrate.mjs: a stationary target on an open lane in the
+  Sparse Jungle, the shooter locks it, puts the crosshair on the lock box and
+  holds the trigger for 6 s per range. Rate = share of shots (beam ticks for
+  sustained beams) that strike the target. "-" = not fired (past max range
+  or no lock). Before = the tree at a1753a7 (all mounts on one trigger);
+  after = this build (selected weapon only).
+
+  Shield Liger shooting at the GUN SNIPER
+  weapon           before (25/50/80/120/160/200 m)   after
+  Pulse Laser      73 91 61                          100 100 100
+  Beam Cannon      0 0 0 0 0                         100 100 100 100 100
+  Double Beam      2 7 1 5                           100 100 100 100
+  Missile Pack     0 0 100 100 100 -                 100 100 100 100 100 -
+  Gatling          7 1 0                             61 10 2
+  Sniper Rifle     75 0 0 0 0 0                      100 100 100 100 100 75
+  Shock Cannon     25 0 0                            100 100 0
+  Charged Part.    100 100 0 0 100 0                 100 100 100 100 100 100
+
+  Gojulas shooting at the GUN SNIPER
+  Pulse Laser      79 100 76                         100 100 100
+  Beam Cannon      79 100 99 44 42                   100 100 100 100 100
+  Double Beam      81 100 80 46                      100 100 100 100
+  Missile Pack     0 60 100 100 100 -                100 100 100 100 100 -
+  Gatling          29 4 1                            100 31 2
+  Sniper Rifle     0 0 0 0 0 0                       100 100 100 100 100 100
+  Shock Cannon     0 0 0                             100 100 40
+  Charged Part.    100 0 0 0 0 0                     100 100 100 100 100 100
+
+  Big Zoid for comparison, Shield Liger shooting at IRON KONG
+  Pulse Laser      100 100 100                       100 100 100
+  Beam Cannon      100 100 100 100 100               100 100 100 100 100
+  Double Beam      100 100 100 100                   100 100 100 100
+  Missile Pack     0 0 100 0 0 -                     100 100 100 100 100 -
+  Gatling          95 74 7                           100 86 18
+  Sniper Rifle     100 x6                            100 x6
+  Shock Cannon     100 100 50                        100 100 25
+  Charged Part.    100 x6                            100 x6
+  Gojulas at Iron Kong: everything was already 100% except missiles
+  (0 0 100 0 0) and the gatling past 50 m; after: missiles 100%, gatling
+  100 100 53.
+
+  Mid-size targets, Shield Liger shooter (before -> after)
+    Command Wolf: gatling 53/12/0 -> 90/17/0; missiles 0/0/100/100/100 ->
+      100 at every range; beams were already about 100.
+    Zaber Fang: beams 69-87 -> 100; gatling 43/18/0 -> 90/28/1; sniper
+      75-100 -> 100 to 160 m.
+
+  Reading the table: inside each weapon's effective range the Gun Sniper is
+  now hit as reliably as the big Zoids, except the gatling (see 12). Big
+  Zoids were already hit almost every time, so they are not easier to hit;
+  the only big-Zoid change is that missiles and the gatling no longer miss
+  them for the bug reasons above. The shock cannon at 80 m (past its 45 m
+  zero, 105 m max) drops under small targets as designed.
+
+
+10. TIME TO KILL AND BALANCE
+
+  tools/ttk_probe.mjs: stock loadout, a stationary dummy, 12 s of fire,
+  damage per second on target (target armour classes applied).
+  Before: "LMB" = the old group 1 trigger, "all" = all four groups held.
+  After: the best single slot (switching not used).
+
+  shooter -> target, range    before LMB / all     after best slot
+  Shield Liger -> Gun Sniper 25   13.9 / 17.6      25.5 (beam cannon)
+  Shield Liger -> Gun Sniper 60   16.2 / 16.1      25.5
+  Shield Liger -> Iron Kong 25    19.5 / 45.0      25.5
+  Shield Liger -> Iron Kong 60    18.8 / 61.0      25.5
+  Gun Sniper -> Gun Sniper 25      0 / 7.9         21.2 (sniper rifle)
+  Gun Sniper -> Iron Kong 60      33.3 / 61.4      23.3
+  Iron Kong -> Gun Sniper 25      19.2 / 17.6      26.8 (shock cannon)
+  Iron Kong -> Iron Kong 60       46.9 / 59.6      25.3
+  Gojulas -> Gun Sniper 25        32.8 / 35.2      34.7 (gatling)
+  Gojulas -> Iron Kong 25         93.2 / 93.2      34.7
+  Command Wolf -> Gun Sniper 60   17.3 / 16.8      28.5 (double beam)
+  Command Wolf -> Iron Kong 25    76.2 / 78.0      34.7
+
+  Result: against the Gun Sniper, time to kill falls by 1.0-3x for most
+  shooters (it could barely be hit before). Against big Zoids, a pilot who
+  fired everything at once deals 1.8-2.7x less damage per second with one
+  weapon, so those fights take about twice as long. The AI fires one weapon
+  at a time as well, so the change is symmetric and the player-versus-AI
+  balance holds.
+  Decision: per-weapon damage, cooldowns and heat are unchanged (the weapons
+  overhaul rules asked to keep DPS). The switch is fast (0.18 s) and
+  unselected weapons keep reloading, so a pilot who weaves weapons gets
+  part of the old total back. If fights feel slow in play, the one-line
+  option is a global x1.3 damage multiplier on ranged weapons for player and
+  AI alike. It is proposed, not applied.
+
+
+11. MUZZLE POSITIONS (root frame, metres; x right, y up, -z forward)
+
+  Measured with the test kit (head pulse laser, left gatling, right beam
+  cannon, back missile pack); each muzzle is the weapon's mount anchor plus
+  its barrel reach. aim = centre of mass; vol = hit volume width / height /
+  length.
+  Command Wolf   aim (0, 1.14, -0.33)  vol 1.71/2.36/4.94  head (0, 0.78, -2.63)  left (-0.65, 1.32, -1.07)  right (0.64, 1.29, -1.36)  back (0, 2.11, -1.25)
+  Zaber Fang     aim (0, 1.33, -0.45)  vol 1.95/2.57/5.58  head (0, 0.88, -3.13)  left (-0.74, 0.09, -2.11)  right (0.73, 0.08, -2.45)  back (-0.02, 2.23, -0.80)
+  Shield Liger   aim (0, 1.46, -0.92)  vol 2.66/2.57/6.72  head (-0.02, 1.30, -3.44)  left (-1.08, 1.54, -2.50)  right (1.06, 1.51, -2.89)  back (-0.05, 2.03, -0.96)
+  Blade Liger    aim (0, 1.79, -1.07)  vol 6.30/3.42/8.01  head (0.30, 1.51, -4.46)  left (-2.80, 2.37, -2.53)  right (2.76, 2.41, -1.93)  back (0.01, 3.12, -1.43)
+  Iron Kong      aim (0.10, 2.82, 0.20)  vol 4.87/5.66/6.77  head (0.24, 4.03, -3.84)  left (-2.13, 1.93, -1.36)  right (2.10, 2.15, -2.17)  back (0.13, 5.35, -0.67)
+  Geno Saurer    aim (0.05, 2.10, -0.71)  vol 3.02/4.86/7.80  head (0, 2.94, -4.16)  left (-0.73, 2.07, -3.01)  right (0.71, 2.04, -3.49)  back (0.01, 4.54, -2.33)
+  Gojulas        aim (0, 3.54, -1.89)  vol 3.00/9.52/8.87  head (-0.03, 5.20, -4.86)  left (-1.12, 4.53, -4.15)  right (1.11, 4.46, -4.66)  back (0, 9.16, -3.39)
+  Death Saurer   aim (1.35, 2.60, -0.94)  vol 8.03/5.59/10.90  head (1.33, 2.80, -5.94)  left (-0.90, 2.36, -4.89)  right (3.07, 2.05, -5.03)  back (1.41, 5.18, -2.87)
+  Gun Sniper     aim (0, 1.02, -0.38)  vol 1.15/1.64/3.84  head (0, 0.88, -1.86)  left (-0.29, 1.29, -1.04)  right (0.30, 1.27, -1.37)  back (0, 1.06, 0.70)
+  Elephander     aim (0, 4.11, -0.67)  vol 4.79/6.47/10.39  head (0, 1.98, -6.66)  left (-2.02, 4.39, -3.63)  right (1.98, 4.31, -4.16)  back (0, 6.11, -3.18)
+  Berserk Fuhrer aim (0, 4.05, -0.37)  vol 3.50/6.01/9.28  head (0, 4.77, -4.28)  left (-1.33, 5.23, -3.50)  right (1.31, 5.15, -3.95)  back (0, 5.43, -1.48)
+  Molga          aim (0, 0.78, -0.27)  vol 1.69/1.71/4.75  head (0, 0.57, -2.88)  left (-0.62, 0.86, -1.80)  right (0.61, 0.84, -2.11)  back (0, 1.45, -1.21)
+  Pteras         aim (0, 1.09, -0.21)  vol 6.88/1.92/3.99  head (0, 1.10, -2.38)  left (-1.13, 1.05, -1.30)  right (1.11, 1.03, -1.62)  back (0, 0.67, -0.99)
+  Death Stinger  aim (0, 1.28, 0.59)  vol 6.57/3.91/8.00  head (-0.03, 0.75, -4.61)  left (-2.81, 0.78, -3.51)  right (2.73, 0.75, -4.05)  back (0, 3.55, 1.18)
+  Notes: the Gun Sniper's back muzzle is its tail rifle mount, 0.7 m behind
+  the root at body height; the Gojulas back gun is 9.2 m up, which is why the
+  segment-order bug (1f) showed up there first.
+
+
+12. JUDGMENT CALLS AND KNOWN GAPS
+
+  - Gatling against small targets: left as designed (very inaccurate past
+    its 35 m ideal). Gun Sniper hit rate 61-100% at 25 m, 10-31% at 50 m
+    (Iron Kong 86-100% at 50 m). The gatling still lands enough rounds up
+    close at 16 rounds/s. If it should be reliable on the Gun Sniper too, the
+    option is about 25% less spread while the aim is snapped to a locked
+    target. Not applied.
+  - Turrets used to fire on their own at the lock. Under "fire only the
+    selected weapon" they now fire only when selected with the trigger held
+    (player and AI). They keep their own traverse and their own aim.
+  - RMB on a non-sniper weapon is a second fire button (it was weapon group
+    2 before).
+  - Number keys 1-4 used to be held group triggers; now 1-9 select a slot.
+  - Lock assist is on the locked target only and is modest (snap radius
+    0.3 + 0.22 x radius m); it does not move the camera.
+  - Missiles now hit stationary targets almost every time at every range.
+    Moving targets still break the lock at 30 m/s as before.
+  - A melee swing that is out of reach still lunges.
+  - No per-mount traverse limits were added for the player (optional in the
+    brief). The AI still turns its chassis within 0.6 rad to fire.
+  - Hit volumes are axis-aligned boxes in the Zoid's root frame; they do not
+    follow leg animation frame by frame.
+  - No gamepad or touch input exists, so no left-trigger scope.
+  - Damage numbers are unchanged; see 10 for the proposed x1.3 option.
+
+
+13. TOOLS AND TESTS
+
+  tools/targeting_hitrate.mjs   hit-rate probe (section 9)
+  tools/ttk_probe.mjs           time-to-kill probe (section 10)
+  tools/add_melee_clip.mjs      bakes the Shield Liger Melee clip
+  tests/targeting.test.mjs      hit boxes, centre of mass, ray tests, frames,
+                                assist radii, melee catalog, missile pop
+  tests/targeting_browser.mjs   live mission: Gun Sniper volume and aim
+                                point, assist, hit rates, real mouse wheel and
+                                number keys, fire only the selected weapon,
+                                RMB scope (4x / 8x, overlay, sensitivity,
+                                exits on release and on a wheel switch),
+                                melee in reach / out of reach, Melee clip,
+                                AI melee, Gojulas tail swing
+  Updated for the selection model: input, headless, shield anim, turret,
+  pteras flight, weapons overhaul tests.
+  Screenshots: screenshots/targeting/ (locked Gun Sniper at 50 m, scope 4x and
+  8x, weapon dock selection) and screenshots/melee/ (Shield Liger Strike
+  Claw and Gojulas Tail Smash, mid-swing).

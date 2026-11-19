@@ -22,8 +22,10 @@ RUN
   tests/glb.test.mjs, tests/headless.mjs, tests/glb_browser.mjs, and the
   rest listed in package.json, including tests/weapons_overhaul.test.mjs,
   tests/battlefields.test.mjs, tests/pass_radar.test.mjs,
-  tests/weapons_overhaul_browser.mjs, tests/battlefields_browser.mjs and,
-  last, tests/pass_radar_browser.mjs (mountain pass routes and radar).
+  tests/weapons_overhaul_browser.mjs, tests/battlefields_browser.mjs,
+  tests/pass_radar_browser.mjs (mountain pass routes and radar),
+  tests/targeting.test.mjs and, last, tests/targeting_browser.mjs
+  (hit volumes, weapon selection, scope, melee).
   The browser test serves this directory on port 8080, so stop any other
   server on that port first. Screenshots land in screenshots/.
 
@@ -35,21 +37,30 @@ CONTROLS
     A / D                      strafe
     Mouse                      look (pointer lock)
     Arrow left / right         look without the mouse
-    Left mouse or 1            weapon group 1
-    Right mouse or 2           weapon group 2 (the browser menu is cancelled)
-    3 / 4                      weapon groups 3 and 4
+    Mouse wheel                switch weapon: down = next, up = previous (wraps)
+    1-9                        select that weapon slot directly
+    Left mouse                 fire the selected weapon only
+    Right mouse                Sniper Rifle selected: hold to zoom 4x, click
+                               again while held for 8x; any other weapon: fire
+                               (the browser menu is cancelled)
     Q                          active skill
 
-  The crosshair is the center of the screen in both camera modes. Each
-  weapon fires from its own mount toward the world point under that
-  crosshair. If the center ray hits nothing, the mounts aim 1000 m out
-  along it. The player's own Zoid is ignored by that ray. Beams use that
-  ray directly. Ballistic guns are zeroed at their ideal range: inside it
-  the shell meets the crosshair, past it the shell lands low (see WEAPONS).
-  The crosshair circle grows with spread (bloom), shows the range to the
-  point under it, and has four group pips coloured by range band. The
-  weapon dock shows groups 1-4 as ready, cooling, charging, overheated,
-  disabled, or empty, plus that group's max range.
+  One weapon is selected at a time and only it fires, from its own mount
+  (muzzle) toward the world point under the crosshair. Slots run head,
+  left, right, back, then the standard melee every Zoid carries. A switch
+  takes 0.18 s; unselected weapons keep cooling and reloading. With a
+  locked target near the crosshair, the aim snaps to the target's centre of
+  mass (modest assist), so every mount converges on the target. If the
+  center ray hits nothing, the mount aims 1000 m out along it. The player's
+  own Zoid is ignored by that ray. Ballistic guns are zeroed at their ideal
+  range: inside it the shell meets the crosshair, past it the shell lands
+  low (see WEAPONS). The crosshair circle shows the selected weapon's
+  spread (bloom) and the range; pips round it, one per slot, mark the
+  selection, and an AIM / BLOCKED mark shows where the selected mount's own
+  line goes. With the melee selected the reticle reads IN REACH or OUT OF
+  REACH. The weapon dock has one row per slot (selected row highlighted):
+  ready, switching, cooling, charging, overheated or disabled, plus max
+  range. Full targeting notes: docs/TARGETING_NOTES.txt.
   Each weapon has its own heat gauge, heat per shot, and cooling rate.
   A weapon that reaches 100 heat locks until it cools below 55. The other
   weapons keep firing. The PEAK bar is the hottest weapon, not a shared pool.
@@ -69,12 +80,26 @@ WEAPONS
   Targeting. Sensor lock range is 190 m (more with sensor skills). R locks
   the enemy inside a 12 degree box round the crosshair, else the nearest;
   Tab cycles. A target outside sensor range keeps the lock for 3 s, then it
-  drops. Turrets fire only at the locked target. Corner brackets mark the
-  locked enemy.
+  drops. Turrets turn on their own toward the locked target but fire only
+  when selected with the trigger held. Corner brackets mark the locked
+  enemy. Hits use per-Zoid hit volumes built from the model's parts, and
+  the lock box, lead box, missiles and AI all aim at the centre of mass, so
+  small Zoids such as the Gun Sniper can be hit
+  (docs/TARGETING_NOTES.txt).
+
+  Standard melee. Every Zoid has a free melee strike (Strike Claw, Fang
+  Lunge, Tail Smash, Strike Kick and so on) in its last slot: reach about
+  9-17 m from the front of the Zoid, no ammo, low heat, damage by weight,
+  lunge, knockback and stagger. Cover blocks it.
+
+  Sniper scope. Hold the right mouse button with the Sniper Rifle selected:
+  4x zoom from the cockpit, a second click for 8x, slower look, range and
+  drop in the scope. Release or switch weapon to leave it.
 
   Fire modes. Gatling: automatic, spins up over 0.6 s. Pulse Laser: bursts
   of 3. Beam Cannon: a sustained 0.45 s beam you hold on the target.
-  Missile Pack: salvo of 4. Shock Cannon and Sniper Rifle: single heavy
+  Missile Pack: salvo of 4 (pop-up and dive scale with range, a proximity
+  fuse near the target). Shock Cannon and Sniper Rifle: single heavy
   shots. Charged Particle Cannon: 3 s stationary charge, unchanged.
 
   Spread. Every shot scatters inside a cone that grows with sustained fire
@@ -111,7 +136,7 @@ WEAPONS
   AI pilots use the same spread, drop, falloff, refraction and lock rules.
   Higher difficulty pilots compensate for shell drop better.
 
-  Range. If the locked target is past a group's max, that dock row reads
+  Range. If the locked target is past a weapon's max, that dock row reads
   OUT OF RANGE. If it is past every fitted weapon, the crosshair turns red
   and the target line says OUT OF RANGE. Sensor range is a different line:
   OUT OF SENSOR RANGE.
