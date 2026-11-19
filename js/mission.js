@@ -56,6 +56,7 @@ import {
   biomeId,
   pointBlocked,
   findFreeSpot,
+  terrainBlocked,
   findPath,
   walkClear,
   nextWaypoint,
@@ -829,13 +830,16 @@ export function startMission(state, contract, hooks) {
       }
       if (overlap) unit.bumped = missionTime;
     }
-    // Canyon walls: ground Zoids cannot climb cliffs. Slide back along the
-    // free axis, else stay where we were.
-    if (!airborne && !unit.scripted && unit.prevPos && Math.hypot(pos.x - unit.prevPos.x, pos.z - unit.prevPos.z) < 10 && field.blockedAt(pos.x, pos.z)) {
+    // Canyon walls: ground Zoids cannot climb cliffs, and a Zoid only fits
+    // where its body does (superheavies stay out of the narrow ledge).
+    // Slide back along the free axis, else stay where we were.
+    const rr = unit.radius || 2.5;
+    if (!airborne && !unit.scripted && unit.prevPos && Math.hypot(pos.x - unit.prevPos.x, pos.z - unit.prevPos.z) < 10
+      && terrainBlocked(field, pos.x, pos.z, rr) && !terrainBlocked(field, unit.prevPos.x, unit.prevPos.z, rr)) {
       const px = unit.prevPos.x;
       const pz = unit.prevPos.z;
-      if (!field.blockedAt(px, pos.z)) pos.x = px;
-      else if (!field.blockedAt(pos.x, pz)) pos.z = pz;
+      if (!terrainBlocked(field, px, pos.z, rr)) pos.x = px;
+      else if (!terrainBlocked(field, pos.x, pz, rr)) pos.z = pz;
       else {
         pos.x = px;
         pos.z = pz;

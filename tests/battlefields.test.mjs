@@ -5,7 +5,7 @@ import {
   BIOME_IDS, biomeId, CLEAR_ZONES, ROAD, PLAY_LIMIT, WATER,
   createField, pointBlocked, findFreeSpot, lineBlocked, steerYaw, coverPoint,
   fieldStats, rayBlockers, rayGround, wadeSpeedMul, wadeCoolMul, passCenter, passHalfWidth,
-  findPath, walkClear, nextWaypoint,
+  findPath, walkClear, nextWaypoint, terrainBlocked, passShape, passExcess, PASS_BRANCHES,
 } from "../js/battlefield.js";
 import { escortLayout } from "../js/escort.js";
 import { hazardPath, beamTransmission, BIOME_HAZARD } from "../js/weaponsys.js";
@@ -135,7 +135,8 @@ for (const biome of BIOME_IDS) {
   for (let zz = -320; zz <= 320; zz += 10) {
     const c2 = passCenter(zz);
     check(passHalfWidth(zz) > 40, `pass width at z=${zz}`);
-    check(pointBlocked(f, c2 + passHalfWidth(zz) + 40, zz, 3), `cliff blocks ground Zoids at z=${zz}`);
+    const cx2 = c2 + passHalfWidth(zz) + 40;
+    if (!passShape(cx2, zz).route) check(pointBlocked(f, cx2, zz, 3), `cliff blocks ground Zoids at z=${zz}`);
   }
   // Superheavy fits through the chokes.
   for (const zz of [200, -270]) check(!pointBlocked(f, passCenter(zz), zz, SUPER_R), `choke z=${zz} passable`);
@@ -188,7 +189,7 @@ for (const [biome, seed, R] of BIOME_IDS.flatMap((b) => [[b, 1001, 3.1], [b, 7, 
       const yaw = st ? st.yaw : want + Math.PI;
       const nx = x - Math.sin(yaw) * speed * dt;
       const nz = z - Math.cos(yaw) * speed * dt;
-      if (!pointBlocked(f, nx, nz, R * 0.8)) { x = nx; z = nz; }
+      if (!pointBlocked(f, nx, nz, R * 0.8) && !terrainBlocked(f, nx, nz, R)) { x = nx; z = nz; }
       if (step % 20 === 19) {
         if (Math.hypot(x - lastX, z - lastZ) < 2) { still++; stuckEvents++; prefer = -prefer; if (process.env.BF_DEBUG) console.log("   stall", biome, x.toFixed(1), z.toFixed(1), route ? JSON.stringify(route.slice(ri, ri + 2)) : "direct"); } else still = 0;
         lastX = x;

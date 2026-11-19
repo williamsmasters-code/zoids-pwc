@@ -129,14 +129,97 @@ export function passHalfWidth(z) {
     - 22 * Math.exp(-(((z - 200) / 42) ** 2))
     - 22 * Math.exp(-(((z + 270) / 42) ** 2));
 }
-// Height the canyon wall adds at (x, z): a short talus slope, then cliffs.
-export const PASS_WALL_STEP = 3; // wall part above this is a cliff ground Zoids cannot climb
-export function passWall(x, z) {
-  const d = Math.abs(x - passCenter(z)) - passHalfWidth(z);
-  if (d <= -8) return 0;
-  if (d < 0) return ((d + 8) / 8) ** 2 * 2.2;
+// Side routes of the pass (fixed, not seeded): narrower gullies, a ledge
+// switchback and a raised ridge trail that split off the main canyon and
+// rejoin it further on. Rock walls 60+ m high stand between them and the
+// main canyon, so they are out of sight (and radar) of it.
+//   hw: half width of the flat floor (plus an 8 m talus that is walkable).
+//   rise: floor height reached mid-route (ramps of `ramp` m at each end).
+//   superheavy: true if a Death Saurer (radius 5.4) fits.
+export const PASS_BRANCHES = [
+  { id: "westGully", name: "West Gully", hw: 10, superheavy: true,
+    points: [[-40, 255], [-150, 235], [-235, 170], [-262, 60], [-258, -40], [-232, -120], [-160, -185], [-50, -205]] },
+  { id: "eastLedge", name: "East Ledge switchback", hw: 3.4, talus: 1, superheavy: false,
+    points: [[60, 175], [150, 168], [205, 135], [222, 85], [190, 45], [232, 5], [235, -45], [175, -95], [90, -120]] },
+  { id: "ridgeTrail", name: "High Ridge Trail", hw: 7, rise: 24, ramp: 150, superheavy: true,
+    points: [[70, 330], [190, 345], [300, 290], [350, 170], [362, 40], [352, -90], [318, -200], [230, -280], [120, -320], [10, -320]] },
+  { id: "southBypass", name: "South Bypass", hw: 8, superheavy: true,
+    points: [[-70, -170], [-185, -235], [-215, -330], [-170, -425], [-40, -455]] },
+];
+for (const b of PASS_BRANCHES) {
+  b.pts = b.points.map(([x, z]) => ({ x, z }));
+  let acc = 0;
+  b.cum = [0];
+  for (let i = 1; i < b.pts.length; i++) {
+    acc += Math.hypot(b.pts[i].x - b.pts[i - 1].x, b.pts[i].z - b.pts[i - 1].z);
+    b.cum.push(acc);
+  }
+  b.length = acc;
+  const xs = b.pts.map((p) => p.x);
+  const zs = b.pts.map((p) => p.z);
+  const m = b.hw + 30;
+  b.box = { x0: Math.min(...xs) - m, x1: Math.max(...xs) + m, z0: Math.min(...zs) - m, z1: Math.max(...zs) + m };
+}
+// Distance to a branch centre line and the distance along it.
+function branchProject(b, x, z) {
+  let best = Infinity;
+  let along = 0;
+  for (let i = 0; i < b.pts.length - 1; i++) {
+    const a = b.pts[i];
+    const c = b.pts[i + 1];
+    const vx = c.x - a.x;
+    const vz = c.z - a.z;
+    const l2 = vx * vx + vz * vz || 1;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * vx + (z - a.z) * vz) / l2));
+    const d = Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t));
+    if (d < best) {
+      best = d;
+      along = b.cum[i] + t * Math.sqrt(l2);
+    }
+  }
+  return { d: best, along };
+}
+// Raised branches stay at the main floor for their first and last 70 m
+// (so they leave the canyon level), then ramp up over `ramp` m.
+function branchFloor(b, along) {
+  if (!b.rise) return 0;
+  const r = b.ramp || 120;
+  return b.rise * smooth((Math.min(along, b.length - along) - 70) / r);
+}
+// Wall profile: a short talus slope, then cliffs. d = distance past the
+// flat floor edge.
+function wallProfile(d, x, z, talus = 8) {
+  if (d <= -talus) return 0;
+  if (d < 0) return ((d + talus) / talus) ** 2 * 2.2;
   const rough = (Math.sin(x * 0.07 + z * 0.05) * 0.5 + Math.sin(z * 0.11 - x * 0.03) * 0.5) * Math.min(1, d / 12) * 7;
   return 2.2 + Math.min(92, 3.4 * d + 0.03 * d * d) + rough;
+}
+// Terrain the pass adds at (x, z) and how much of it is wall above the
+// floor of the route the point belongs to (main canyon or a branch).
+export const PASS_WALL_STEP = 3; // wall part above this is a cliff ground Zoids cannot climb
+export function passShape(x, z) {
+  let wall = wallProfile(Math.abs(x - passCenter(z)) - passHalfWidth(z), x, z);
+  let height = wall;
+  let route = wall <= PASS_WALL_STEP ? "main" : null;
+  for (const b of PASS_BRANCHES) {
+    if (x < b.box.x0 || x > b.box.x1 || z < b.box.z0 || z > b.box.z1) continue;
+    const pr = branchProject(b, x, z);
+    const w = wallProfile(pr.d - b.hw, x, z, b.talus);
+    const h = branchFloor(b, pr.along) + w;
+    if (h < height) {
+      height = h;
+      wall = w;
+      route = w <= PASS_WALL_STEP ? b.id : route;
+    }
+  }
+  return { height, wall, route };
+}
+export function passWall(x, z) {
+  return passShape(x, z).height;
+}
+// Wall height above the local route floor (cliff test, cliff colouring).
+export function passExcess(x, z) {
+  return passShape(x, z).wall;
 }
 
 // ---------- terrain ----------
@@ -299,7 +382,7 @@ export function createField(biomeIn, seed = 1) {
   }
   function blockedAt(x, z) {
     if (Math.abs(x) > PLAY_LIMIT || Math.abs(z) > PLAY_LIMIT) return true;
-    return biome === "pass" && passWall(x, z) > PASS_WALL_STEP;
+    return biome === "pass" && passExcess(x, z) > PASS_WALL_STEP;
   }
   function addBlocker(b) {
     b.base = b.base == null ? heightAt(b.x, b.z) : b.base;
@@ -626,6 +709,12 @@ export function createField(biomeIn, seed = 1) {
 // on a cliff, or overlapping hard cover (same margins as the mission's
 // collision push-out).
 const scratch = [];
+// Terrain only (cliffs, play box) for a Zoid of `radius` at (x, z).
+export function terrainBlocked(field, x, z, radius = 2.5) {
+  if (field.blockedAt(x, z)) return true;
+  const k = radius * 0.7;
+  return field.blockedAt(x + k, z) || field.blockedAt(x - k, z) || field.blockedAt(x, z + k) || field.blockedAt(x, z - k);
+}
 export function pointBlocked(field, x, z, radius = 2.5) {
   if (field.blockedAt(x, z)) return true;
   for (const [ox, oz] of [[radius, 0], [-radius, 0], [0, radius], [0, -radius]]) {
@@ -641,7 +730,14 @@ export function pointBlocked(field, x, z, radius = 2.5) {
 
 // Nearest free, dry-ish spot to (x, z) on a spiral (spawn validity).
 export function findFreeSpot(field, x, z, radius = 2.5, maxDist = 120) {
-  const ok = (px, pz) => !pointBlocked(field, px, pz, radius + 1.5) && field.waterAt(px, pz).depth < 1.2;
+  // Superheavies never start in a pocket of a branch too narrow for them.
+  const narrowFor = (px, pz) => {
+    if (field.biome !== "pass" || radius <= 4) return false;
+    const route = passShape(px, pz).route;
+    const br = route && PASS_BRANCHES.find((b) => b.id === route);
+    return !!(br && !br.superheavy);
+  };
+  const ok = (px, pz) => !pointBlocked(field, px, pz, radius + 1.5) && field.waterAt(px, pz).depth < 1.2 && !narrowFor(px, pz);
   if (ok(x, z)) return { x, z, moved: 0 };
   for (let d = 4; d <= maxDist; d += 4) {
     const n = Math.max(8, Math.round((d * 2 * Math.PI) / 6));
@@ -724,18 +820,23 @@ function segment2D(ax, az, dx, dz, b) {
 // points are free. Yaw convention as the mission (forward = -sin, -cos).
 const STEER_OFFSETS = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.5, -1.5, 2.1, -2.1];
 export function steerYaw(field, x, z, yaw, radius = 2.5, look = 14, prefer = 1) {
+  // First heading with every feeler free; failing that (narrow ledges and
+  // gullies), the first heading whose near feelers are free.
+  let near = null;
   for (const raw of STEER_OFFSETS) {
     const off = raw * prefer;
     const y = yaw + off;
     const fx = -Math.sin(y);
     const fz = -Math.cos(y);
-    let free = true;
+    let free = 0;
     for (const d of [1.5, 3.5, look * 0.45, look]) {
-      if (pointBlocked(field, x + fx * d, z + fz * d, radius)) { free = false; break; }
+      if (pointBlocked(field, x + fx * d, z + fz * d, radius)) break;
+      free++;
     }
-    if (free) return { yaw: y, offset: off };
+    if (free === 4) return { yaw: y, offset: off };
+    if (free >= 2 && !near) near = { yaw: y, offset: off, near: true };
   }
-  return null;
+  return near;
 }
 
 // A spot behind hard cover from `threat`, within maxDist of `pos`.
@@ -888,20 +989,40 @@ export function rayGround(field, o, d, maxDist, near = 0.15) {
 export const NAV_CELL = 8;
 function navGrid(field, radius) {
   const key = radius > 4 ? "L" : "S";
-  const r = radius > 4 ? 6.2 : 4.2; // a little wider than the Zoid: routes keep off walls
+  // A little wider than the Zoid so routes keep off walls (the pass uses
+  // the real sizes so its 7 m ledge stays open to normal Zoids only).
+  const r = field.biome === "pass" ? (radius > 4 ? 5.6 : 3.4) : radius > 4 ? 6.2 : 4.2;
   if (!field.nav) field.nav = {};
   if (field.nav[key]) return field.nav[key];
   const n = Math.ceil((PLAY_LIMIT * 2) / NAV_CELL);
   const cost = new Uint8Array(n * n);
+  const sx = new Float32Array(n * n); // free spot inside each open cell (waypoint)
+  const sz = new Float32Array(n * n);
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const x = -PLAY_LIMIT + (i + 0.5) * NAV_CELL;
       const z = -PLAY_LIMIT + (j + 0.5) * NAV_CELL;
-      if (pointBlocked(field, x, z, r)) cost[j * n + i] = 0;
-      else cost[j * n + i] = field.waterAt(x, z).depth > 1.2 ? 3 : 1;
+      let px = x;
+      let pz = z;
+      let open = !pointBlocked(field, x, z, r);
+      // Pass: narrow ledges and gullies can miss a cell centre, so look for
+      // any free spot in the cell (7 x 7 samples) unless it is deep rock.
+      if (!open && field.biome === "pass" && passExcess(x, z) < 40) {
+        for (let sj = -3; sj <= 3 && !open; sj++) {
+          for (let si = -3; si <= 3; si++) {
+            const qx = x + si * (NAV_CELL / 7);
+            const qz = z + sj * (NAV_CELL / 7);
+            if (!pointBlocked(field, qx, qz, r)) { open = true; px = qx; pz = qz; break; }
+          }
+        }
+      }
+      sx[j * n + i] = px;
+      sz[j * n + i] = pz;
+      if (!open) cost[j * n + i] = 0;
+      else cost[j * n + i] = field.waterAt(px, pz).depth > 1.2 ? 3 : 1;
     }
   }
-  const g = { n, cost, r };
+  const g = { n, cost, r, sx, sz };
   field.nav[key] = g;
   return g;
 }
@@ -1039,7 +1160,7 @@ export function findPath(field, a, b, radius = 2.5, maxExpand = 30000) {
   const cells = [];
   for (let c = goal; c !== -1; c = from[c]) cells.push(c);
   cells.reverse();
-  const pts = cells.map((c) => ({ x: -PLAY_LIMIT + ((c % n) + 0.5) * NAV_CELL, z: -PLAY_LIMIT + (Math.floor(c / n) + 0.5) * NAV_CELL }));
+  const pts = cells.map((c) => ({ x: g.sx[c], z: g.sz[c] }));
   pts[pts.length - 1] = { x: b.x, z: b.z };
   // String pulling: keep only the turns.
   const out = [];
@@ -1047,8 +1168,9 @@ export function findPath(field, a, b, radius = 2.5, maxExpand = 30000) {
   let k = 0;
   while (k < pts.length - 1) {
     let far = k;
-    for (let m = pts.length - 1; m > k; m--) {
-      if (gridClear(g, cur.x, cur.z, pts[m].x, pts[m].z)) { far = m; break; }
+    // Exact straight-walk test, up to 16 cells ahead.
+    for (let m = Math.min(pts.length - 1, k + 16); m > k; m--) {
+      if (walkClear(field, cur, pts[m], g.r * 0.8)) { far = m; break; }
     }
     if (far === k) far = k + 1;
     out.push(pts[far]);

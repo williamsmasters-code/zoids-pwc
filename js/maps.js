@@ -34,7 +34,7 @@ import {
   Quaternion,
 } from "three";
 import { mulberry32 } from "./catalog.js";
-import { createField, passWall, passCenter, passHalfWidth, GROUND_EXTENT, PLAY_LIMIT, ROAD } from "./battlefield.js";
+import { createField, passWall, passExcess, PASS_WALL_STEP, passCenter, passHalfWidth, GROUND_EXTENT, PLAY_LIMIT, ROAD } from "./battlefield.js";
 
 const WATER_COLOR = { city: 0x3d4d4a, denseJungle: 0x3f5f4a, sparseJungle: 0x4a7f92, pass: 0x6fa6c2 };
 
@@ -53,7 +53,7 @@ export function createMap(biomeIn, seed) {
   // Detailed ground over the play box, a coarse skirt beyond it (tiny far
   // triangles are what cost on software GL).
   const inner = PLAY_LIMIT + 28;
-  const segs = biome === "pass" ? 112 : 72;
+  const segs = biome === "pass" ? 160 : 72; // pass: 7.7 m cells so the 9-20 m side gullies read;
   const geo = new PlaneGeometry(inner * 2, inner * 2, segs, segs);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
@@ -72,7 +72,7 @@ export function createMap(biomeIn, seed) {
     const t = Math.max(0, Math.min(1, 0.45 + n * 0.35 + (biome === "pass" ? 0 : y * 0.04)));
     col.copy(low).lerp(high, t);
     if (biome === "pass") {
-      const wall = passWall(x, z);
+      const wall = passExcess(x, z);
       if (wall > 2) col.lerp(cliff, Math.min(1, (wall - 2) / 6));
       if (y > 104) col.lerp(snow, Math.min(1, (y - 104) / 14));
     }
@@ -109,7 +109,7 @@ export function createMap(biomeIn, seed) {
       const y = heightAt(x, z);
       spos.setY(i, y - 0.8);
       col.copy(low).lerp(high, 0.5);
-      if (biome === "pass" && passWall(x, z) > 2) col.lerp(cliff, 0.8);
+      if (biome === "pass" && passExcess(x, z) > 2) col.lerp(cliff, 0.8);
       if (biome === "pass" && y > 104) col.lerp(snow, Math.min(1, (y - 104) / 14));
       scol[i * 3] = col.r;
       scol[i * 3 + 1] = col.g;
@@ -680,11 +680,12 @@ export function minimapLayer(field) {
   const S = MINIMAP_PPM;
   if (field.biome === "pass") {
     ctx.fillStyle = "rgba(120, 104, 86, 0.55)";
+    // Rock (cliffs and mountain tops) sampled every 4 m, so the side
+    // branches show as lighter channels through it.
     for (let z = -PLAY_LIMIT; z <= PLAY_LIMIT; z += 4) {
-      const cx = passCenter(z);
-      const hw = passHalfWidth(z);
-      ctx.fillRect(0, o + z * S, Math.max(0, o + (cx - hw) * S), 4 * S + 0.5);
-      ctx.fillRect(o + (cx + hw) * S, o + z * S, size, 4 * S + 0.5);
+      for (let x = -PLAY_LIMIT; x <= PLAY_LIMIT; x += 4) {
+        if (passExcess(x, z) > PASS_WALL_STEP) ctx.fillRect(o + x * S, o + z * S, 4 * S + 0.5, 4 * S + 0.5);
+      }
     }
   }
   ctx.fillStyle = "rgba(80, 150, 200, 0.55)";
