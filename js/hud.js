@@ -350,6 +350,27 @@ function drawMini(ctx, mini) {
   for (const mark of mini.marks || []) {
     const p = minimapProject(mini.fwd, mini.px, mini.pz, mark.x, mark.z, scale, w, h, 6);
     ctx.fillStyle = mark.color;
+    if (mark.ghost !== undefined) {
+      // Last-known position of a radar-hidden contact: a fading hollow
+      // diamond with a question mark.
+      // (Pinned to the rim when off the map.)
+      ctx.save();
+      ctx.globalAlpha = 0.25 + 0.75 * mark.ghost;
+      ctx.strokeStyle = mark.color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - 5);
+      ctx.lineTo(p.x + 5, p.y);
+      ctx.lineTo(p.x, p.y + 5);
+      ctx.lineTo(p.x - 5, p.y);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.font = "bold 8px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("?", p.x, p.y + 3);
+      ctx.restore();
+      continue;
+    }
     if (p.clamped) {
       const ang = Math.atan2(p.y - cy, p.x - cx);
       ctx.save();

@@ -712,14 +712,14 @@ const scratch = [];
 // Terrain only (cliffs, play box) for a Zoid of `radius` at (x, z).
 export function terrainBlocked(field, x, z, radius = 2.5) {
   if (field.blockedAt(x, z)) return true;
+  // Eight directions at 0.7 r, so a diagonal ledge cannot be straddled.
   const k = radius * 0.7;
-  return field.blockedAt(x + k, z) || field.blockedAt(x - k, z) || field.blockedAt(x, z + k) || field.blockedAt(x, z - k);
+  const q = k * Math.SQRT1_2;
+  return field.blockedAt(x + k, z) || field.blockedAt(x - k, z) || field.blockedAt(x, z + k) || field.blockedAt(x, z - k)
+    || field.blockedAt(x + q, z + q) || field.blockedAt(x - q, z - q) || field.blockedAt(x + q, z - q) || field.blockedAt(x - q, z + q);
 }
 export function pointBlocked(field, x, z, radius = 2.5) {
-  if (field.blockedAt(x, z)) return true;
-  for (const [ox, oz] of [[radius, 0], [-radius, 0], [0, radius], [0, -radius]]) {
-    if (field.blockedAt(x + ox * 0.7, z + oz * 0.7)) return true;
-  }
+  if (terrainBlocked(field, x, z, radius)) return true;
   for (const b of field.near(x, z, radius + 16, scratch)) {
     if (b.shape === "circle") {
       if (Math.hypot(x - b.x, z - b.z) < b.r + radius * 0.65) return true;
@@ -751,6 +751,15 @@ export function findFreeSpot(field, x, z, radius = 2.5, maxDist = 120) {
   return { x, z, moved: -1 };
 }
 
+// Radar line: terrain (mountains, canyon walls, ridges), rock spires and
+// buildings at least SENSOR.buildingBlocks tall block it; trees, rubble,
+// cars and boulders do not. Returns null when clear, else { by, t }.
+export const RADAR_BUILDING_MIN = 40;
+const radarSolid = (b) => !b.dead && (b.kind === "spire" || (b.kind === "building" && b.top - b.base >= RADAR_BUILDING_MIN));
+export function radarBlocked(field, a, b) {
+  return lineBlocked(field, a, b, { only: radarSolid });
+}
+
 // Line of sight between two 3D points. Terrain (sampled every 4 m) and hard
 // cover both block. Returns null when clear, else { by, t }.
 const losScratch = [];
@@ -774,6 +783,7 @@ export function lineBlocked(field, a, b, opts = {}) {
       if (seen.has(blk)) continue;
       seen.add(blk);
       if (opts.ignoreLow && blk.h < opts.ignoreLow) continue;
+      if (opts.only && !opts.only(blk)) continue;
       const seg = segment2D(a.x, a.z, dx, dz, blk);
       if (!seg) continue;
       const y0 = a.y + dy * seg[0];

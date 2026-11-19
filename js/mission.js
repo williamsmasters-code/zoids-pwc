@@ -61,6 +61,7 @@ import {
   walkClear,
   nextWaypoint,
   lineBlocked,
+  radarBlocked,
   steerYaw,
   coverPoint,
   rayBlockers,
@@ -69,6 +70,7 @@ import {
   wadeCoolMul,
   PLAY_LIMIT,
 } from "./battlefield.js";
+import { SENSOR, stealthMul, updateTrack, trackState } from "./sensors.js";
 import { buildUnitModel, tagOwner, refreshPartColors, disposeTree, setTurretYaw } from "./models.js";
 import { turretSpecFor, relativeBearing, stepTurret, turretTrigger } from "./turret.js";
 import { createInput } from "./input.js";
@@ -709,7 +711,54 @@ export function startMission(state, contract, hooks) {
     const t = lockAimPoint(b);
     return !lineBlocked(field, eyeOf(a), { x: t.x, y: t.y, z: t.z });
   }
+  // Radar contacts (js/sensors.js): terrain, spires and very tall buildings
+  // hide a contact unless it is inside the close-detection radius; a lost
+  // contact stays live for SENSOR.freshTime, then leaves a fading
+  // last-known marker until SENSOR.memoryTime. Player and AI share the rule.
+  const AI_RADAR_RANGE = 230;
+  function playerRadarRange() {
+    const perf = player.perf || derivePerformance(player.def, player.mods, player.parts, player.weight);
+    return (perf.sensors.radar ? 230 : 42) * perf.sensors.rangeMul * radarMul(player);
+  }
+  function radarEye(unit) {
+    const p = unit.model.root.position;
+    return { x: p.x, y: p.y + (unit.radius || 2) * 0.9 + 1.5, z: p.z };
+  }
+  let radarChecks = 0;
+  function senseContact(obs, tgt) {
+    if (!obs.tracks) obs.tracks = new Map();
+    let tr = obs.tracks.get(tgt.id);
+    const q = tgt.model.root.position;
+    if (!tr || missionTime - tr.checkedAt >= SENSOR.recheck || missionTime < tr.checkedAt) {
+      const p = obs.model.root.position;
+      const dist = Math.hypot(q.x - p.x, q.z - p.z);
+      const range = obs === player ? playerRadarRange() : AI_RADAR_RANGE;
+      const stealth = stealthMul(tgt.speed, nav.heatFrac(tgt));
+      let seen = false;
+      let blocked = false;
+      if (tgt.alive && dist <= range * stealth) {
+        if (dist <= SENSOR.closeRadius * stealth) seen = true;
+        else {
+          const a = lockAimPoint(tgt);
+          radarChecks++;
+          blocked = !!radarBlocked(field, radarEye(obs), { x: a.x, y: a.y, z: a.z });
+          seen = !blocked;
+        }
+      }
+      tr = updateTrack(tr, seen, q.x, q.z, missionTime);
+      Object.assign(tr, { checkedAt: missionTime, visible: seen, blocked, dist, stealth });
+      obs.tracks.set(tgt.id, tr);
+    }
+    const st = trackState(tr, missionTime);
+    if (st.state === "live" && tgt.alive) {
+      // Fresh track: the radar still follows it for a moment.
+      tr.x = q.x;
+      tr.z = q.z;
+    }
+    return { state: st.state, fade: st.fade, age: st.age, visible: tr.visible, blocked: tr.blocked, x: tr.x, z: tr.z, stealth: tr.stealth };
+  }
   const nav = {
+    sense: (unit, target) => senseContact(unit, target),
     los(unit, target) {
       const c = unit.losCache;
       if (c && c.id === target.id && missionTime - c.t < 0.25) return c.v;
@@ -1717,7 +1766,8 @@ export function startMission(state, contract, hooks) {
       const to = lockAimPoint(u).sub(camera.position);
       return { id: u.id, unit: u, dist: u.model.root.position.distanceTo(player.model.root.position), angle: angleDeg(view, to) };
     });
-    return inSensor(cands, range);
+    // Radar-hidden contacts (behind terrain, not fresh) cannot be locked.
+    return inSensor(cands.filter((c) => senseContact(player, c.unit).state === "live"), range);
   }
 
   function setPlayerLock(cand, quiet = false) {
@@ -1748,7 +1798,7 @@ export function startMission(state, contract, hooks) {
   function upkeepPlayerLock(dt) {
     if (!player.lockId) return;
     const t = units.find((u) => u.id === player.lockId);
-    const info = t ? { alive: t.alive, inSensor: t.model.root.position.distanceTo(player.model.root.position) <= playerSensorRange() } : null;
+    const info = t ? { alive: t.alive, inSensor: t.model.root.position.distanceTo(player.model.root.position) <= playerSensorRange() && senseContact(player, t).state === "live" } : null;
     const res = stepTargetLock(player.lockLost || 0, info, dt);
     player.lockLost = res.lostFor;
     if (!res.keep) {
@@ -2473,6 +2523,7 @@ export function startMission(state, contract, hooks) {
   const indicatorPoint = new Vector3();
   const indicatorDir = new Vector3();
   let lastProbe = { arrows: [], rows: [], radarRange: 0 };
+  let radarView = { live: [], memory: [], hidden: [] };
 
   // Keep direction arrows off the objective banner, the minimap, and the weapon dock.
   function parkArrow(edge, width, height) {
@@ -2689,16 +2740,32 @@ export function startMission(state, contract, hooks) {
         locked: distance <= range,
       };
     }
-    const radarRange = (perf.sensors.radar ? 230 : 42) * perf.sensors.rangeMul * radarMul(player);
+    const radarRange = playerRadarRange();
     const probe = objectiveReadout(radarRange);
     const marks = [];
+    radarView = { live: [], memory: [], hidden: [] };
     for (const unit of units) {
       if (unit === player || !unit.alive) continue;
       const distance = unit.model.root.position.distanceTo(player.model.root.position);
-      if (distance > radarRange) continue;
+      let px = unit.model.root.position.x;
+      let pz = unit.model.root.position.z;
+      if (unit.team === "enemy") {
+        // Enemy contacts follow radar occlusion; allies share a datalink.
+        const c = senseContact(player, unit);
+        if (c.state === "memory") {
+          marks.push({ x: c.x, z: c.z, color: "#ff4455", r: 4, ghost: c.fade });
+          radarView.memory.push({ id: unit.id, x: c.x, z: c.z, fade: c.fade });
+          continue;
+        }
+        if (c.state !== "live") {
+          if (distance <= radarRange) radarView.hidden.push(unit.id);
+          continue;
+        }
+        radarView.live.push(unit.id);
+      } else if (distance > radarRange) continue;
       marks.push({
-        x: unit.model.root.position.x,
-        z: unit.model.root.position.z,
+        x: px,
+        z: pz,
         color: unit.team === "enemy" ? "#ff4455" : "#7dffb2",
         r: unit.def.immobile ? 4 : 3,
         air: !!(unit.flight && unit.flight.airborne),
@@ -3445,6 +3512,17 @@ export function startMission(state, contract, hooks) {
     return r ? { by: r.by, t: r.t, x: r.blocker ? r.blocker.x : null, z: r.blocker ? r.blocker.z : null } : null;
   };
   window.__ZOIDS__.pointBlocked = (x, z, r) => pointBlocked(field, x, z, r);
+  // Radar occlusion probes for the tests.
+  window.__ZOIDS__.radar = () => ({ ...radarView, checks: radarChecks, range: playerRadarRange(), close: SENSOR.closeRadius });
+  window.__ZOIDS__.radarLine = (a, b) => {
+    const r = radarBlocked(field, a, b);
+    return r ? { by: r.by } : null;
+  };
+  window.__ZOIDS__.sense = (obsId, tgtId) => {
+    const o = units.find((u) => u.id === obsId);
+    const t = units.find((u) => u.id === tgtId);
+    return o && t ? senseContact(o, t) : null;
+  };
   window.__ZOIDS__.groundAt = (x, z) => map.heightAt(x, z);
   // The game's own shot ray (units + cover + terrain) from a to b.
   window.__ZOIDS__.shotTest = (a, b, ignoreId = null) => {
@@ -3463,12 +3541,13 @@ export function startMission(state, contract, hooks) {
     id: u.id, name: u.name, team: u.team, x: u.model.root.position.x, z: u.model.root.position.z, y: u.model.root.position.y,
     radius: u.radius, wade: u.wade || 0, wadeMul: u.wadeMul || 1, speed: u.speed,
     inside: !u.flight && pointBlocked(field, u.model.root.position.x, u.model.root.position.z, u.radius * 0.6),
-    brain: u.brain ? { stuck: u.brain.stuckEvents || 0, detours: u.brain.detours || 0, routes: u.navRoutes || 0, cover: u.brain.coverUses || 0, unseen: u.brain.unseenT || 0 } : null,
+    brain: u.brain ? { stuck: u.brain.stuckEvents || 0, detours: u.brain.detours || 0, routes: u.navRoutes || 0, cover: u.brain.coverUses || 0, unseen: u.brain.unseenT || 0, contact: u.brain.contact || null, search: u.brain.search ? { x: u.brain.search.x, z: u.brain.search.z, sweeping: !!u.brain.search.until } : null, lost: u.brain.lostTracks || 0, gaveUp: !!u.brain.gaveUp } : null,
     rocketBlocked: u.rocketBlocked || null,
   }));
   window.__ZOIDS__.mapParts = (hide) => map.group.children.map((o, i) => { if (hide && hide.includes(o.name || `#${i}`)) o.visible = false; return `${o.name || `#${i}`}:${o.visible ? 1 : 0}`; });
   window.__ZOIDS__.debugScene = () => ({ scene, map, renderer, camera });
   window.__ZOIDS__.setLive = (on) => { pacify = !on; return !pacify; };
+  window.__ZOIDS__.alertUnit = (id) => { const u = units.find((k) => k.id === id); if (u && u.brain) { u.brain.alerted = true; u.brain.react = 0; } return !!(u && u.brain); };
   window.__ZOIDS__.showcase = (view) => { showcaseView = view || null; return !!showcaseView; };
   window.__ZOIDS__.drawLine = (a, b, color = 0xff3344, life = 2) => { beam(new Vector3(a.x, a.y, a.z), new Vector3(b.x, b.y, b.z), color, true, 0.6, life); return true; };
   window.__ZOIDS__.aimInfo = () => {

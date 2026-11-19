@@ -76,6 +76,10 @@ export function chooseTarget(unit, brain, units, time = 0) {
   return truck ? truck.unit : null;
 }
 
+// Search behaviour after losing a radar track (see updateBrain).
+export const SEARCH_TIME = 10;
+export const SEARCH_RADIUS = 30;
+
 export function updateBrain(unit, brain, ctx, dt) {
   brain.react -= dt;
   brain.nextFlank -= dt;
@@ -104,8 +108,43 @@ export function updateBrain(unit, brain, ctx, dt) {
   }
   const x = unit.model.root.position.x;
   const z = unit.model.root.position.z;
-  const tx = target.model.root.position.x;
-  const tz = target.model.root.position.z;
+  let tx = target.model.root.position.x;
+  let tz = target.model.root.position.z;
+  // Radar (ctx.nav.sense, js/sensors.js): same rule as the player's radar.
+  // A target hidden behind terrain (and not fresh) is hunted at its
+  // last-known position; on arrival the Zoid sweeps a circle around it for
+  // SEARCH_TIME seconds, then drifts toward the fight's general area.
+  let searching = false;
+  if (ctx.nav && ctx.nav.sense && !unit.def.immobile) {
+    const sense = ctx.nav.sense(unit, target);
+    brain.contact = sense.state;
+    if (sense.state === "live") {
+      if (brain.search) brain.reacquired = (brain.reacquired || 0) + 1;
+      brain.search = null;
+      brain.gaveUp = false;
+    } else if (!brain.gaveUp) {
+      if (!brain.search || brain.search.id !== target.id) {
+        brain.search = { id: target.id, x: sense.x, z: sense.z, until: 0 };
+        brain.lostTracks = (brain.lostTracks || 0) + 1;
+      }
+      const s = brain.search;
+      if (!s.until && Math.hypot(s.x - x, s.z - z) < SEARCH_RADIUS) s.until = time + SEARCH_TIME;
+      if (s.until && time > s.until) {
+        brain.search = null;
+        brain.gaveUp = true;
+      } else {
+        searching = true;
+        if (s.until) {
+          const a = time * 0.5 + (brain.flank > 0 ? 0 : Math.PI);
+          tx = s.x + Math.cos(a) * SEARCH_RADIUS * 0.7;
+          tz = s.z + Math.sin(a) * SEARCH_RADIUS * 0.7;
+        } else {
+          tx = s.x;
+          tz = s.z;
+        }
+      }
+    }
+  }
   const dist = Math.hypot(tx - x, tz - z);
   let throttle = 0;
   let strafe = 0;
@@ -121,6 +160,10 @@ export function updateBrain(unit, brain, ctx, dt) {
   } else {
     throttle = 0.12;
     strafe = brain.flank;
+  }
+  if (searching) {
+    throttle = dist > 6 ? 1 : 0.4;
+    strafe = 0;
   }
   const moved = Math.hypot(x - brain.lastX, z - brain.lastZ);
   if (Math.abs(throttle) > 0.5) {
@@ -253,7 +296,7 @@ export function updateBrain(unit, brain, ctx, dt) {
     strafe,
     yaw: face,
     climb,
-    fire: dist < maxRange * 0.98 && visible,
+    fire: dist < maxRange * 0.98 && visible && !searching,
     skill: useSkill,
     aim: {
       x: tx + brain.jx * scatter,
