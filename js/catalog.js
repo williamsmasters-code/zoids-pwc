@@ -1016,3 +1016,75 @@ export function mulberry32(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+// ---------- standard melee (every Zoid, free, always fitted) ----------
+// Not bought or mounted: the Zoid's own claws, fangs, fists or tail. The
+// strike reaches `range` m from the Zoid's contact point (the front of its
+// hit volume, js/targeting.js), inside an arc in front. Damage scales with
+// the Zoid's base weight. `part` is the body part that strikes: if that part
+// is destroyed the strike is lost. `style` picks the animation (js/models.js).
+export const MELEE_STYLES = {
+  claw: { label: "swipe", windup: 0.2, dur: 0.62, lunge: 2.2, arc: 55 },
+  bite: { label: "lunge bite", windup: 0.24, dur: 0.6, lunge: 3.2, arc: 45 },
+  blade: { label: "blade charge", windup: 0.16, dur: 0.7, lunge: 5, arc: 40 },
+  fist: { label: "fist smash", windup: 0.28, dur: 0.72, lunge: 1.6, arc: 50 },
+  tail: { label: "tail strike", windup: 0.26, dur: 0.8, lunge: 0.8, arc: 70 },
+  kick: { label: "kick", windup: 0.2, dur: 0.6, lunge: 1.8, arc: 50 },
+  ram: { label: "ram", windup: 0.22, dur: 0.66, lunge: 4, arc: 45 },
+  sting: { label: "stinger strike", windup: 0.26, dur: 0.7, lunge: 1.4, arc: 50 },
+};
+export const STANDARD_MELEE = {
+  commandWolf: { name: "Fang Lunge", style: "bite", part: "head" },
+  zaberFang: { name: "Saber Fang Bite", style: "bite", part: "head" },
+  shieldLiger: { name: "Strike Claw", style: "claw", part: "rightFrontLeg" },
+  bladeLiger: { name: "Laser Blade Charge", style: "blade", part: "core", energy: true },
+  ironKong: { name: "Hammer Fist", style: "fist", part: "rightWeapon" },
+  genoSaurer: { name: "Crusher Bite", style: "bite", part: "head" },
+  gojulas: { name: "Tail Smash", style: "tail", part: "tail" },
+  deathSaurer: { name: "Hell Claw", style: "claw", part: "core" },
+  deathStinger: { name: "Stinger Strike", style: "sting", part: "tail" },
+  gunSniper: { name: "Strike Kick", style: "kick", part: "rightLeg" },
+  elephander: { name: "Tusk Ram", style: "ram", part: "head" },
+  berserkFuhrer: { name: "Buster Claw", style: "claw", part: "core" },
+  molga: { name: "Head Ram", style: "ram", part: "head" },
+  pteras: { name: "Talon Strike", style: "claw", part: "core" },
+};
+export const MELEE_TUNE = {
+  baseDamage: 10, damagePerTon: 0.12, rate: 0.8, baseReach: 4, reachPerRadius: 2.4, heat: 4, cooling: 18,
+};
+export function standardMeleeFor(def) {
+  const m = STANDARD_MELEE[def.id] || { name: "Body Slam", style: "ram", part: "core" };
+  const style = MELEE_STYLES[m.style];
+  const parts = partListFor(def);
+  const part = parts.includes(m.part) ? m.part : "core";
+  const t = MELEE_TUNE;
+  return {
+    id: `melee:${def.id}`,
+    type: "standardMelee",
+    name: m.name,
+    kind: "melee",
+    delivery: "melee",
+    innate: true,
+    style: m.style,
+    styleLabel: style.label,
+    part,
+    mount: "melee",
+    damage: Math.round((t.baseDamage + t.damagePerTon * (def.baseWeight || 30)) * (m.energy ? 1.15 : 1) * 10) / 10,
+    rate: t.rate,
+    optimal: Math.round((t.baseReach + t.reachPerRadius * (def.radius || 2)) * 10) / 10,
+    range: Math.round((t.baseReach + t.reachPerRadius * (def.radius || 2)) * 10) / 10,
+    minRange: 0,
+    longRange: Math.round((t.baseReach + t.reachPerRadius * (def.radius || 2)) * 10) / 10,
+    arc: style.arc,
+    windup: style.windup,
+    swingTime: style.dur,
+    lunge: style.lunge,
+    heat: t.heat,
+    cooling: t.cooling,
+    weight: 0,
+    size: "-",
+    price: 0,
+    spread: 0,
+    color: m.energy ? 0x9fe6ff : 0xffd27a,
+  };
+}

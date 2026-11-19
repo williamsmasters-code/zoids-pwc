@@ -40,6 +40,7 @@ import {
   weightOf,
   mulberry32,
   BIOMES,
+  standardMeleeFor,
 } from "./catalog.js";
 import {
   createParts,
@@ -71,7 +72,8 @@ import {
   PLAY_LIMIT,
 } from "./battlefield.js";
 import { SENSOR, stealthMul, updateTrack, trackState } from "./sensors.js";
-import { buildUnitModel, tagOwner, refreshPartColors, disposeTree, setTurretYaw } from "./models.js";
+import { buildHitBoxes, centerOfMass, rayHitBoxes, toLocal, dirToLocal, toWorld, assistAim, assistRadii, boundsOf } from "./targeting.js";
+import { buildUnitModel, tagOwner, refreshPartColors, disposeTree, setTurretYaw, meleeState } from "./models.js";
 import { turretSpecFor, relativeBearing, stepTurret, turretTrigger } from "./turret.js";
 import { createInput } from "./input.js";
 import { createHUD, headingOf } from "./hud.js";
@@ -98,6 +100,8 @@ import {
   leadPoint,
   rocketMayFire,
   rocketTurn,
+  rocketPopFor,
+  rocketDiveBiasFor,
   stepLock,
 } from "./ballistics.js";
 import { screenEdgeIndicator, minimapProject } from "./indicators.js";
@@ -278,6 +282,14 @@ export function startMission(state, contract, hooks) {
   if (window.__ZOIDS__) window.__ZOIDS__.pacifyOnStart = false;
   let helpOn = false;
   let cameraMode = "tps";
+  // Sniper scope (hold RMB with a sniper weapon selected): 4x, a second click 8x.
+  const BASE_FOV = 60;
+  const SCOPE_STEPS = [4, 8];
+  let scopeHeld = false;
+  let lastAlt = false;
+  let altLatch = false;
+  let scopeStep = 0;
+  let scopeMix = 0;
   let endTimer = 0;
   let endVictory = false;
   let missionTime = 0;
@@ -504,9 +516,33 @@ export function startMission(state, contract, hooks) {
     };
   }
 
+  function runtimeMelee(def) {
+    return {
+      ...standardMeleeFor(def),
+      turret: null,
+      turretState: null,
+      turretFired: 0,
+      uid: `melee-${def.id}`,
+      group: 0,
+      cooldown: 0,
+      charge: 0,
+      charging: false,
+      heatGauge: 0,
+      overheated: false,
+      spin: 0,
+      bloomNow: 0,
+      burstLeft: 0,
+      burstTimer: 0,
+      beamLeft: 0,
+      swing: null,
+    };
+  }
+
   function spawnUnit(def, opts) {
     const id = `u${uid++}`;
     const weapons = (opts.weapons || []).map((w) => runtimeWeapon(w, def));
+    // Standard melee (js/catalog.js STANDARD_MELEE): free, always fitted.
+    if (!def.immobile && def.layout !== "structure") weapons.push(runtimeMelee(def));
     const armorLevels = opts.armorLevels || {};
     const parts = createParts(def, armorLevels);
     applyCondition(parts, opts.condition);
@@ -556,6 +592,7 @@ export function startMission(state, contract, hooks) {
       climbCmd: 0,
       vel3: { x: 0, y: 0, z: 0 },
     };
+    computeHitVolume(unit);
     units.push(unit);
     return unit;
   }
@@ -689,6 +726,69 @@ export function startMission(state, contract, hooks) {
     rebuildHits();
   }
 
+  // Hit volume (js/targeting.js): compound boxes from the real part meshes in
+  // the root frame, measured once at spawn (and again when a weapon is swapped).
+  function computeHitVolume(unit) {
+    const root = unit.model.root;
+    const pos = root.position.clone();
+    const rot = root.rotation.clone();
+    root.position.set(0, 0, 0);
+    root.rotation.set(0, 0, 0);
+    root.updateMatrixWorld(true);
+    const meshBoxes = [];
+    const b = new Box3();
+    root.traverse((obj) => {
+      if (!obj.isMesh || !obj.userData || !obj.userData.partId || obj.name === "iff") return;
+      b.makeEmpty();
+      b.expandByObject(obj, true);
+      if (b.isEmpty()) return;
+      meshBoxes.push({ partId: obj.userData.partId, min: { x: b.min.x, y: b.min.y, z: b.min.z }, max: { x: b.max.x, y: b.max.y, z: b.max.z } });
+    });
+    root.position.copy(pos);
+    root.rotation.copy(rot);
+    root.updateMatrixWorld(true);
+    const boxes = buildHitBoxes(meshBoxes, unit.radius);
+    unit.hitBoxes = boxes;
+    unit.aimLocal = centerOfMass(boxes);
+    const all = boundsOf(boxes);
+    unit.hitBounds = all;
+    unit.hitSphere = Math.max(...[all.min, all.max].flatMap((q) => [Math.abs(q.x), Math.abs(q.z)])) + Math.max(Math.abs(all.min.y), Math.abs(all.max.y));
+  }
+  const hitStandIns = new Map();
+  function hitStandIn(ownerId, partId) {
+    const key = `${ownerId}|${partId}`;
+    let o = hitStandIns.get(key);
+    if (!o) { o = { userData: { ownerId, partId } }; hitStandIns.set(key, o); }
+    return o;
+  }
+  function rootFrame(unit) {
+    const p = unit.model.root.position;
+    return { x: p.x, y: p.y, z: p.z, yaw: unit.model.root.rotation.y };
+  }
+  // Nearest Zoid hit volume along a ray (world). { distance, point, object }.
+  function rayUnits(origin, dir, ignoreId, maxDist, near) {
+    let best = null;
+    for (const unit of units) {
+      if (!unit.alive || unit.id === ignoreId || !unit.hitBoxes) continue;
+      const p = unit.model.root.position;
+      // Sphere reject around the root.
+      const ox = p.x - origin.x, oy = p.y - origin.y, oz = p.z - origin.z;
+      const t = ox * dir.x + oy * dir.y + oz * dir.z;
+      const R = unit.hitSphere || 10;
+      if (t < -R || t > maxDist + R) continue;
+      const cx = origin.x + dir.x * t - p.x, cy = origin.y + dir.y * t - p.y, cz = origin.z + dir.z * t - p.z;
+      if (cx * cx + cy * cy + cz * cz > R * R) continue;
+      const frame = rootFrame(unit);
+      const lo = toLocal(origin, frame);
+      const ld = dirToLocal(dir, frame.yaw);
+      const hit = rayHitBoxes(lo, ld, unit.hitBoxes, best ? best.distance : maxDist, near);
+      if (hit && (!best || hit.t < best.distance)) {
+        best = { distance: hit.t, point: new Vector3(origin.x + dir.x * hit.t, origin.y + dir.y * hit.t, origin.z + dir.z * hit.t), object: hitStandIn(unit.id, hit.partId) };
+      }
+    }
+    return best;
+  }
+
   function rebuildHits() {
     // Only Zoid part meshes are raycast; terrain and hard cover are tested
     // analytically (js/battlefield.js rayGround / rayBlockers).
@@ -759,6 +859,8 @@ export function startMission(state, contract, hooks) {
   }
   const nav = {
     sense: (unit, target) => senseContact(unit, target),
+    // Centre of mass (js/targeting.js), the same point the player's lock uses.
+    aimPoint: (target) => lockAimPoint(target),
     los(unit, target) {
       const c = unit.losCache;
       if (c && c.id === target.id && missionTime - c.t < 0.25) return c.v;
@@ -980,9 +1082,11 @@ export function startMission(state, contract, hooks) {
     if (!player.alive) return;
     const perf = derivePerformance(player.def, player.mods, player.parts, player.weight);
     player.perf = perf;
-    player.lookYaw -= input.dx * 0.0023;
+    // Scoped: mouse look slows with the zoom (about 1 / zoom^0.8).
+    const sens = 1 / Math.pow(scopeZoom(), 0.8);
+    player.lookYaw -= input.dx * 0.0023 * sens;
     player.lookYaw -= input.turn * Math.max(0.85, perf.turn) * dt;
-    player.lookPitch = clamp(player.lookPitch - input.dy * 0.002, -1.05, 0.5);
+    player.lookPitch = clamp(player.lookPitch - input.dy * 0.002 * sens, -1.05, 0.5);
     const maxTwist = 0.82;
     let diff = wrapAngle(player.lookYaw - player.model.root.rotation.y);
     player.model.root.rotation.y = wrapAngle(
@@ -1078,7 +1182,8 @@ export function startMission(state, contract, hooks) {
     raycaster.set(origin, direction);
     raycaster.near = 0.15;
     raycaster.far = maxDist;
-    const raw = hitMeshes.length ? raycaster.intersectObjects(hitMeshes, false) : [];
+    const unitHit = rayUnits(origin, direction, ignoreId, maxDist, 0.15);
+    const raw = unitHit ? [unitHit] : [];
     const tagged = raw.map((hit) => {
       const data = hit.object.userData || {};
       return {
@@ -1119,9 +1224,31 @@ export function startMission(state, contract, hooks) {
     const origin = raycaster.ray.origin.clone();
     const direction = raycaster.ray.direction.clone();
     const hit = raycast(origin, direction, player.id, AIM_FAR);
+    lastAssist = null;
+    // Lock assist (js/targeting.js assistAim): with a locked target under the
+    // lock box, the weapons converge at the target's range instead of on
+    // whatever is behind it, and a crosshair close to the centre of mass
+    // settles on it. Anything solid in front of the target still wins.
+    const locked = player.lockId ? units.find((u) => u.id === player.lockId && u.alive) : null;
+    if (locked && assistMode !== "off") {
+      const cm = lockAimPoint(locked);
+      const radii = assistRadii(locked.radius);
+      const a = assistAim(origin, direction, cm, radii.snap, radii.box);
+      if (a.point) {
+        const range = origin.distanceTo(new Vector3(a.point.x, a.point.y, a.point.z));
+        const blocker = hit && hit.distance < range - (locked.radius || 2) && !(hit.object.userData && hit.object.userData.ownerId === locked.id);
+        if (!blocker) {
+          lastAssist = { mode: a.mode, miss: a.miss };
+          return new Vector3(a.point.x, a.point.y, a.point.z);
+        }
+      }
+    }
     const point = aimPointAlongRay(origin, direction, hit ? hit.point : null, AIM_FAR);
     return new Vector3(point.x, point.y, point.z);
   }
+  let lastAssist = null;
+  // "on" (default) or "off" (test probe: the pre-overhaul crosshair rule).
+  let assistMode = "on";
 
   // Barrel local -Z passes through `aimPoint`. The muzzle sits on that axis,
   // so a shot from the muzzle along the returned direction hits the point.
@@ -1446,8 +1573,9 @@ export function startMission(state, contract, hooks) {
     const transmission = path ? beamTransmission(path, refract) : 1;
     weapon.lastHit = hit ? { ...hitInfo(hit), refracted: bent, transmission } : null;
     weapon.lastRefraction = bent ? { transmission, path: path ? path.length : 0, kinds: path ? path.kinds : [] } : null;
-    if (!hit) return;
+    if (!hit) { tallyShot(unit.id, weapon.id, "miss"); return; }
     const hitData = hit.object.userData || {};
+    tallyShot(unit.id, weapon.id, hitData.ownerId ? "unit" : hitData.block ? "cover" : "ground");
     if (hitData.block || hitData.ground || hit.object === map.ground) {
       if (!thin || rng() < 0.3) flash(hit.point, 0xffcc88, 0.45);
       if (hit.blocker) damageProp(hit.blocker, weapon.damage * frac * transmission, unit);
@@ -1528,7 +1656,8 @@ export function startMission(state, contract, hooks) {
       targetId,
       age: 0,
       phase: rocket ? "pop" : "",
-      popTime: weapon.popTime,
+      popTime: rocketLaunchPop(unit, weapon, targetId, origin),
+      diveBias: rocketLaunchBias(unit, targetId, origin),
       mesh,
       // Shell tracer: heavy guns every round, the gatling every 4th.
       trail: !rocket && !!gravity && (weapon.id !== "gatling" || (tracerCount++ % 4 === 0)),
@@ -1536,25 +1665,80 @@ export function startMission(state, contract, hooks) {
     });
   }
 
+  function rocketLaunchRange(targetId, origin) {
+    const t = targetId ? units.find((u) => u.id === targetId && u.alive) : null;
+    if (!t) return null;
+    const p = t.model.root.position;
+    return Math.hypot(p.x - origin.x, p.z - origin.z);
+  }
+  function rocketLaunchPop(unit, weapon, targetId, origin) {
+    if (weapon.delivery !== "rocket") return weapon.popTime;
+    const d = rocketLaunchRange(targetId, origin);
+    return d == null ? weapon.popTime : rocketPopFor(d, weapon.popTime == null ? undefined : weapon.popTime);
+  }
+  function rocketLaunchBias(unit, targetId, origin) {
+    const d = rocketLaunchRange(targetId, origin);
+    return d == null ? undefined : rocketDiveBiasFor(d);
+  }
+  // Proximity fuse: an armed missile that passes within this distance of the
+  // target's hit volume bursts on it (it would otherwise slip past a thin
+  // target or bury itself just short of a low one).
+  function proximityFuse(shot, target, prev) {
+    if (!target || !target.hitBoxes) return null;
+    const armed = Math.hypot(shot.x - shot.ox, shot.y - shot.oy, shot.z - shot.oz) >= (shot.weaponRef && shot.weaponRef.minRange || 0);
+    if (!armed) return null;
+    const fuse = 0.6 + 0.12 * (target.radius || 2);
+    const frame = rootFrame(target);
+    const a = toLocal(prev, frame);
+    const b = toLocal({ x: shot.x, y: shot.y, z: shot.z }, frame);
+    let best = null;
+    for (let k = 0; k <= 4; k++) {
+      const t = k / 4;
+      const q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t };
+      for (const box of target.hitBoxes) {
+        const dx = Math.max(box.min.x - q.x, 0, q.x - box.max.x);
+        const dy = Math.max(box.min.y - q.y, 0, q.y - box.max.y);
+        const dz = Math.max(box.min.z - q.z, 0, q.z - box.max.z);
+        const d = Math.hypot(dx, dy, dz);
+        if (d <= fuse && (!best || d < best.d)) best = { d, partId: box.partId, t };
+      }
+    }
+    if (!best) return null;
+    const t = best.t;
+    return { partId: best.partId, point: new Vector3(prev.x + (shot.x - prev.x) * t, prev.y + (shot.y - prev.y) * t, prev.z + (shot.z - prev.z) * t) };
+  }
+
   function updateProjectiles(dt) {
     for (const shot of projectiles) {
       const target = shot.targetId ? units.find((u) => u.id === shot.targetId && u.alive) : null;
       const prev = { x: shot.x, y: shot.y, z: shot.z };
+      const seek = target ? lockAimPoint(target) : null;
       stepProjectile(shot, dt, target ? {
-        x: target.model.root.position.x,
-        y: target.model.root.position.y + target.radius * 0.4,
-        z: target.model.root.position.z,
+        x: seek.x,
+        y: seek.y,
+        z: seek.z,
         speed: planarSpeed(target),
         // A target standing in dust / smoke blinds the seeker (homing x0.3).
         blind: !!insideHazard(target.model.root.position, hazards),
       } : null);
       shot.mesh.position.set(shot.x, shot.y, shot.z);
-      if (shot.trail) beam(new Vector3(prev.x, prev.y, prev.z), shot.mesh.position, shot.color, true, 0.75, shot.trailLife || 0.35, shot.trailLife > 0.5 ? 0.16 : 0);
-      if (shot.y <= map.heightAt(shot.x, shot.z) + 0.2) {
-        shot.life = 0;
-        flash(shot.mesh.position.clone(), shot.color, 0.5);
-        continue;
+      if (shot.delivery === "rocket" && target && shot.phase === "dive") {
+        const fz = proximityFuse(shot, target, prev);
+        if (fz) {
+          shot.life = 0;
+          shot.tallied = true;
+          tallyShot(shot.ownerId, shot.weaponRef && shot.weaponRef.id, "unit");
+          const attacker = units.find((u) => u.id === shot.ownerId);
+          if (attacker) {
+            const dist = Math.hypot(fz.point.x - shot.ox, fz.point.y - shot.oy, fz.point.z - shot.oz);
+            const amount = shot.damage * rangeDamageMul(shot.weaponRef, dist);
+            if (amount > 0) applyDamage(target, fz.partId, amount, attacker, shot.dmgCtx);
+          }
+          flash(fz.point, shot.color, 0.6);
+          continue;
+        }
       }
+      if (shot.trail) beam(new Vector3(prev.x, prev.y, prev.z), shot.mesh.position, shot.color, true, 0.75, shot.trailLife || 0.35, shot.trailLife > 0.5 ? 0.16 : 0);
       const stepDir = new Vector3(shot.x - prev.x, shot.y - prev.y, shot.z - prev.z);
       const dist = stepDir.length();
       if (dist > 0.001) {
@@ -1563,6 +1747,8 @@ export function startMission(state, contract, hooks) {
         if (hit) {
           shot.life = 0;
           const hitData = hit.object.userData || {};
+          shot.tallied = true;
+          tallyShot(shot.ownerId, shot.weaponRef && shot.weaponRef.id, hitData.ownerId ? "unit" : hitData.block ? "cover" : "ground");
           if (hitData.block || hitData.ground || hit.object === map.ground) {
             flash(hit.point, shot.color, 0.5);
             if (hit.blocker) damageProp(hit.blocker, shot.damage, units.find((u) => u.id === shot.ownerId));
@@ -1576,12 +1762,23 @@ export function startMission(state, contract, hooks) {
             }
             flash(hit.point, shot.color, 0.55);
           }
+          continue;
         }
+      }
+      // Ground after the segment test: a fast or steep shot whose step ends
+      // below the terrain may already have passed through a low target on the
+      // way (a tall Zoid's back gun firing down at a Gun Sniper).
+      if (shot.y <= map.heightAt(shot.x, shot.z) + 0.2) {
+        shot.life = 0;
+        shot.tallied = true;
+        tallyShot(shot.ownerId, shot.weaponRef && shot.weaponRef.id, "ground");
+        flash(shot.mesh.position.clone(), shot.color, 0.5);
       }
     }
     for (let i = projectiles.length - 1; i >= 0; i--) {
       const shot = projectiles[i];
       if (shot.life <= 0 || shot.traveled > shot.range + 10) {
+        if (!shot.tallied) tallyShot(shot.ownerId, shot.weaponRef && shot.weaponRef.id, "miss");
         scene.remove(shot.mesh);
         shot.mesh.geometry.dispose();
         shot.mesh.material.dispose();
@@ -1592,6 +1789,7 @@ export function startMission(state, contract, hooks) {
 
   function applyDamage(victim, partId, amount, attacker, dmgCtx = {}) {
     if (!partId || !victim.alive) return "none";
+    if (victim.dummy) { victim.dummyDamage = (victim.dummyDamage || 0) + amount; return "hit"; }
     if (attacker && attacker.team !== victim.team && victim.brain) {
       // Getting shot pulls aggro: escort raiders turn on whoever engages them.
       victim.provokedBy = attacker;
@@ -1827,6 +2025,10 @@ export function startMission(state, contract, hooks) {
   // fixed root-height offset), falling back to root + radius height.
   const lockBox = new Box3();
   function lockAimPoint(target) {
+    if (target.aimLocal) {
+      const w = toWorld(target.aimLocal, rootFrame(target));
+      return new Vector3(w.x, w.y, w.z);
+    }
     const core = target.model.partMeshes && target.model.partMeshes.core;
     if (core && core.length) {
       lockBox.makeEmpty();
@@ -1979,6 +2181,9 @@ export function startMission(state, contract, hooks) {
   // A forced biome (tests) or an old-biome contract: name the field actually loaded.
   let hudObjective = String(contract.brief || "").replace(BIOMES[contract.biome] || "\u0000", map.palette.label || "");
 
+  function viewMode() {
+    return cameraMode === "fps" || scopeMix > 0.35 ? "fps" : "tps";
+  }
   function placeCamera() {
     const eye = new Vector3();
     player.model.anchors.eye.getWorldPosition(eye);
@@ -1993,7 +2198,9 @@ export function startMission(state, contract, hooks) {
     // Positive lookPitch raises the view (camera drops). Negative lookPitch looks down.
     offset.applyAxisAngle(right, player.lookPitch);
     const lookTarget = yawRig.clone().addScaledVector(fwd, 16);
-    if (cameraMode === "fps") {
+    // A sniper scope looks from the cockpit (first person), so the player's
+    // own hull never fills a zoomed third-person view.
+    if (viewMode() === "fps") {
       camera.position.copy(eye);
       const orbit = yawRig.clone().add(offset);
       const lookDir = lookTarget.clone().sub(orbit);
@@ -2015,7 +2222,7 @@ export function startMission(state, contract, hooks) {
     }
     // The eye sits inside the head and the shield plate. Hide those body meshes
     // while the view is first person. Raycasts ignore visibility, so hits still land.
-    const showBody = cameraMode !== "fps";
+    const showBody = viewMode() !== "fps";
     for (const meshes of Object.values(player.model.partMeshes)) {
       for (const mesh of meshes) {
         const part = player.parts[mesh.userData.partId];
@@ -2066,7 +2273,7 @@ export function startMission(state, contract, hooks) {
   }
 
   function applyFpvWeapons() {
-    const fps = cameraMode === "fps";
+    const fps = viewMode() === "fps";
     for (const mesh of weaponMeshes()) {
       mesh.visible = !fps || !weaponBlocksCenter(mesh);
     }
@@ -2096,9 +2303,229 @@ export function startMission(state, contract, hooks) {
     return facingDirection(unit.model.root, new Vector3());
   }
 
+  // ---------- weapon slots and selection ----------
+  // Every weapon is aimed and fired on its own from its own hardpoint. The
+  // player (and each AI pilot) has one selected weapon; the trigger fires
+  // only that one. Slots run head, left, right, back, then the standard
+  // melee. Mouse wheel down = next, up = previous (wraps); 1-9 pick a slot.
+  const MOUNT_ORDER = ["headWeapon", "leftWeapon", "rightWeapon", "backMount"];
+  const SWITCH_TIME = 0.18;
+  function weaponSlots(unit) {
+    const list = unit.weapons.filter((w) => !w.innate).sort((a, b) => MOUNT_ORDER.indexOf(a.mount) - MOUNT_ORDER.indexOf(b.mount));
+    for (const w of unit.weapons) if (w.innate) list.push(w);
+    return list;
+  }
+  function selectedWeapon(unit = player) {
+    const slots = weaponSlots(unit);
+    if (!slots.length) return null;
+    const i = (((unit.selIdx || 0) % slots.length) + slots.length) % slots.length;
+    unit.selIdx = i;
+    return slots[i];
+  }
+  function selectWeapon(unit, idx) {
+    const slots = weaponSlots(unit);
+    if (!slots.length) return null;
+    const i = ((idx % slots.length) + slots.length) % slots.length;
+    if (i === (unit.selIdx || 0)) return slots[i];
+    unit.selIdx = i;
+    unit.selReadyAt = missionTime + SWITCH_TIME;
+    unit.switches = (unit.switches || 0) + 1;
+    if (unit === player) {
+      scopeHeld = false;
+      // RMB still held through a switch: it neither re-zooms nor fires the
+      // new weapon until it is released (no surprise melee swing or shot).
+      if (lastAlt) altLatch = true;
+      sfx("switch");
+    }
+    return slots[i];
+  }
+  function selectionReady(unit) {
+    return missionTime >= (unit.selReadyAt || 0);
+  }
+  // Sniper-class weapons get the right-mouse scope.
+  function isScoped(weapon) {
+    return !!(weapon && (weapon.scope || weapon.id === "sniperRifle"));
+  }
+
+  // ---------- scope zoom (sniper weapons, hold right mouse) ----------
+  // (state declared with the camera mode near the top of the mission)
+  function scopeZoom() {
+    return 1 + (SCOPE_STEPS[scopeStep] - 1) * scopeMix;
+  }
+  function updateScope(dt, input) {
+    const sel = selectedWeapon(player);
+    const want = !!(input.alt && !altLatch && isScoped(sel) && player.alive);
+    if (want && !scopeHeld) { scopeStep = 0; sfx("zoom"); }
+    // A second right click while scoped steps to 8x (release resets).
+    if (want && input.altEdge && scopeHeld) { scopeStep = (scopeStep + 1) % SCOPE_STEPS.length; sfx("zoom"); }
+    scopeHeld = want;
+    scopeMix = approach(scopeMix, scopeHeld ? 1 : 0, dt / 0.18);
+    const fov = BASE_FOV / scopeZoom();
+    if (Math.abs(camera.fov - fov) > 1e-3) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+  }
+
+  // ---------- standard melee ----------
+  // Contact point: the front face of the hit volume at centre-of-mass height.
+  function meleeContact(unit) {
+    const b = unit.hitBounds;
+    const y = unit.aimLocal ? unit.aimLocal.y : (unit.radius || 2) * 0.45;
+    const w = toWorld({ x: 0, y, z: b ? b.min.z : -(unit.radius || 2) }, rootFrame(unit));
+    return new Vector3(w.x, w.y, w.z);
+  }
+  // Can `unit` strike `target` now? Reach is measured from the contact point
+  // to the target's hit volume, inside the style's arc in front, with clear
+  // line of sight (cover and terrain block a swing).
+  function meleeCheck(unit, weapon, target) {
+    if (!target || !target.alive || !target.hitBoxes) return { ok: false, reason: "none" };
+    const contact = meleeContact(unit);
+    const cm = lockAimPoint(target);
+    const fwd = facingDirection(unit.model.root, new Vector3());
+    const to = cm.clone().sub(unit.model.root.position).setY(0);
+    const ang = to.lengthSq() > 1e-6 ? (Math.acos(clamp(fwd.dot(to.clone().normalize()), -1, 1)) * 180) / Math.PI : 0;
+    const dir = cm.clone().sub(contact);
+    const len = dir.length();
+    let surface = len;
+    let partId = "core";
+    if (len > 1e-6) {
+      dir.multiplyScalar(1 / len);
+      const frame = rootFrame(target);
+      const lo = toLocal(contact, frame);
+      const hit = rayHitBoxes(lo, dirToLocal(dir, frame.yaw), target.hitBoxes, len + 1, 0);
+      if (hit) { surface = hit.t; partId = hit.partId; }
+    }
+    const dist = Math.max(0, surface);
+    if (!meleeReaches(unit.model.root.position.y, target.model.root.position.y, unit.flightSpec || target.flightSpec)) return { ok: false, reason: "height", dist, ang };
+    if (dist > weapon.range) return { ok: false, reason: "reach", dist, ang };
+    if (ang > (weapon.arc || 50)) return { ok: false, reason: "arc", dist, ang };
+    const end = contact.clone().addScaledVector(dir, Math.max(0, surface - 0.05));
+    const blocked = lineBlocked(field, { x: contact.x, y: contact.y, z: contact.z }, { x: end.x, y: end.y, z: end.z });
+    if (blocked) return { ok: false, reason: "blocked", dist, ang };
+    return { ok: true, dist, ang, partId, point: end };
+  }
+  function meleeTargetFor(unit, weapon) {
+    if (unit === player) {
+      const locked = player.lockId ? units.find((u) => u.id === player.lockId && u.alive) : null;
+      if (locked && meleeCheck(unit, weapon, locked).ok) return locked;
+      let best = null;
+      let bestD = Infinity;
+      for (const u of units) {
+        if (!u.alive || u.team === unit.team) continue;
+        const c = meleeCheck(unit, weapon, u);
+        if (c.ok && c.dist < bestD) { bestD = c.dist; best = u; }
+      }
+      return best || locked;
+    }
+    return lockTargetOf(unit);
+  }
+  function startMelee(unit, weapon) {
+    weapon.swing = { t: 0, hitAt: weapon.windup || 0.2, dur: weapon.swingTime || 0.6, done: false };
+    unit.lunge = { v: (weapon.lunge || 2) * 4.5, t: 0.22 };
+    if (unit.model.playMelee) unit.model.playMelee(weapon.style, weapon.swingTime || 0.6);
+    if (addWeaponHeat(weapon, heatPerShot(weapon) * heatGenMul(unit)) && unit === player) pushMessage(`${weapon.name} overheated`);
+    sfx("swing");
+  }
+  function resolveMelee(unit, weapon) {
+    const target = meleeTargetFor(unit, weapon);
+    const check = target ? meleeCheck(unit, weapon, target) : { ok: false, reason: "none" };
+    weapon.lastMelee = { hit: !!check.ok, reason: check.ok ? "hit" : check.reason, dist: check.dist, target: target ? target.id : null, t: missionTime };
+    if (!check.ok) {
+      tallyShot(unit.id, weapon.id, "miss");
+      return;
+    }
+    tallyShot(unit.id, weapon.id, "unit");
+    const amount = weapon.damage * damageMul(unit);
+    applyDamage(target, check.partId, amount, unit, damageCtxFor(weapon));
+    // Knockback and stagger scale with the weight ratio.
+    const ratio = clamp((unit.weight || 30) / Math.max(1, target.weight || 30), 0.35, 2.2);
+    const push = target.model.root.position.clone().sub(unit.model.root.position).setY(0);
+    if (push.lengthSq() > 1e-6) push.normalize();
+    target.knock = { x: push.x * 5 * ratio, z: push.z * 5 * ratio, t: 0.25 };
+    target.staggerT = 0.3 + 0.2 * Math.min(1, ratio);
+    flash(check.point, weapon.color, 0.9);
+    sfx("melee");
+    if (unit === player) vignette = Math.min(1, vignette + 0.05);
+  }
+  // Swing timing, lunge and knockback motion (each frame, every unit).
+  function updateMelee(unit, dt) {
+    for (const w of unit.weapons) {
+      if (!w.swing) continue;
+      w.swing.t += dt;
+      if (!w.swing.done && w.swing.t >= w.swing.hitAt) {
+        w.swing.done = true;
+        if (unit.alive && mountUsable(unit, w)) resolveMelee(unit, w);
+      }
+      if (w.swing.t >= w.swing.dur) w.swing = null;
+    }
+    const root = unit.model.root;
+    if (unit.lunge && unit.lunge.t > 0) {
+      const fwd = facingDirection(root, new Vector3());
+      const step = unit.lunge.v * dt;
+      root.position.x += fwd.x * step;
+      root.position.z += fwd.z * step;
+      unit.lunge.t -= dt;
+      unit.lunge.v *= Math.max(0, 1 - dt * 6);
+    }
+    if (unit.knock && unit.knock.t > 0) {
+      root.position.x += unit.knock.x * dt;
+      root.position.z += unit.knock.z * dt;
+      unit.knock.t -= dt;
+    }
+    if (unit.staggerT > 0) {
+      unit.staggerT -= dt;
+      unit.speed *= Math.max(0, 1 - dt * 5);
+      unit.strafeVel = (unit.strafeVel || 0) * Math.max(0, 1 - dt * 5);
+    }
+  }
+
+  // AI weapon choice: the best damage for the range among weapons that can
+  // fire now; the standard melee when the target is inside its reach.
+  function weaponDps(w) {
+    return (w.damage || 1) * (w.rate || 1) * (w.volley || 1) * (w.burst || 1);
+  }
+  // Rough share of rounds that land: the spread cone's half-width at this
+  // range against the target's half-width / half-height (a wide gatling
+  // cone is worthless on a thin Gun Sniper or a Pteras at 45 m; homing
+  // rockets ignore spread).
+  function aiHitChance(unit, w, target, dist) {
+    if (w.delivery === "rocket") return 1;
+    const b = target.hitBounds;
+    const hw = b ? Math.max(0.3, Math.min(b.max.x - b.min.x, b.max.z - b.min.z) / 2) : target.radius * 0.5;
+    const hh = b ? Math.max(0.3, (b.max.y - b.min.y) / 2) : target.radius * 0.5;
+    const cone = Math.max(1e-3, dist * spreadFor(unit, w, dist) / 2);
+    return Math.min(1, hw / cone) * Math.min(1, hh / cone);
+  }
+
+  function aiPickWeapon(unit, target, dist) {
+    if (!target || (unit.aiPickAt || 0) > missionTime) return;
+    unit.aiPickAt = missionTime + 0.5;
+    const slots = weaponSlots(unit);
+    let best = -1;
+    let bestScore = 0;
+    slots.forEach((w, i) => {
+      if (!canOperateWeapon(unit, w)) return;
+      let score;
+      if (w.innate) {
+        if (!meleeCheck(unit, w, target).ok) return;
+        score = 1e6;
+      } else {
+        if (dist > w.range) return;
+        if (w.delivery === "rocket" && w.minRange && dist < w.minRange) return;
+        score = weaponDps(w) * Math.max(0.05, rangeDamageMul(w, dist)) * (1 - Math.min(0.9, (w.heatGauge || 0) / 120))
+          * aiHitChance(unit, w, target, dist);
+        if (w.chargeTime && planarSpeed(unit) >= STATIONARY_SPEED) score *= 0.2;
+      }
+      if (score > bestScore) { bestScore = score; best = i; }
+    });
+    if (best >= 0) selectWeapon(unit, best);
+  }
+
   // Test hooks (browser flight test): scripted input, forced aim target and
   // a spectator camera on another unit looking at the player.
   let forcedInput = null;
+  let lastFireInput = { fire: false, alt: false };
   let showcaseView = null;
   let forcedAimId = null;
   let spectateId = null;
@@ -2113,8 +2540,18 @@ export function startMission(state, contract, hooks) {
       dx: 0, dy: 0, tab: false, nearest: false, camera: false, help: false, skill: false, climb: 0,
       ...forcedInput,
     } : autopilot ? autopilotInput() : inputDevice.read();
-    if (forcedInput) forcedInput = { ...forcedInput, camera: false, tab: false, nearest: false, skill: false };
+    if (forcedInput) forcedInput = { ...forcedInput, camera: false, tab: false, nearest: false, skill: false, wheel: 0, select: null, altEdge: false };
     lastGroups = input.groups.slice();
+    // Weapon selection: wheel down = next, wheel up = previous; 1-9 direct.
+    if (player.alive) {
+      if (input.wheel) selectWeapon(player, (player.selIdx || 0) + Math.sign(input.wheel) * Math.min(3, Math.abs(input.wheel)));
+      if (input.select != null) selectWeapon(player, input.select - 1);
+    }
+    input.altEdge = input.altEdge || (!!input.alt && !lastAlt);
+    lastAlt = !!input.alt;
+    if (!input.alt) altLatch = false;
+    updateScope(dt, input);
+    lastFireInput = { fire: !!input.fire, alt: !!input.alt };
     if (input.help) helpOn = !helpOn;
     if (input.camera) cameraMode = cameraMode === "fps" ? "tps" : "fps";
     if (input.tab) cycleTarget(1);
@@ -2147,6 +2584,7 @@ export function startMission(state, contract, hooks) {
         continue;
       }
       const p0 = unit.model.root.position;
+      updateMelee(unit, dt);
       resolveObstacles(unit);
       if (unit.flight) flyUnit(unit, dt);
       else plant(unit);
@@ -2203,10 +2641,29 @@ export function startMission(state, contract, hooks) {
       const locked = weaponsLocked(unit);
       const moving = planarSpeed(unit) >= STATIONARY_SPEED;
       updateTurrets(unit, dt);
+      if (unit !== player && aiLock) aiPickWeapon(unit, aiLock, aiDist);
+      const sel = selectedWeapon(unit);
+      const selReady = selectionReady(unit);
+      // Player trigger: left mouse, or right mouse when the selected weapon
+      // has no scope. Legacy group triggers stay for scripted input only.
+      const held = unit === player && (input.fire || (input.alt && !altLatch && !isScoped(sel)));
+      const wants = (weapon) => (unit === player
+        ? !!input.groups[(weapon.group || 1) - 1] || (held && weapon === sel && selReady)
+        : weapon === sel && selReady && !!(unit.cmd && unit.cmd.fire));
       for (const weapon of unit.weapons) {
+        if (weapon.innate) {
+          const trig = wants(weapon) && !weapon.swing && (unit === player || meleeCheck(unit, weapon, aiLock).ok);
+          const n = weaponShotCount(unit, weapon, dt, trig, canOperateWeapon(unit, weapon) && !locked, moving);
+          if (n > 0) startMelee(unit, weapon);
+          continue;
+        }
         if (weapon.turret) {
-          // Auto-fire: only at the locked target, only when on it.
-          let trigger = !!weapon.turretTrigger;
+          // Turret: keeps its own traverse and its own aim (straight from its
+          // barrel to the locked target's centre of mass), but like every
+          // other weapon it fires only while it is the selected weapon and the
+          // trigger is held (it no longer fires on its own). Without a lock,
+          // or while still slewing onto it, it holds fire.
+          let trigger = !!weapon.turretTrigger && wants(weapon);
           if (weapon.delivery === "rocket") {
             trigger = trigger && rocketMayFire(unit.rocketLock || 0) && unit.rocketLockId === weapon.turretTargetId;
           }
@@ -2216,9 +2673,7 @@ export function startMission(state, contract, hooks) {
           for (let k = 0; k < n && turretLock; k++) shoot(unit, weapon, lockAimPoint(turretLock));
           continue;
         }
-        let trigger = unit === player
-          ? !!input.groups[(weapon.group || 1) - 1]
-          : !!(unit.cmd && unit.cmd.fire);
+        let trigger = wants(weapon);
         if (weapon.delivery === "rocket") {
           trigger = trigger && rocketMayFire(unit.rocketLock || 0) && !!unit.rocketLockId;
         }
@@ -2250,10 +2705,12 @@ export function startMission(state, contract, hooks) {
       camera.position.copy(pos);
       camera.quaternion.copy(quat);
       camera.updateMatrixWorld(true);
-    } else {
+    } else if (!skipRender) {
       renderer.render(scene, camera);
     }
   }
+  // Test-only: headless probes step the sim without drawing every tick.
+  let skipRender = false;
 
   // Units deep in the fog (FogExp2 leaves ~10% at 330 m) still cost a full
   // draw; skip them. The escort ambush sits 250-430 m out at the start, and
@@ -2302,8 +2759,7 @@ export function startMission(state, contract, hooks) {
     if (!selected || !aimPoint) return null;
     const dist = selected.model.root.position.distanceTo(player.model.root.position);
     if (dist > maxRange) return null;
-    const to = selected.model.root.position.clone();
-    to.y += (selected.radius || 2) * 0.45;
+    const to = lockAimPoint(selected);
     to.sub(origin);
     if (to.lengthSq() < 1e-6) return null;
     to.normalize();
@@ -2390,11 +2846,42 @@ export function startMission(state, contract, hooks) {
   let lastAimMarkers = { impact: null, lead: null, drop: null };
   let lastReticle = null;
   let tracerCount = 0;
+  // Test-only shot outcome tally for the player's weapons (targeting probes).
+  let shotTally = {};
+  function tallyShot(ownerId, weaponId, outcome) {
+    if (ownerId !== player.id || !weaponId) return;
+    const t = shotTally[weaponId] || (shotTally[weaponId] = { shots: 0, unit: 0, ground: 0, cover: 0, miss: 0 });
+    t.shots += 1;
+    t[outcome] += 1;
+  }
 
   // The gun the HUD marks: group 1's first ballistic, else any fitted one.
+  // The selected weapon, when it is a ballistic gun the HUD can solve for.
   function hudGun() {
-    const list = player.weapons.filter((w) => w.delivery === "ballistic" && !w.turret && mountUsable(player, w) && player.model.muzzles[w.mount]);
-    return list.find((w) => (w.group || 1) === 1) || list[0] || null;
+    const w = selectedWeapon(player);
+    if (w && w.delivery === "ballistic" && !w.turret && mountUsable(player, w) && player.model.muzzles[w.mount]) return w;
+    return null;
+  }
+
+  // The selected weapon's own aim from its own hardpoint: AIM where its shot
+  // line converges, or BLOCKED where cover / terrain / ground cuts that line
+  // first (a low chin gun behind a rock, a back cannon over a wall).
+  function ownAimMarker(aimPoint) {
+    const w = selectedWeapon(player);
+    if (!w || w.innate || !player.model.muzzles[w.mount] || !mountUsable(player, w)) return null;
+    const muzzle = new Vector3();
+    player.model.muzzles[w.mount].getWorldPosition(muzzle);
+    const to = aimPoint.clone().sub(muzzle);
+    const dist = to.length();
+    if (dist < 1) return null;
+    const hit = raycast(muzzle, to, player.id, Math.min(dist + 1, w.range || dist));
+    const data = hit ? hit.object.userData || {} : {};
+    if (hit && !data.ownerId && hit.distance < dist - 1.5) {
+      const p = projectHudPoint(hit.point.x, hit.point.y, hit.point.z);
+      return p ? { ...p, label: "BLOCKED", blocked: true, mount: w.mount, dist: hit.distance } : null;
+    }
+    const p = projectHudPoint(aimPoint.x, aimPoint.y, aimPoint.z);
+    return p ? { ...p, label: "AIM", blocked: false, mount: w.mount, dist } : null;
   }
 
   // IMPACT: where the zeroed shell really lands at the crosshair distance.
@@ -2442,12 +2929,12 @@ export function startMission(state, contract, hooks) {
   function reticleHud(aimPoint, rows) {
     const f = focalPx();
     const aimDist = player.model.root.position.distanceTo(aimPoint);
-    const g1 = player.weapons.filter((w) => (w.group || 1) === 1 && w.kind !== "melee" && mountUsable(player, w));
-    const pool = g1.length ? g1 : player.weapons.filter((w) => w.kind !== "melee" && mountUsable(player, w));
+    const selW = selectedWeapon(player);
+    const pool = selW && selW.kind !== "melee" && mountUsable(player, selW) ? [selW] : [];
     let spread = 0;
     for (const w of pool) spread = Math.max(spread, spreadFor(player, w, aimDist));
     const bloomPx = Math.max(22, Math.min(170, 2 * Math.tan(spread / 2) * f + 18));
-    const rocket = player.weapons.find((w) => w.delivery === "rocket" && mountUsable(player, w));
+    const rocket = selW && selW.delivery === "rocket" && mountUsable(player, selW) ? selW : null;
     const conePx = rocket ? Math.max(40, Math.min(360, 2 * Math.tan((lockConeOf(rocket) * Math.PI) / 180) * f)) : 0;
     let box = null;
     const locked = player.lockId ? units.find((u) => u.id === player.lockId && u.alive) : null;
@@ -2457,7 +2944,7 @@ export function startMission(state, contract, hooks) {
       const dist = locked.model.root.position.distanceTo(player.model.root.position);
       if (sp) {
         const size = Math.max(34, Math.min(260, ((locked.radius || 3) * 2.2 / Math.max(1, camera.position.distanceTo(c))) * f));
-        const g1row = (rows || []).find((r) => r.group === 1 && r.band);
+        const g1row = (rows || []).find((r) => r.selected && r.band);
         box = { x: sp.x, y: sp.y, size, dist, name: locked.name, band: g1row ? g1row.band : "" };
       }
     }
@@ -2472,7 +2959,16 @@ export function startMission(state, contract, hooks) {
     if (hasBeam && path.length > 1) warns.push(`BEAM SCATTER · ${path.kinds.map((k) => (HAZARD_KINDS[k] || {}).label || k).join("/")} ${Math.round(path.length)} m`);
     if (player.rocketBlocked) warns.push(`SEEKER BLOCKED · ${player.rocketBlocked}`);
     const warn = warns.join("  |  ");
-    return { bloomPx, spread, aimDist, conePx, box, warn };
+    // Melee reach readout when the standard melee is selected.
+    let melee = null;
+    if (selW && selW.innate) {
+      const tgt = meleeTargetFor(player, selW) || currentTarget();
+      const c = tgt ? meleeCheck(player, selW, tgt) : { ok: false, reason: "none" };
+      melee = { reach: selW.range, inReach: !!c.ok, dist: c.dist == null ? null : c.dist, reason: c.ok ? "hit" : c.reason, name: selW.name };
+    }
+    const own = ownAimMarker(aimPoint);
+    const scope = scopeMix > 0.01 ? { zoom: scopeZoom(), step: SCOPE_STEPS[scopeStep], mix: scopeMix } : null;
+    return { bloomPx, spread, aimDist, conePx, box, warn, melee, own, scope, assist: lastAssist, selected: selW ? { name: selW.name, mount: selW.mount, slot: (player.selIdx || 0) + 1, ready: selectionReady(player) } : null };
   }
 
   const BAND_RANK = { ideal: 4, long: 3, short: 2, extreme: 1, out: 0 };
@@ -2484,6 +2980,38 @@ export function startMission(state, contract, hooks) {
       if (BAND_RANK[b] > BAND_RANK[best]) best = b;
     }
     return best;
+  }
+
+  // One dock row per weapon slot (1..N), the selected one flagged.
+  function weaponRows() {
+    const target = currentTarget();
+    const dist = target ? target.model.root.position.distanceTo(player.model.root.position) : null;
+    const sel = selectedWeapon(player);
+    const mc = sel && sel.innate && target ? meleeCheck(player, sel, target) : null;
+    return weaponSlots(player).map((w, i) => {
+      const heat = groupHeatState([w], player);
+      const pct = w.chargeTime
+        ? Math.round((w.charge / Math.max(0.001, w.chargeTime)) * 100)
+        : Math.round((1 - Math.min(1, w.cooldown * (w.rate || 1))) * 100);
+      const far = w.innate ? !!(mc && !mc.ok && w === sel) : dist != null && dist > (w.range || 0);
+      return {
+        group: i + 1,
+        slot: i + 1,
+        selected: w === sel,
+        mount: w.mount,
+        name: w.name,
+        state: w === sel && !selectionReady(player) ? "switching" : heat.state,
+        pct,
+        color: w.color,
+        heat: heat.heat,
+        heats: heat.heats,
+        maxRange: w.range || 0,
+        delivery: w.delivery || "",
+        far,
+        melee: !!w.innate,
+        band: dist == null ? null : w.innate ? (mc ? (mc.ok ? "ideal" : "out") : null) : bestBand([w], dist),
+      };
+    });
   }
 
   function groupRows() {
@@ -2777,12 +3305,15 @@ export function startMission(state, contract, hooks) {
     const peak = player.weapons.reduce((max, weapon) => Math.max(max, weapon.heatGauge || 0), 0);
     const aimNow = cameraAimPoint();
     const aimMarkers = ballisticHud(aimNow);
-    const rowsNow = groupRows();
+    const rowsNow = weaponRows();
     const reticle = reticleHud(aimNow, rowsNow);
     lastReticle = reticle;
-    const living = player.weapons.filter((weapon) => mountUsable(player, weapon));
-    const reach = living.reduce((max, weapon) => Math.max(max, weapon.range || 0), 0);
-    const outOfRange = !!(targetData && targetData.locked && reach > 0 && targetData.distance > reach);
+    // Out of range for the selected weapon (melee: outside its reach check).
+    const selNow = selectedWeapon(player);
+    const reach = selNow && mountUsable(player, selNow) ? selNow.range || 0 : 0;
+    const outOfRange = selNow && selNow.innate
+      ? !!(targetData && targetData.locked && reticle.melee && !reticle.melee.inReach)
+      : !!(targetData && targetData.locked && reach > 0 && targetData.distance > reach);
     const charging = player.weapons.find((weapon) => weapon.chargeTime && (weapon.charging || weapon.charge > 0));
     const rocket = player.weapons.some((weapon) => weapon.delivery === "rocket");
     hud.update({
@@ -2822,7 +3353,7 @@ export function startMission(state, contract, hooks) {
         pct: (charging.charge || 0) / charging.chargeTime,
         name: charging.name,
       } : null,
-      markers: aimMarkers,
+      markers: { ...aimMarkers, own: reticle.own },
       skill: skillHud(player),
       indicators: probe.arrows,
       messages,
@@ -3606,6 +4137,148 @@ export function startMission(state, contract, hooks) {
     pushHud();
     return { name: best.name, dist: bestD, err: player.lookPitch, debug: window.__ZOIDS__.weaponDebug() };
   };
+
+  // Targeting probes: spawn a stationary target Zoid, read its bounds, tally shots.
+  window.__ZOIDS__.spawnTarget = (zoidId, x, z, yaw = 0, team = "enemy") => {
+    const def = ZOIDS[zoidId];
+    if (!def) return null;
+    const u = spawnUnit(def, { team, name: `${def.name} target`, x, z, yaw, weapons: [], exact: true });
+    u.dummy = true;
+    rebuildHits();
+    return u.id;
+  };
+  window.__ZOIDS__.dummyDamage = (id) => { const u = units.find((k) => k.id === id); return u ? u.dummyDamage || 0 : null; };
+  // A live AI enemy with its stock loadout (melee / weapon-pick tests).
+  window.__ZOIDS__.spawnFoe = (zoidId, x, z, yaw = 0) => {
+    const def = ZOIDS[zoidId];
+    if (!def) return null;
+    const u = spawnUnit(def, { team: "enemy", name: `${def.name} foe`, x, z, yaw, weapons: stockWeaponsFor(def, rng), brain: true, brainTune: {}, exact: true });
+    if (u.brain) { u.brain.alerted = true; u.brain.react = 0; }
+    rebuildHits();
+    return u.id;
+  };
+  window.__ZOIDS__.viewState = () => ({ fov: camera.fov, lookYaw: player.lookYaw, lookPitch: player.lookPitch, scope: scopeMix, zoom: scopeZoom(), held: scopeHeld,
+    overlay: !!document.querySelector("#scope") && !document.querySelector("#scope").classList.contains("hidden"),
+    readout: document.querySelector("#scope-read") ? document.querySelector("#scope-read").textContent : "" });
+  window.__ZOIDS__.removeUnit = (id) => {
+    const u = units.find((k) => k.id === id);
+    if (!u) return false;
+    u.alive = false;
+    scene.remove(u.model.root);
+    units.splice(units.indexOf(u), 1);
+    rebuildHits();
+    return true;
+  };
+  window.__ZOIDS__.unitBounds = (id) => {
+    const u = id ? units.find((k) => k.id === id) : player;
+    if (!u) return null;
+    u.model.root.updateMatrixWorld(true);
+    const all = new Box3();
+    const parts = {};
+    u.model.root.traverse((obj) => {
+      if (!obj.isMesh || !obj.userData || !obj.userData.partId) return;
+      const b = new Box3().expandByObject(obj);
+      all.union(b);
+      const pid = obj.userData.partId;
+      parts[pid] = parts[pid] ? parts[pid].union(b) : b;
+    });
+    const box = (b) => ({ min: { x: b.min.x, y: b.min.y, z: b.min.z }, max: { x: b.max.x, y: b.max.y, z: b.max.z } });
+    const p = u.model.root.position;
+    const a = lockAimPoint(u);
+    return { id: u.id, zoid: u.def.id, root: { x: p.x, y: p.y, z: p.z }, radius: u.radius, all: box(all), parts: Object.fromEntries(Object.entries(parts).map(([k, b]) => [k, box(b)])),
+      lockPoint: { x: a.x, y: a.y, z: a.z }, aiAimY: p.y + (u.def.radius || 2) * 0.45, seekerY: p.y + u.radius * 0.4 };
+  };
+  // Turn the player's view so the screen-centre ray passes through a world
+  // point (what a player does with the crosshair). Returns the error in rad.
+  window.__ZOIDS__.aimCameraAt = (pt) => {
+    const goal = new Vector3(pt.x, pt.y, pt.z);
+    const view = new Vector3();
+    let err = Infinity;
+    player.speed = 0;
+    player.strafeVel = 0;
+    for (let i = 0; i < 40; i++) {
+      placeCamera();
+      camera.updateMatrixWorld(true);
+      camera.getWorldDirection(view);
+      const to = goal.clone().sub(camera.position).normalize();
+      const dyaw = Math.atan2(-to.x, -to.z) - Math.atan2(-view.x, -view.z);
+      const yawErr = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+      const pitchErr = Math.asin(clamp(to.y, -1, 1)) - Math.asin(clamp(view.y, -1, 1));
+      err = Math.acos(clamp(view.dot(to), -1, 1));
+      if (err < 1e-4) break;
+      player.lookYaw += yawErr;
+      player.model.root.rotation.y = player.lookYaw;
+      player.model.root.updateMatrixWorld(true);
+      player.lookPitch = clamp(player.lookPitch + pitchErr, -1.2, 0.9);
+    }
+    placeCamera();
+    const aim = cameraAimPoint();
+    trackPlayerWeapons(aim);
+    return { err, aim: { x: aim.x, y: aim.y, z: aim.z } };
+  };
+  // Weapon selection probes: by slot number (1..N) or mount name ("melee" for the standard melee).
+  window.__ZOIDS__.selectWeapon = (which, id) => {
+    const u = id ? units.find((k) => k.id === id) : player;
+    if (!u) return null;
+    const slots = weaponSlots(u);
+    const i = typeof which === "number" ? which - 1 : slots.findIndex((w) => w.mount === which || w.id === which);
+    if (i < 0) return null;
+    selectWeapon(u, i);
+    u.selReadyAt = missionTime;
+    // An AI unit keeps a test-forced pick (its own picker pauses for 60 s).
+    if (u !== player) u.aiPickAt = missionTime + 60;
+    return window.__ZOIDS__.weaponSlots(id);
+  };
+  window.__ZOIDS__.weaponSlots = (id) => {
+    const u = id ? units.find((k) => k.id === id) : player;
+    if (!u) return null;
+    const sel = selectedWeapon(u);
+    return { selected: (u.selIdx || 0) + 1, switches: u.switches || 0, ready: selectionReady(u), scope: scopeMix, fov: camera.fov, fireCmd: !!(u.cmd && u.cmd.fire),
+      slots: weaponSlots(u).map((w, i) => ({ slot: i + 1, id: w.id, name: w.name, mount: w.mount, selected: w === sel, innate: !!w.innate, range: w.range, damage: w.damage, style: w.style || null, part: w.part || null, cooldown: w.cooldown, heat: w.heatGauge || 0, lastMelee: w.lastMelee || null, swinging: !!w.swing, turretTrigger: w.turret ? !!w.turretTrigger : null })) };
+  };
+  window.__ZOIDS__.bonePos = (name, id) => {
+    const u = id ? units.find((k) => k.id === id) : player;
+    let bone = null;
+    u.model.root.traverse((o) => { if (!bone && o.isBone && (o.name === name || o.name.startsWith(`${name}_`))) bone = o; });
+    if (!bone) return null;
+    u.model.root.updateMatrixWorld(true);
+    const w = bone.getWorldPosition(new Vector3());
+    return toLocal(w, rootFrame(u));
+  };
+  window.__ZOIDS__.meleeState = (id) => {
+    const u = id ? units.find((k) => k.id === id) : player;
+    return u ? meleeState(u.model) : null;
+  };
+  window.__ZOIDS__.meleeCheck = (targetId, id) => {
+    const u = id ? units.find((k) => k.id === id) : player;
+    const t = units.find((k) => k.id === targetId);
+    const w = u ? u.weapons.find((k) => k.innate) : null;
+    if (!u || !t || !w) return null;
+    const c = meleeCheck(u, w, t);
+    return { ok: c.ok, reason: c.reason || "hit", dist: c.dist, ang: c.ang, reach: w.range };
+  };
+  window.__ZOIDS__.hitVolume = (id) => {
+    const u = id ? units.find((k) => k.id === id) : player;
+    return u ? { boxes: u.hitBoxes, aim: u.aimLocal, bounds: u.hitBounds } : null;
+  };
+  window.__ZOIDS__.muzzles = (id) => {
+    const u = id ? units.find((k) => k.id === id) : player;
+    if (!u) return null;
+    const out = {};
+    u.model.root.updateMatrixWorld(true);
+    for (const [mount, m] of Object.entries(u.model.muzzles)) {
+      if (!m) continue;
+      const w = m.getWorldPosition(new Vector3());
+      const l = toLocal(w, rootFrame(u));
+      out[mount] = { x: l.x, y: l.y, z: l.z };
+    }
+    return out;
+  };
+  window.__ZOIDS__.skipRender = (on) => { skipRender = !!on; return skipRender; };
+  window.__ZOIDS__.setAssist = (mode) => { assistMode = mode === "off" ? "off" : "on"; return assistMode; };
+  window.__ZOIDS__.assistState = () => lastAssist;
+  window.__ZOIDS__.shotTally = (reset) => { const out = JSON.parse(JSON.stringify(shotTally)); if (reset) shotTally = {}; return out; };
+  window.__ZOIDS__.clearProjectiles = () => { for (const s of projectiles) s.life = 0; return projectiles.length; };
 
   return { finish };
 }

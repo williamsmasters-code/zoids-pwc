@@ -75,6 +75,9 @@ export function createHUD(root) {
     <div class="reticle"><span></span></div>
     <div class="group-pips" id="group-pips"><i data-g="1"></i><i data-g="2"></i><i data-g="3"></i><i data-g="4"></i></div>
     <div class="aim-range" id="aim-range"></div>
+    <div class="sel-weapon" id="sel-weapon"></div>
+    <div class="melee-reach hidden" id="melee-reach"></div>
+    <div class="scope hidden" id="scope"><div class="scope-ring"></div><div class="scope-read" id="scope-read"></div></div>
     <div class="hazard-warn hidden" id="hazard-warn"></div>
     <div class="target-box hidden" id="target-box"><span></span></div>
     <svg id="lock-ring" class="lock-ring hidden" viewBox="0 0 100 100" data-lock="0">
@@ -103,7 +106,7 @@ export function createHUD(root) {
     <section class="weapon-dock" id="weapon-dock"></section>
     <canvas id="minimap" width="150" height="150"></canvas>
     <div class="log" id="log"></div>
-    <div class="strip" id="strip">WASD move · Space/C climb/dive (flyers) · Mouse aim · LMB/RMB/1-4 weapons · Q skill · Shift boost · V camera · Tab target · R nearest · H help · Esc pause</div>
+    <div class="strip" id="strip">WASD move · Space/C climb/dive (flyers) · Mouse aim · Wheel switch weapon · LMB fire · RMB scope (sniper) · 1-9 pick · Q skill · Shift boost · V camera · Tab target · R nearest · H help · Esc pause</div>
     <div class="help hidden" id="help">
       <h2>Controls</h2>
       <ul>
@@ -112,10 +115,11 @@ export function createHUD(root) {
         <li>Mouse, or arrow left / right — look. The chassis turns to follow, slower as legs take damage.</li>
         <li>Flyers (Pteras): Space — climb, C — descend. W builds airspeed, S slows it (no reverse in the air). Below the stall speed it cannot climb and sinks; slow down on the ground to land and walk. Ceiling 70 m above the terrain. It flies over rocks and buildings. The HUD shows ALT and AIR speed.</li>
         <li>Shift — boost, if back boosters are fitted and the back mount still stands.</li>
-        <li>Left mouse or 1 — weapon group 1. Right mouse or 2 — group 2. 3 and 4 — the other groups.</li>
+        <li>Weapons are aimed and fired one at a time, each from its own hardpoint. Mouse wheel — switch weapon (down = next, up = previous, it wraps around). 1 to 9 — pick a slot directly. Left mouse — fire the selected weapon. Right mouse — hold to zoom the scope when a sniper rifle is selected (a second right click steps 4x to 8x, mouse look slows while zoomed, switching weapon drops the zoom); with any other weapon right mouse fires too. Switching takes about 0.2 s. The dock lists every weapon with its slot number, heat and reload; the selected one is lit.</li>
+        <li>Every Zoid has a standard melee strike in its last slot (claw swipe, fang lunge, blade charge, fist smash, tail strike, kick, ram or stinger, by Zoid). No ammo, little heat, a short reload. It reaches about 9 to 17 m from the Zoid's nose, bigger Zoids reach further, inside an arc in front; cover blocks it. The reticle says IN REACH or OUT OF REACH. A hit shoves and staggers the target, more if you are heavier.</li>
         <li>Targeting: Tab cycles enemies inside sensor range (about 190 m, more with good sensors), nearest first. R locks the enemy closest to the crosshair inside the 12 degree targeting box, or the nearest one. A box marks the locked enemy with its range. A lock survives 3 s outside sensor range, then drops. Turrets fire only at the locked enemy.</li>
         <li>Radar: mountains, cliffs, rock spires and very tall buildings hide enemies from the minimap and from target lock unless they are within about 45 m. A contact that slips out of sight stays on radar for 2.5 s, then leaves a fading red diamond with a ? at its last known position for up to 12 s. A Zoid standing still or running cool is harder to spot (detection range x0.8 still, x0.9 cool). Enemy pilots follow the same rule: break line of sight and they hunt your last known position.</li>
-        <li>Reticle: the circle grows with your current spread (sustained fire, moving, hot barrels). Its colour and the four pips around it show each weapon group's range band on the target. The number under it is the range to the crosshair point.</li>
+        <li>Reticle: the circle grows with the selected weapon's spread (sustained fire, moving, hot barrels). Its colour and the pips around it show each weapon's range band on the target (the lit pip is the selected one). The number under it is the range to the crosshair point. The AIM diamond is where the selected weapon's own barrel is pointed; BLOCKED means its line from that hardpoint hits cover or ground first, even if the crosshair is clear. With a target locked, the guns converge at the target's range, and a crosshair close to the target's centre settles on it.</li>
         <li>Fire modes: the gatling spins up and fires fast; cannons and the sniper rifle fire single heavy shells; the pulse laser fires 3-pulse bursts; the beam cannon fires a sustained beam you must hold on target; missiles ripple a 4-missile salvo; the particle cannon charges.</li>
         <li>Beams hit instantly and lose damage past their ideal range. Dust, smoke and ice fog clouds (and burning wrecks) bend and scatter beams and soak up damage; the HUD warns BEAM SCATTER. Energy shields scatter beams completely.</li>
         <li>Ballistic guns are zeroed at their ideal range: inside it the shell meets the crosshair, past it the shell drops. The IMPACT diamond shows where it really lands and DROP says by how much, so aim high. The LEAD box shows where to aim at a moving locked target, drop included. Spread grows with sustained fire and while moving.</li>
@@ -184,8 +188,8 @@ export function createHUD(root) {
       root.querySelector("#heat-bar").style.width = `${Math.max(0, Math.min(100, data.heat))}%`;
       const reticle = root.querySelector(".reticle");
       reticle.classList.toggle("oor", !!data.outOfRange);
-      // Reticle tint: range band of weapon group 1 on the locked target.
-      const g1 = (data.weapons || []).find((row) => row.group === 1 && row.band);
+      // Reticle tint: range band of the selected weapon on the locked target.
+      const g1 = (data.weapons || []).find((row) => row.selected && row.band);
       reticle.dataset.band = g1 ? g1.band : "";
       const ret = data.reticle;
       if (ret) {
@@ -212,10 +216,41 @@ export function createHUD(root) {
       const pipsRoot = root.querySelector("#group-pips");
       const pipR = ret ? Math.round(ret.bloomPx / 2 + 7) : 18;
       pipsRoot.style.setProperty("--pip-r", `${pipR}px`);
-      for (const pip of pipsRoot.querySelectorAll("i")) {
-        const row = (data.weapons || []).find((r) => String(r.group) === pip.dataset.g);
+      const rowsAll = data.weapons || [];
+      const pipCount = Math.max(4, rowsAll.length);
+      if (pipsRoot.children.length !== pipCount) {
+        pipsRoot.innerHTML = Array.from({ length: pipCount }, (_, i) => `<i data-g="${i + 1}"></i>`).join("");
+      }
+      [...pipsRoot.querySelectorAll("i")].forEach((pip, i) => {
+        const row = rowsAll.find((r) => String(r.group) === pip.dataset.g);
         const live = row && row.state !== "empty" && row.state !== "disabled";
         pip.dataset.band = live ? (row.band || "none") : "empty";
+        pip.classList.toggle("sel", !!(row && row.selected));
+        pip.style.setProperty("--a", `${(i / pipCount) * 360 - 90}deg`);
+      });
+      const selRow = rowsAll.find((r) => r.selected);
+      const selEl = root.querySelector("#sel-weapon");
+      selEl.textContent = selRow ? `${selRow.slot} · ${selRow.name}${selRow.state === "switching" ? " · SWITCHING" : ""}` : "";
+      if (ret) selEl.style.top = `calc(50% + ${Math.round(ret.bloomPx / 2 + 22)}px)`;
+      const mr = root.querySelector("#melee-reach");
+      const melee = ret && ret.melee;
+      mr.classList.toggle("hidden", !melee);
+      if (melee) {
+        mr.dataset.reach = melee.inReach ? "in" : "out";
+        const d = melee.dist == null ? "" : ` ${Math.round(melee.dist)}/${Math.round(melee.reach)} m`;
+        mr.textContent = melee.inReach ? `IN REACH${d}` : melee.reason === "arc" ? `TURN TO STRIKE${d}` : melee.reason === "blocked" ? `BLOCKED${d}` : `OUT OF REACH${d}`;
+        if (ret) mr.style.top = `calc(50% - ${Math.round(ret.bloomPx / 2 + 26)}px)`;
+      }
+      const scope = root.querySelector("#scope");
+      const sc = ret && ret.scope;
+      scope.classList.toggle("hidden", !sc);
+      root.classList.toggle("scoped", !!sc);
+      if (sc) {
+        scope.style.opacity = String(Math.min(1, sc.mix * 1.2));
+        scope.dataset.zoom = String(sc.step);
+        const m = data.markers || {};
+        const drop = m.drop && m.drop.value > 0.3 ? ` · DROP ${m.drop.value.toFixed(1)} m` : m.drop ? " · ZERO" : "";
+        root.querySelector("#scope-read").textContent = `${sc.step}x · ${Math.round(ret.aimDist)} m${drop}`;
       }
       const ring = root.querySelector("#lock-ring");
       const lock = data.lock;
@@ -236,10 +271,12 @@ export function createHUD(root) {
       chargeBar.dataset.charge = charge ? charge.pct.toFixed(3) : "0";
       chargeBar.querySelector("i").style.width = `${charge ? Math.max(0, Math.min(100, charge.pct * 100)) : 0}%`;
       const marks = data.markers || {};
-      root.querySelector("#aim-markers").innerHTML = ["impact", "lead", "drop"].map((key) => {
+      root.querySelector("#aim-markers").innerHTML = ["impact", "lead", "drop", "own"].map((key) => {
         const mark = marks[key];
         if (!mark) return "";
-        return `<div class="aim-mark ${key}" style="left:${mark.x}px;top:${mark.y}px"><b></b><span>${mark.label}</span></div>`;
+        // The own-aim diamond is drawn only when it says something new.
+        if (key === "own" && !mark.blocked && (marks.impact || Math.hypot(mark.x - (window.innerWidth || 0) / 2, mark.y - (window.innerHeight || 0) / 2) < 6)) return "";
+        return `<div class="aim-mark ${key}${mark.blocked ? " blocked" : ""}" style="left:${mark.x}px;top:${mark.y}px"><b></b><span>${mark.label}</span></div>`;
       }).join("");
       root.querySelector("#boost-flag").textContent = data.boosting ? "BOOST" : data.wading ? "WADING · COOLING +50%" : data.boostReady ? "BOOST READY" : "";
       const skill = data.skill;
@@ -295,7 +332,7 @@ export function createHUD(root) {
           : weapon.maxRange
             ? (weapon.far ? "OUT OF RANGE" : `${weapon.maxRange} m`)
             : "";
-        return `<div class="wep ${klass} ${far}" data-group="${weapon.group}" data-state="${state}" data-heat="${Math.round(weapon.heat || 0)}" data-range="${weapon.maxRange || ""}" data-delivery="${weapon.delivery || ""}" data-band="${weapon.band || ""}">
+        return `<div class="wep ${klass} ${far}${weapon.selected ? " sel" : ""}${weapon.melee ? " melee" : ""}" data-group="${weapon.group}" data-selected="${weapon.selected ? 1 : 0}" data-mount="${weapon.mount || ""}" data-state="${state}" data-heat="${Math.round(weapon.heat || 0)}" data-range="${weapon.maxRange || ""}" data-delivery="${weapon.delivery || ""}" data-band="${weapon.band || ""}">
           <b>${weapon.group}</b>
           <span>${weapon.name}</span>
           <small>${state}</small>

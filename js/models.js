@@ -12,6 +12,8 @@ import {
   TorusGeometry,
   Box3,
   Vector3,
+  Matrix4,
+  Quaternion,
   Color,
   AnimationMixer,
   AnimationUtils,
@@ -96,6 +98,8 @@ export async function preloadModels(onProgress) {
 }
 
 const SHIELD_CLIPS = ["Idle", "Walk", "Run", "ShieldActivate", "ShieldMaintain", "Fire"];
+// Optional clips: used when the GLB carries them (Melee, the claw swipe).
+const SHIELD_OPTIONAL_CLIPS = ["Melee"];
 
 // Shield Liger prefers the skinned GLB. A missing clip set, a network error,
 // or ?mock=1 falls through to the static file and then the procedural mock.
@@ -1169,14 +1173,15 @@ function setupSkinnedAnim(root, clips, anim) {
   const byName = {};
   for (const clip of clips) byName[clip.name] = clip;
   const actions = {};
-  for (const name of SHIELD_CLIPS) {
+  for (const name of [...SHIELD_CLIPS, ...SHIELD_OPTIONAL_CLIPS]) {
     if (!byName[name]) continue;
-    const source = name === "Fire" ? AnimationUtils.makeClipAdditive(byName[name].clone()) : byName[name];
+    const additive = name === "Fire" || name === "Melee";
+    const source = additive ? AnimationUtils.makeClipAdditive(byName[name].clone()) : byName[name];
     const action = mixer.clipAction(source);
     action.enabled = true;
-    if (name === "Fire") action.blendMode = AdditiveAnimationBlendMode;
+    if (additive) action.blendMode = AdditiveAnimationBlendMode;
     action.setEffectiveWeight(name === "Idle" ? 1 : 0);
-    if (name === "ShieldActivate" || name === "Fire") {
+    if (name === "ShieldActivate" || additive) {
       action.setLoop(LoopOnce, 1);
       action.clampWhenFinished = name === "ShieldActivate";
     } else {
@@ -1307,6 +1312,7 @@ function updateSkinned(model, time, speedNorm) {
   stepShield(anim);
   stepFire(anim);
   if (dt > 0) anim.mixer.update(dt);
+  anim.freshPose = dt > 0;
 }
 
 function storeAllowed(def, name) {
@@ -1391,7 +1397,12 @@ export function buildUnitModel(def, weapons, team = "player") {
   root.name = def.id;
   const visual = new Group();
   visual.scale.setScalar(def.scale || 1);
-  root.add(visual);
+  // Melee rig: whole-body lunge / pitch / yaw for the melee animation sits
+  // between root and visual, so flight tilt on the visual stays untouched.
+  const meleeRig = new Group();
+  meleeRig.name = "meleeRig";
+  root.add(meleeRig);
+  meleeRig.add(visual);
   const store = {};
   const anim = emptyAnim();
   const anchors = {};
@@ -1417,11 +1428,15 @@ export function buildUnitModel(def, weapons, team = "player") {
     });
     iff.name = "iff";
   }
-  const model = { root, visual, partMeshes: store, anim, anchors, muzzles: {}, def, turrets: {} };
+  const model = { root, visual, meleeRig, partMeshes: store, anim, anchors, muzzles: {}, def, turrets: {} };
   assertModel(root, def, store);
   buildTurretPivots(model);
   attachWeapons(model, weapons || []);
-  model.animate = (time, speedNorm, parts) => animateModel(model, time, speedNorm, parts);
+  model.animate = (time, speedNorm, parts) => {
+    animateModel(model, time, speedNorm, parts);
+    stepMelee(model, time);
+  };
+  model.playMelee = (style, dur) => playMelee(model, style, dur);
   return model;
 }
 
@@ -1472,4 +1487,186 @@ export function disposeTree(obj) {
     if (material.map) material.map.dispose();
     material.dispose();
   }
+}
+
+// ---------- melee animation ----------
+// Every Zoid has a standard melee strike (js/catalog.js STANDARD_MELEE).
+// Approach per model (docs/TARGETING_NOTES.txt):
+//   * Shield Liger (skinned GLB): the baked "Melee" clip from its own rig
+//     when the GLB carries it, else the same procedural bone swing below on
+//     its real bones (rightFrontLeg_hip / knee, spine, neck, head, jaw).
+//   * All other Zoids (static GLB parts or procedural meshes): procedural
+//     part animation. The striking parts (a leg, the head, the arms, the tail)
+//     rotate about a pivot at their joint end (hip / shoulder / neck / tail
+//     root, taken from the part's bounds), and the whole body lunges, pitches,
+//     rolls or spins on the melee rig. Rest transforms are restored after.
+// Envelope u in 0..1: wind-up back (to 0.3), strike (to 0.45), recover.
+export function meleeEnvelope(u) {
+  const sm = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
+  if (u <= 0) return 0;
+  if (u < 0.3) return -0.5 * sm(u / 0.3);
+  if (u < 0.45) return -0.5 + 1.5 * sm((u - 0.3) / 0.15);
+  if (u < 1) return 1 - sm((u - 0.45) / 0.55);
+  return 0;
+}
+
+// Per style: body motion (lunge m, pitch / roll / yaw rad at a = 1) and part
+// swings [{ parts (first ones present are used), axis, wind, angle, pivot }].
+// Angles turn about the Zoid's own axes (+X = its left-to-right axis): a
+// positive X angle swings a hanging leg or arm forward and tips a forward
+// pointing head up. `wind` is the angle at the top of the wind-up (a = -0.5),
+// `angle` the angle at the moment of the strike (a = 1).
+const MELEE_POSES = {
+  claw: { lunge: 1.0, pitch: -0.1, roll: 0.12, swings: [
+    { parts: ["rightFrontLeg", "rightWeapon", "rightLeg"], axis: "x", wind: 1.3, angle: 0.45, pivot: "top" },
+  ] },
+  bite: { lunge: 1.4, pitch: -0.16, swings: [
+    { parts: ["head"], axis: "x", wind: 0.4, angle: -0.45, pivot: "rear" },
+  ] },
+  blade: { lunge: 2.4, pitch: -0.12, swings: [
+    { parts: ["leftWeapon"], axis: "y", wind: 0.15, angle: -0.45, pivot: "rear" },
+    { parts: ["rightWeapon"], axis: "y", wind: -0.15, angle: 0.45, pivot: "rear" },
+    { parts: ["head"], axis: "x", wind: 0.15, angle: -0.25, pivot: "rear" },
+  ] },
+  fist: { lunge: 0.8, pitch: -0.18, swings: [
+    { parts: ["rightWeapon", "rightFrontLeg"], axis: "x", wind: 1.9, angle: 0.55, pivot: "top" },
+    { parts: ["leftWeapon", "leftFrontLeg"], axis: "x", wind: 0.6, angle: 0.25, pivot: "top" },
+  ] },
+  tail: { lunge: 0.3, yaw: -1.15, swings: [
+    { parts: ["tail"], axis: "y", wind: 0.45, angle: -0.9, pivot: "front" },
+  ] },
+  kick: { lunge: 0.9, pitch: 0.08, swings: [
+    { parts: ["rightLeg", "rightRearLeg"], axis: "x", wind: -0.55, angle: 1.3, pivot: "top" },
+    { parts: ["tail"], axis: "x", wind: 0.1, angle: -0.2, pivot: "front" },
+  ] },
+  ram: { lunge: 2.0, pitch: -0.22, swings: [
+    { parts: ["head"], axis: "x", wind: 0.2, angle: -0.35, pivot: "rear" },
+  ] },
+  sting: { lunge: 0.7, pitch: -0.1, swings: [
+    { parts: ["tail"], axis: "x", wind: -0.45, angle: -1.25, pivot: "front" },
+  ] },
+};
+// Angle along the envelope: wind-up to `wind`, strike to `angle`, recover to 0.
+export function swingAngle(spec, a) {
+  return a < 0 ? (spec.wind || 0) * (-a / 0.5) : spec.angle * a;
+}
+// Skinned Shield Liger: the same swings on real bones.
+const MELEE_BONES = {
+  claw: [{ bone: "rightFrontLeg_hip", axis: "x", angle: -1.2, back: 0.8 }, { bone: "rightFrontLeg_knee", axis: "x", angle: 0.7, back: 0.6 }, { bone: "head", axis: "x", angle: -0.25, back: 0.4 }, { bone: "jaw", axis: "x", angle: 0.45, back: 0 }],
+};
+const AXES = { x: new Vector3(1, 0, 0), y: new Vector3(0, 1, 0), z: new Vector3(0, 0, 1) };
+
+export function meleePoseOf(style) {
+  return MELEE_POSES[style] || MELEE_POSES.ram;
+}
+
+function playMelee(model, style, dur) {
+  const anim = model.anim;
+  endMelee(model);
+  const pose = meleePoseOf(style);
+  const m = { style, dur: dur || 0.6, start: null, u: 0, swings: [], bones: [], clip: null, pose };
+  if (anim.kind === "skinned" && anim.actions && anim.actions.Melee) {
+    const act = anim.actions.Melee;
+    act.reset();
+    act.setLoop(LoopOnce, 1);
+    act.clampWhenFinished = false;
+    act.setEffectiveWeight(1);
+    act.timeScale = act.getClip().duration / m.dur;
+    act.play();
+    m.clip = "Melee";
+  } else if (anim.kind === "skinned") {
+    const root = model.visual;
+    for (const spec of MELEE_BONES[style] || MELEE_BONES.claw) {
+      const bone = findBone(root, spec.bone);
+      if (bone) m.bones.push({ bone, spec });
+    }
+  } else {
+    model.root.updateMatrixWorld(true);
+    const inv = new Matrix4().copy(model.root.matrixWorld).invert();
+    for (const spec of pose.swings) {
+      const id = spec.parts.find((p) => model.partMeshes[p] && model.partMeshes[p].some((mesh) => !mesh.isSkinnedMesh));
+      if (!id) continue;
+      const meshes = model.partMeshes[id].filter((mesh) => !mesh.isSkinnedMesh && mesh.parent && mesh.name !== "iff");
+      const box = new Box3();
+      for (const mesh of meshes) box.expandByObject(mesh);
+      box.applyMatrix4(inv);
+      const c = box.getCenter(new Vector3());
+      const pivot = spec.pivot === "top" ? new Vector3(c.x, box.max.y, c.z)
+        : spec.pivot === "rear" ? new Vector3(c.x, c.y, box.max.z)
+          : spec.pivot === "front" ? new Vector3(c.x, c.y, box.min.z) : c;
+      m.swings.push({ spec, id, pivot, meshes: meshes.map((mesh) => ({ mesh, pos: mesh.position.clone(), quat: mesh.quaternion.clone() })) });
+    }
+  }
+  anim.melee = m;
+}
+
+function endMelee(model) {
+  const m = model.anim.melee;
+  if (!m) return;
+  for (const sw of m.swings) for (const r of sw.meshes) { r.mesh.position.copy(r.pos); r.mesh.quaternion.copy(r.quat); }
+  for (const { bone } of m.bones) { if (bone.userData.meleeBase) bone.quaternion.copy(bone.userData.meleeBase); delete bone.userData.meleeBase; }
+  const rig = model.meleeRig;
+  if (rig) { rig.position.set(0, 0, 0); rig.rotation.set(0, 0, 0); }
+  model.anim.melee = null;
+}
+
+const _q = new Quaternion();
+const _qa = new Quaternion();
+const _v = new Vector3();
+const _p = new Vector3();
+const _axis = new Vector3();
+function stepMelee(model, time) {
+  const m = model.anim.melee;
+  if (!m) return;
+  if (m.start == null) m.start = time;
+  const u = (time - m.start) / m.dur;
+  if (u >= 1 || u < 0) { endMelee(model); return; }
+  m.u = u;
+  const a = meleeEnvelope(u);
+  const pose = m.pose;
+  const strike = Math.max(0, a);
+  const rig = model.meleeRig;
+  if (rig) {
+    const s = model.def.scale || 1;
+    rig.position.set(0, 0, -(pose.lunge || 0) * s * strike + (a < 0 ? -a * 0.3 * s : 0));
+    rig.rotation.set((pose.pitch || 0) * a, (pose.yaw || 0) * a, (pose.roll || 0) * a);
+  }
+  if (m.bones.length) {
+    // The mixer rewrites the bones on frames it steps; on frames it does
+    // not, start again from the pose it last wrote.
+    const fresh = !!model.anim.freshPose;
+    for (const { bone, spec } of m.bones) {
+      const k = a < 0 ? a * spec.back : a;
+      if (fresh || !bone.userData.meleeBase) bone.userData.meleeBase = bone.quaternion.clone();
+      _qa.setFromAxisAngle(AXES[spec.axis], spec.angle * k);
+      bone.quaternion.copy(bone.userData.meleeBase).multiply(_qa);
+    }
+  }
+  for (const sw of m.swings) {
+    const ang = swingAngle(sw.spec, a);
+    for (const r of sw.meshes) {
+      const parent = r.mesh.parent;
+      if (!parent) continue;
+      // Pivot and axis from the root frame into the mesh's parent frame.
+      model.root.updateMatrixWorld(true);
+      _p.copy(sw.pivot).applyMatrix4(model.root.matrixWorld);
+      parent.worldToLocal(_p);
+      parent.getWorldQuaternion(_q);
+      _axis.copy(AXES[sw.spec.axis]).applyQuaternion(model.root.getWorldQuaternion(new Quaternion())).applyQuaternion(_q.invert()).normalize();
+      _qa.setFromAxisAngle(_axis, ang);
+      _v.copy(r.pos).sub(_p).applyQuaternion(_qa).add(_p);
+      r.mesh.position.copy(_v);
+      r.mesh.quaternion.copy(_qa).multiply(r.quat);
+    }
+  }
+}
+
+export function meleeState(model) {
+  const m = model.anim.melee;
+  if (!m) return null;
+  return {
+    style: m.style, u: m.u, clip: m.clip, bones: m.bones.map((b) => b.bone.name), parts: m.swings.map((s) => s.id),
+    rig: model.meleeRig ? { z: model.meleeRig.position.z, rx: model.meleeRig.rotation.x, ry: model.meleeRig.rotation.y, rz: model.meleeRig.rotation.z } : null,
+    swing: m.swings.map((s) => s.meshes[0] ? s.meshes[0].mesh.quaternion.angleTo(s.meshes[0].quat) : 0),
+  };
 }

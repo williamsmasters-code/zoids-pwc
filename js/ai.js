@@ -298,10 +298,20 @@ export function updateBrain(unit, brain, ctx, dt) {
     climb,
     fire: dist < maxRange * 0.98 && visible && !searching,
     skill: useSkill,
-    aim: {
-      x: tx + brain.jx * scatter,
-      y: target.model.root.position.y + (target.def.radius || 2) * 0.45 + brain.jy * scatter,
-      z: tz + brain.jz * scatter,
-    },
+    aim: aimFor(target, tx, tz, brain, scatter, ctx),
+  };
+}
+
+// Aim at the target's centre of mass (ctx.nav.aimPoint, js/targeting.js) when
+// the unit is aiming at the target itself; at a searched spot keep that spot.
+function aimFor(target, tx, tz, brain, scatter, ctx) {
+  const p = target.model.root.position;
+  const cm = ctx && ctx.nav && ctx.nav.aimPoint ? ctx.nav.aimPoint(target) : null;
+  const onTarget = Math.hypot(tx - p.x, tz - p.z) < 0.5;
+  const base = cm && onTarget ? cm : { x: tx, y: p.y + (target.def.radius || 2) * 0.45, z: tz };
+  return {
+    x: base.x + brain.jx * scatter,
+    y: base.y + brain.jy * scatter,
+    z: base.z + brain.jz * scatter,
   };
 }

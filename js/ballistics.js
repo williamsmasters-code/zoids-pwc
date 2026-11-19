@@ -147,7 +147,16 @@ export function rocketTurn(strength) {
   return 0.6 + strength * 3.2;
 }
 
-// Pop straight up, then home. Early in the dive the aim point sits above the target.
+// Pop straight up, then home. Early in the dive the aim point sits above the
+// target. Targeting overhaul: the mission scales the pop time and dive offset
+// with the launch range (shot.popTime / shot.diveBias) and steers harder in
+// the last 35 m, so close and short targets are not overflown into the ground.
+export function rocketPopFor(distance, basePop = ROCKET_POP_TIME) {
+  return Math.max(0.16, Math.min(basePop, 0.1 + Math.max(0, distance) / 220));
+}
+export function rocketDiveBiasFor(distance) {
+  return Math.max(4, Math.min(22, Math.max(0, distance) * 0.2));
+}
 export function stepRocket(p, dt, target) {
   p.age = (p.age || 0) + dt;
   const pop = p.popTime == null ? ROCKET_POP_TIME : p.popTime;
@@ -171,11 +180,18 @@ export function stepRocket(p, dt, target) {
     if (target && p.turn > 0) {
       const bias = Math.max(0, 1 - (p.age - pop) / 0.85);
       const dx = target.x - p.x;
-      const dy = target.y + bias * 22 - p.y;
       const dz = target.z - p.z;
+      // Dive offset shrinks with the remaining ground range, so a close
+      // target is not overflown (p.diveBias: m above the target at range).
+      const flat = Math.hypot(dx, dz);
+      const lift = Math.min(p.diveBias == null ? 22 : p.diveBias, flat * 0.3);
+      const dy = target.y + bias * lift - p.y;
       const mag = Math.hypot(dx, dy, dz) || 1;
       const sm = Math.hypot(p.vx, p.vy, p.vz) || 1;
-      const blend = Math.min(1, p.turn * dt);
+      // Terminal homing: inside 35 m the seeker steers harder onto the
+      // centre of mass (up to x3 at contact).
+      const terminal = 1 + 2 * Math.max(0, 1 - mag / 35);
+      const blend = Math.min(1, p.turn * terminal * dt);
       let nx = p.vx / sm + (dx / mag - p.vx / sm) * blend;
       let ny = p.vy / sm + (dy / mag - p.vy / sm) * blend;
       let nz = p.vz / sm + (dz / mag - p.vz / sm) * blend;

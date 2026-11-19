@@ -45,6 +45,10 @@ export function sfx(name) {
     else if (name === "alarm") tone(640, 0.14, "square", 0.04, 0);
     else if (name === "ui") tone(520, 0.05, "square", 0.02, 80);
     else if (name === "boom") tone(60, 0.4, "sawtooth", 0.07, -30);
+    else if (name === "swing") tone(260, 0.12, "triangle", 0.035, -160);
+    else if (name === "melee") { tone(95, 0.16, "square", 0.06, -45); tone(420, 0.05, "sawtooth", 0.03, -300); }
+    else if (name === "switch") tone(700, 0.035, "square", 0.018, 120);
+    else if (name === "zoom") tone(1200, 0.04, "sine", 0.015, -400);
   } catch {
     // Audio is optional.
   }

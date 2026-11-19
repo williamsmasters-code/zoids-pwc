@@ -73,7 +73,7 @@ export function stepProjectile(p, dt, target) {
 export function mountUsable(unit, weapon) {
   if (!unit || !unit.alive || !weapon) return false;
   if (unit.parts.core && (unit.parts.core.destroyed || unit.parts.core.structure <= 0)) return false;
-  const mount = unit.parts[weapon.mount];
+  const mount = unit.parts[weapon.part || weapon.mount];
   if (!mount || mount.destroyed || mount.structure <= 0) return false;
   if (unit.def && unit.def.layout === "structure" && unit.parts.head && unit.parts.head.destroyed) return false;
   return true;

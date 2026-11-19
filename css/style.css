@@ -270,10 +270,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .reticle { transition: width 0.08s linear, height 0.08s linear; pointer-events: none; }
 .group-pips { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
 .group-pips i { position: absolute; width: 8px; height: 3px; background: #556; transform: translate(-50%, -50%); box-shadow: 0 0 2px #000; }
-.group-pips i[data-g="1"] { left: 0; top: calc(-1 * var(--pip-r, 18px)); width: 3px; height: 8px; }
-.group-pips i[data-g="2"] { left: var(--pip-r, 18px); top: 0; }
-.group-pips i[data-g="3"] { left: 0; top: var(--pip-r, 18px); width: 3px; height: 8px; }
-.group-pips i[data-g="4"] { left: calc(-1 * var(--pip-r, 18px)); top: 0; }
+/* Targeting overhaul: one pip per weapon slot round the reticle; the selected one is bigger. */
+.group-pips i { left: 0; top: 0; width: 7px; height: 3px; transform: rotate(var(--a, 0deg)) translateX(var(--pip-r, 18px)) translate(-50%, -50%); transform-origin: 0 0; }
+.group-pips i.sel { width: 12px; height: 4px; outline: 1px solid #fff; }
 .group-pips i[data-band="empty"] { display: none; }
 .group-pips i[data-band="none"] { background: #cfd8de; }
 .group-pips i[data-band="ideal"] { background: #5dff9a; }
@@ -561,3 +560,21 @@ button:disabled { opacity: 0.45; cursor: default; }
   padding: 0 7px; font-size: 15px; line-height: 22px; opacity: 0.75;
 }
 .view-reset:hover { opacity: 1; }
+
+/* Targeting overhaul: selected weapon label, melee reach, scope, own-aim mark, dock selection. */
+.sel-weapon { position: absolute; left: 50%; top: calc(50% + 40px); transform: translateX(-50%); color: #e8f2f6; font-size: 12px; letter-spacing: 0.04em; text-shadow: 0 0 3px #000; pointer-events: none; white-space: nowrap; }
+.melee-reach { position: absolute; left: 50%; transform: translateX(-50%); font-size: 12px; font-weight: 700; padding: 1px 6px; border: 1px solid currentColor; pointer-events: none; white-space: nowrap; text-shadow: 0 0 3px #000; }
+.melee-reach[data-reach="in"] { color: #5dff9a; }
+.melee-reach[data-reach="out"] { color: #ff6677; }
+.melee-reach.hidden, .scope.hidden { display: none; }
+.scope { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 50%, transparent 0, transparent 34vh, rgba(0,0,0,0.92) 34.4vh); }
+.scope-ring { position: absolute; left: 50%; top: 50%; width: 68vh; height: 68vh; transform: translate(-50%, -50%); border: 2px solid rgba(160,220,255,0.5); border-radius: 50%;
+  background: linear-gradient(rgba(160,220,255,0.55), rgba(160,220,255,0.55)) center / 1px 100% no-repeat, linear-gradient(90deg, rgba(160,220,255,0.55), rgba(160,220,255,0.55)) center / 100% 1px no-repeat; }
+.scope-read { position: absolute; left: 50%; top: calc(50% + 36vh); transform: translateX(-50%); color: #bfe6ff; font-size: 13px; letter-spacing: 0.06em; }
+.scoped .weapon-dock, .scoped .player-panel, .scoped .target-panel { opacity: 0.45; }
+.aim-mark.own { color: #9fe6ff; }
+.aim-mark.own b { width: 10px; height: 10px; border: 2px solid #9fe6ff; transform: rotate(45deg); }
+.aim-mark.own.blocked { color: #ff5566; }
+.aim-mark.own.blocked b { border-color: #ff5566; width: 14px; height: 14px; background: rgba(255,85,102,0.25); }
+.wep.sel { outline: 2px solid var(--amber, #ffd35a); background: rgba(255, 211, 90, 0.12); }
+.wep.melee span::before { content: "\2694  "; }
