@@ -261,9 +261,11 @@ their last-known position shows as a fading red diamond with a "?"
 
 Measured in headless Chrome with SwiftShader (software GL), 1280 x 720,
 average of 40 frames in the browser test:
-  Final npm test run: Abandoned City 65.8 ms, Dense Jungle 57.7 ms,
-  Sparse Jungle 51.7 ms, Rocky Mountain Pass 56.8 ms (budget 100 ms;
-  earlier runs 42-67 ms). tests/glb_browser.mjs (escort in the city)
+  Final npm test run (after the pass branches and radar): Abandoned City
+  65.0 ms, Dense Jungle 51.7 ms, Sparse Jungle 43.2 ms, Rocky Mountain
+  Pass 48.3 ms, and 41.0 ms in the pass radar test (budget 100 ms; earlier
+  pass runs 48-72 ms with 160 ground segments). Radar costs one line test
+  per enemy per 0.2 s. tests/glb_browser.mjs (escort in the city)
   69.2 ms, tests/shield_anim_browser.mjs 73.5 ms.
 How:
   Shots and LOS use analytic cover tests, not mesh raycasts.
