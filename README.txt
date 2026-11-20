@@ -24,8 +24,9 @@ RUN
   tests/battlefields.test.mjs, tests/pass_radar.test.mjs,
   tests/weapons_overhaul_browser.mjs, tests/battlefields_browser.mjs,
   tests/pass_radar_browser.mjs (mountain pass routes and radar),
-  tests/targeting.test.mjs and, last, tests/targeting_browser.mjs
-  (hit volumes, weapon selection, scope, melee).
+  tests/targeting.test.mjs, tests/arcs.test.mjs, tests/targeting_browser.mjs
+  (hit volumes, weapon selection, scope, melee) and, last,
+  tests/aim_arcs_browser.mjs (free look up / down, mount arcs, flyers).
   The browser test serves this directory on port 8080, so stop any other
   server on that port first. Screenshots land in screenshots/.
 
@@ -35,7 +36,8 @@ CONTROLS
 
     W / S or arrow up / down   throttle
     A / D                      strafe
-    Mouse                      look (pointer lock)
+    Mouse                      look (pointer lock); up to about 69 deg up
+                               and 52 deg down in every view
     Arrow left / right         look without the mouse
     Mouse wheel                switch weapon: down = next, up = previous (wraps)
     1-9                        select that weapon slot directly
@@ -95,6 +97,16 @@ WEAPONS
   Sniper scope. Hold the right mouse button with the Sniper Rifle selected:
   4x zoom from the cockpit, a second click for 8x, slower look, range and
   drop in the scope. Release or switch weapon to leave it.
+
+  Weapon arcs. Each weapon turns and elevates only as far as its mount
+  allows: chin guns a narrow cone ahead (about 15 deg up), flank and arm
+  guns wider and higher, back turrets wide and high, missile pods a wide
+  arc (they launch upward and guide), particle cannons narrow (braced).
+  Outside the selected weapon's arc the reticle dims, OUT OF ARC
+  (ELEVATION or TRAVERSE) shows above it, a red FIRES HERE ring marks where
+  the barrel stopped, the dock row reads OUT OF ARC, and the weapon holds
+  fire. Enemy Zoids use the same arcs. Per-Zoid arc table:
+  docs/TARGETING_NOTES.txt section 14.
 
   Fire modes. Gatling: automatic, spins up over 0.6 s. Pulse Laser: bursts
   of 3. Beam Cannon: a sustained 0.45 s beam you hold on the target.

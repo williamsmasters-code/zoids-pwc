@@ -1,5 +1,7 @@
 TARGETING OVERHAUL NOTES
-Zoid Mercenaries, November 2026. Plain text. Service worker cache: zoids-v14.
+Zoid Mercenaries, November 2026. Plain text. Service worker cache: zoids-v15
+(sections 1-13: the targeting overhaul, zoids-v14; section 14: free look and
+weapon mount arcs, zoids-v15).
 
 What this covers
   1. Why most weapons could not hit the Gun Sniper (root causes and evidence)
@@ -15,6 +17,7 @@ What this covers
  11. Muzzle positions per Zoid
  12. Judgment calls and known gaps
  13. Tools and tests
+ 14. Free look (aiming up) and weapon mount arcs (zoids-v15)
 
 
 1. ROOT CAUSES (WITH EVIDENCE)
@@ -343,8 +346,8 @@ g) Gatling spread. Its designed cone (0.03 rad + up to 0.045 bloom, wider past
   - Missiles now hit stationary targets almost every time at every range.
     Moving targets still break the lock at 30 m/s as before.
   - A melee swing that is out of reach still lunges.
-  - No per-mount traverse limits were added for the player (optional in the
-    brief). The AI still turns its chassis within 0.6 rad to fire.
+  - (Superseded in zoids-v15, section 14: every mount now has its own
+    traverse and elevation arc, for the player and the AI.)
   - Hit volumes are axis-aligned boxes in the Zoid's root frame; they do not
     follow leg animation frame by frame.
   - No gamepad or touch input exists, so no left-trigger scope.
@@ -370,3 +373,244 @@ g) Gatling spread. Its designed cone (0.03 rad + up to 0.045 bloom, wider past
   Screenshots: screenshots/targeting/ (locked Gun Sniper at 50 m, scope 4x and
   8x, weapon dock selection) and screenshots/melee/ (Shield Liger Strike
   Claw and Gojulas Tail Smash, mid-swing).
+
+
+14. FREE LOOK (AIMING UP) AND WEAPON MOUNT ARCS (zoids-v15)
+
+  Report: "I am unable to aim upwards. Different weapons, depending on how
+  they are mounted, should be able to aim in any direction that they
+  reasonably can."
+
+  14.1 Root cause (with evidence)
+
+  The view pitch was not a view angle. lookPitch (clamped -1.05 .. +0.5)
+  rotated the camera's orbit offset around the Zoid, and the camera then
+  looked at a fixed point 16 m ahead at eye height. Looking "up" only
+  lowered the camera toward that point:
+  - Third person: the lowered camera hit the terrain clamp (ground + 1.5 m)
+    almost at once, so the view topped out at +0.9 deg (measured with mouse
+    input only, tools/aim_up_probe.mjs on the zoids-v14 tree).
+  - Cockpit and sniper scope: the camera sits at the eye but used the same
+    orbit-to-fixed-point direction, so it topped out at +10.6 deg.
+  - Down: -30.9 deg in all three.
+  The crosshair ray and all weapon aim follow the view, so nothing could be
+  aimed higher than that. The aim ray itself was fine: pointed into the sky
+  it already gave a far point 1000 m out (aimPointAlongRay, AIM_FAR). There
+  were no player weapon elevation limits at all (player shots followed the
+  crosshair in any direction); the AI used one clamp for every mount
+  (+/-0.6 rad yaw, about 75 deg elevation).
+  Effect, before (zoids-v14), against a Pteras hovering 18-51 deg up: the
+  Shield Liger's pulse laser, beam cannon and back sniper rifle hit 0%,
+  missiles could never lock (0 shots), the Iron Kong gatling 0%. Only back
+  turrets hit (100%), because a turret aims straight at the lock, not at
+  the crosshair.
+
+  14.2 Free look
+
+  lookPitch is now the view elevation itself (radians, + = up), limits
+  PITCH_UP = 1.2 (about +69 deg) and PITCH_DOWN = -0.9 (about -52 deg), the
+  same in third person, the cockpit and the sniper scope (scope keeps its
+  1 / zoom^0.8 mouse sensitivity). The camera looks along the view direction:
+  cockpit and scope from the eye; third person from behind the hull, rising
+  on its orbit when looking down and staying behind and a little above the
+  hull when looking up (it never drops under the Zoid, which would put the
+  hull over the crosshair), still clamped above the terrain. Mission start
+  view: -0.14 rad (about -8 deg). Measured after: +68.8 / -51.6 deg in all
+  three modes; a crosshair in the sky gives a far aim point 1000 m out on
+  the view line (68.8 deg).
+
+  14.3 Mount arcs (js/arcs.js)
+
+  Each hardpoint of each Zoid has a traverse (+/- yaw from the chassis nose)
+  and an elevation window (up / down from the chassis horizontal plane):
+  - chin / jaw / brow guns: narrow forward cone, modest elevation (the body
+    and view have to come round);
+  - flank, shoulder and wing guns: wider, a little higher;
+  - arms (Iron Kong, Geno Saurer, Gojulas, Death Saurer, Berserk Fuhrer):
+    wide and high (arms swing);
+  - back turrets: the catalog turret traverse (js/turret.js) and a high
+    elevation; non-turret back mounts (Shield Liger) still swing +/-90 deg
+    and elevate 65 deg; the Gun Sniper tail rifle traverse was widened from
+    90 to 180 deg (+/-90) to match the brief;
+  - missile pods (any mount): launch upward then guide, so at least +/-90
+    yaw, 85 up, 40 down;
+  - charge weapons (charged particle cannons): need the body braced, at most
+    +/-12 yaw, 25 up, 25 down;
+  - melee: a front arc (+/-60, 45 / 45); the exact reach and angle test is
+    still meleeCheck (section 6).
+  Inside a 1.5 deg tolerance a shot still goes (to the edge).
+
+  Effective arcs with the stock loadout (yaw +/-deg, up, down, class):
+  Command Wolf
+    Jaw                                  Pulse Laser            yaw +/-15   up 15  down 25  forward
+    Left Flank                           Gatling Gun            yaw +/-30   up 30  down 25  flank
+    Right Flank                          Strike Laser Claw      yaw +/-60   up 45  down 45  melee
+    Back Turret                          Double-Barreled Beam Cannon yaw +/-180  up 60  down 15  turret (turret 360 deg traverse)
+  Zaber Fang
+    Killer Saber Fangs                   Strike Laser Claw      yaw +/-60   up 45  down 45  melee
+    Left Strike Laser Claw               Strike Laser Claw      yaw +/-60   up 45  down 45  melee
+    Right AZ 20mm Beam Gun               Beam Cannon            yaw +/-25   up 25  down 30  flank
+    AZ 3-Barrel Shock Cannon             Shock Cannon           yaw +/-45   up 50  down 15  turret (turret 90 deg traverse)
+  Shield Liger
+    Jaw                                  Pulse Laser            yaw +/-15   up 15  down 25  forward
+    Shield Side                          (empty)                yaw +/-30   up 30  down 25  flank
+    Right Flank                          Beam Cannon            yaw +/-30   up 30  down 25  flank
+    Back                                 Missile Pack           yaw +/-90   up 85  down 40  missile
+  Blade Liger
+    Jaw                                  Pulse Laser            yaw +/-15   up 15  down 25  forward
+    Left Blade                           Laser Blade            yaw +/-60   up 45  down 45  melee
+    Right Blade                          Laser Blade            yaw +/-60   up 45  down 45  melee
+    Back Gun Pods                        Pulse Laser            yaw +/-90   up 55  down 15  turret (turret 180 deg traverse)
+  Iron Kong
+    Brow                                 (empty)                yaw +/-20   up 25  down 20  forward
+    Left Arm                             Shock Cannon           yaw +/-45   up 70  down 40  flank
+    Right Arm                            Gatling Gun            yaw +/-45   up 70  down 40  flank
+    Missile Pack                         Missile Pack           yaw +/-135  up 85  down 40  turret (turret 270 deg traverse)
+  Geno Saurer
+    Jaw                                  (empty)                yaw +/-15   up 20  down 25  forward
+    Left Arm                             Pulse Laser            yaw +/-35   up 50  down 40  flank
+    Right Arm                            Beam Cannon            yaw +/-35   up 50  down 40  flank
+    Particle Mount                       Charged Particle Cannon yaw +/-12   up 25  down 15  braced
+  Gojulas
+    Hyper Bite Fangs                     Strike Laser Claw      yaw +/-60   up 45  down 45  melee
+    Left Crusher Claw / 70mm HMG         Gatling Gun            yaw +/-40   up 55  down 45  flank
+    Right Crusher Claw / AZ 30mm Beam    Double-Barreled Beam Cannon yaw +/-40   up 55  down 45  flank
+    Long-Range Buster Cannons            Sniper Rifle           yaw +/-45   up 60  down 25  turret (turret 90 deg traverse)
+  Death Saurer
+    Mouth Particle Cannon                Charged Particle Cannon yaw +/-12   up 20  down 25  braced
+    Left Killer Claw                     Strike Laser Claw      yaw +/-60   up 45  down 45  melee
+    Right Claw Gun                       Pulse Laser            yaw +/-35   up 45  down 40  flank
+    Back Missile Pod                     Missile Pack           yaw +/-108  up 85  down 40  turret (turret 216 deg traverse)
+  Death Stinger
+    Laser Fangs                          Pulse Laser            yaw +/-15   up 15  down 25  forward
+    Left Laser Scissor                   Laser Blade            yaw +/-60   up 45  down 45  melee
+    Right Laser Scissor                  Laser Blade            yaw +/-60   up 45  down 45  melee
+    Tail Particle Cannon                 Charged Particle Cannon yaw +/-12   up 25  down 25  braced
+  Gun Sniper
+    Jaw                                  Pulse Laser            yaw +/-15   up 15  down 25  forward
+    Left Missile Pod                     Missile Pack           yaw +/-90   up 85  down 40  missile
+    Right Missile Pod                    (empty)                yaw +/-25   up 45  down 20  flank
+    Tail Rifle                           Sniper Rifle           yaw +/-90   up 70  down 15  turret (turret 180 deg traverse)
+  Elephander
+    Trunk Claw                           Strike Laser Claw      yaw +/-60   up 45  down 45  melee
+    Left Shoulder                        Shock Cannon           yaw +/-30   up 35  down 25  flank
+    Right Shoulder                       Pulse Laser            yaw +/-30   up 35  down 25  flank
+    Back Cannons                         Double-Barreled Beam Cannon yaw +/-180  up 60  down 15  turret (turret 360 deg traverse)
+  Berserk Fuhrer
+    Jaw                                  Pulse Laser            yaw +/-15   up 20  down 25  forward
+    Left Buster Claw                     Laser Blade            yaw +/-60   up 45  down 45  melee
+    Right Buster Claw                    Laser Blade            yaw +/-60   up 45  down 45  melee
+    Particle Cannon                      Charged Particle Cannon yaw +/-12   up 25  down 15  braced
+  Molga
+    Ram Head                             Strike Laser Claw      yaw +/-60   up 45  down 45  melee
+    Left Gun                             Pulse Laser            yaw +/-20   up 20  down 20  flank
+    Right Gun                            (empty)                yaw +/-20   up 20  down 20  flank
+    Top Gun                              Gatling Gun            yaw +/-180  up 65  down 15  turret (turret 360 deg traverse)
+  Pteras
+    Beak                                 (empty)                yaw +/-12   up 15  down 35  forward
+    Left Wing                            Pulse Laser            yaw +/-10   up 12  down 40  flank
+    Right Wing                           Pulse Laser            yaw +/-10   up 12  down 40  flank
+    Belly Rack                           Missile Pack           yaw +/-90   up 85  down 80  missile
+  The raw per-mount table (before the missile / charge / turret rules) is
+  ARC_TABLE in js/arcs.js; any weapon fitted to a mount gets that mount's
+  arc with the rules above.
+
+  14.4 Out of arc: feedback and fire rule
+
+  Pick: the weapon HOLDS FIRE outside its arc (the clearer of the two
+  options; firing to the clamped direction just throws rounds at empty air
+  and costs heat, and players read that as a miss rather than as "this gun
+  cannot bear"). While the crosshair point is outside the selected weapon's
+  arc:
+  - the reticle dims and turns dashed red;
+  - OUT OF ARC · ELEVATION or OUT OF ARC · TRAVERSE shows above it;
+  - a red FIRES HERE ring marks where the barrel actually stopped (the arc
+    edge), pinned to the edge of the view (with a ▲) when that point is off
+    screen or behind the camera;
+  - its dock row reads OUT OF ARC;
+  - the trigger does nothing; a held beam swept out of its arc cuts off.
+  The barrel itself stops at the arc edge (mount anchors rotate toward the
+  aim within their limits; turrets swing their pivot within the traverse
+  and tilt the barrel within the elevation window, as before via the turret
+  code). Forward guns come back into arc as the chassis turns to follow the
+  view.
+
+  14.5 AI parity
+
+  The old AI-only clamp is gone; AI barrels use the same arcs. AI weapon
+  choice scores a weapon that cannot bear on the target at 2% (so a Shield
+  Liger under a flyer switches from its chin laser to its missiles), and an
+  out-of-arc AI weapon holds fire like the player's. Turrets (player and
+  AI) now also lead a moving locked target with travelling shots; without
+  that a turret gatling could not touch a circling Pteras (the AI Molga,
+  whose side guns elevate only 20 deg, now uses its top gatling turret).
+
+  14.6 Flyer hit rates, before -> after
+
+  tools/aim_up_probe.mjs: a Pteras held hovering at (range m, height m) on
+  an open lane; the shooter locks it and steers the view onto its centre of
+  mass with mouse-style input only (no direct camera writes), then holds
+  the trigger 6 s. Hits / shots.
+                                     60/20 m    60/45 m    40/50 m    120/65 m
+                                     (18 deg)   (37 deg)   (51 deg)   (28 deg)
+  Shield Liger pulse laser (chin)
+    before                           0/33       0/33       0/33       0/33
+    after                            out of arc (holds fire, 0 shots)
+  Shield Liger beam cannon (flank)
+    before                           0/90       0/90       0/90       0/90
+    after                            90/90      out of arc out of arc 90/90
+  Shield Liger missile pack
+    before                           no lock    no lock    no lock    no lock
+    after                            12/12      12/12      12/12      12/12
+  Shield Liger sniper rifle (back)
+    before                           0/4        0/4        0/4        0/4
+    after                            4/4        4/4        4/4        4/4
+  Gun Sniper tail rifle (turret)     4/4 before and after at every spot
+  Iron Kong gatling (arm)
+    before                           0/94       0/94       0/94       0/94
+    after                            7/94       9/94       17/94      0/94
+  Command Wolf beam cannon (turret)  90/90 before and after at every spot
+  The gatling's spread (section 12) is what limits it on a thin flyer; it
+  is in arc and on target. Before, the view could not get above +1 deg (third
+  person), so the crosshair never reached the flyer and every non-turret
+  shot sailed under it.
+
+  14.7 Judgment calls
+
+  - Hold fire out of arc (not clamp-and-fire), see 14.4.
+  - Limits: +69 / -52 deg view. Enough for a Pteras at its 70 m ceiling
+    from about 30 m out, and for ridge and rooftop targets; steeper than
+    that the third-person hull and ground clamp get in the way.
+  - Chin guns elevate only 15-20 deg: a forward chin gun cannot shoot a
+    flyer overhead; that is the point of the brief. Missiles, back mounts,
+    arms and turrets can.
+  - Gun Sniper tail rifle traverse widened to 180 deg (was 90) as the brief
+    asked for wide yaw on back turrets.
+  - Turret lead added (player and AI). Player turrets now hit moving
+    targets far more often than before.
+  - Pteras wing guns: 12 up, 40 down (it shoots down from the air);
+    its belly missile rack: 85 up / 80 down (missile rule).
+  - The chassis has no pitch; arcs are measured from the chassis
+    horizontal plane, also for a flyer that is pitched in its visual.
+
+  14.8 Tests and tools
+
+  tests/arcs.test.mjs (Node): table covers every Zoid hardpoint, chin vs
+  back classes, missile / charge / melee rules, clamp math (elevation and
+  traverse edges, chassis yaw, tolerance, full traverse), the mission's
+  pitch limits and mouse clamp, the old AI-only clamp gone.
+  tests/aim_arcs_browser.mjs (live mission): mouse look reaches >= 60 deg up
+  and <= -45 deg down in third person, cockpit and 4x scope; a sky aim
+  point 1000 m out on the view line; back sniper rifle, flank beam cannon
+  and missiles hit a hovering Pteras; the chin laser is OUT OF ARC
+  (warning, dimmed reticle, FIRES HERE marker, dock row) and fires 0 shots
+  with the trigger held; its barrel stops at 15 deg; a back beam cannon in
+  arc elevates and hits; a flank gun past its traverse reads OUT OF ARC ·
+  TRAVERSE and stops at 30 deg; a Command Wolf turret swings onto and
+  elevates to a flyer off its side and hits; AI parity (an AI Shield Liger
+  under a hovering player never fires a weapon outside its arc and uses its
+  missiles).
+  tools/aim_up_probe.mjs: the before / after numbers above
+  (node tools/aim_up_probe.mjs [treeRoot] [port] [--out file.json]).
+  Screenshots: screenshots/targeting/aim-up-at-flyer.png,
+  out-of-arc-indicator.png, turret-elevated.png.
