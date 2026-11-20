@@ -77,6 +77,7 @@ export function createHUD(root) {
     <div class="aim-range" id="aim-range"></div>
     <div class="sel-weapon" id="sel-weapon"></div>
     <div class="melee-reach hidden" id="melee-reach"></div>
+    <div class="arc-warn hidden" id="arc-warn">OUT OF ARC</div>
     <div class="scope hidden" id="scope"><div class="scope-ring"></div><div class="scope-read" id="scope-read"></div></div>
     <div class="hazard-warn hidden" id="hazard-warn"></div>
     <div class="target-box hidden" id="target-box"><span></span></div>
@@ -112,7 +113,8 @@ export function createHUD(root) {
       <ul>
         <li>Click the field to capture the mouse.</li>
         <li>W / S or arrow up / down — throttle. A / D — strafe.</li>
-        <li>Mouse, or arrow left / right — look. The chassis turns to follow, slower as legs take damage.</li>
+        <li>Mouse, or arrow left / right — look. The chassis turns to follow, slower as legs take damage. Mouse up / down looks about 69 degrees up and 52 down in third person, the cockpit and the sniper scope alike, so you can engage flyers and targets on ridges and rooftops.</li>
+        <li>Weapon arcs: every weapon turns and elevates only as far as its mount allows. Chin and jaw guns cover a narrow cone ahead (about 15 degrees up), flank and arm guns swing wider, back turrets traverse wide and elevate high, missile pods launch upward and guide (wide arc), particle cannons need the body braced (narrow). When the crosshair is outside the selected weapon's arc the reticle dims, OUT OF ARC (TRAVERSE or ELEVATION) shows above it, a red FIRES HERE ring marks where the barrel stopped, and the weapon holds fire. Turn the body, or pick a weapon that can bear. Enemy Zoids follow the same arcs.</li>
         <li>Flyers (Pteras): Space — climb, C — descend. W builds airspeed, S slows it (no reverse in the air). Below the stall speed it cannot climb and sinks; slow down on the ground to land and walk. Ceiling 70 m above the terrain. It flies over rocks and buildings. The HUD shows ALT and AIR speed.</li>
         <li>Shift — boost, if back boosters are fitted and the back mount still stands.</li>
         <li>Weapons are aimed and fired one at a time, each from its own hardpoint. Mouse wheel — switch weapon (down = next, up = previous, it wraps around). 1 to 9 — pick a slot directly. Left mouse — fire the selected weapon. Right mouse — hold to zoom the scope when a sniper rifle is selected (a second right click steps 4x to 8x, mouse look slows while zoomed, switching weapon drops the zoom); with any other weapon right mouse fires too. Switching takes about 0.2 s. The dock lists every weapon with its slot number, heat and reload; the selected one is lit.</li>
@@ -232,6 +234,15 @@ export function createHUD(root) {
       const selEl = root.querySelector("#sel-weapon");
       selEl.textContent = selRow ? `${selRow.slot} · ${selRow.name}${selRow.state === "switching" ? " · SWITCHING" : ""}` : "";
       if (ret) selEl.style.top = `calc(50% + ${Math.round(ret.bloomPx / 2 + 22)}px)`;
+      // Mount arc: the selected weapon cannot bear on the crosshair point.
+      const arcOut = !!(ret && ret.own && ret.own.out);
+      reticle.classList.toggle("arc-out", arcOut);
+      const aw = root.querySelector("#arc-warn");
+      aw.classList.toggle("hidden", !arcOut);
+      if (arcOut) {
+        aw.textContent = `OUT OF ARC · ${ret.own.why || "TURN"}`;
+        aw.style.top = `calc(50% - ${Math.round(Math.max(ret.bloomPx / 2 + 26, ret.box ? ret.box.size / 2 + 34 : 0, 70))}px)`;
+      }
       const mr = root.querySelector("#melee-reach");
       const melee = ret && ret.melee;
       mr.classList.toggle("hidden", !melee);
@@ -275,6 +286,7 @@ export function createHUD(root) {
         const mark = marks[key];
         if (!mark) return "";
         // The own-aim diamond is drawn only when it says something new.
+        if (key === "own" && mark.out) return `<div class="aim-mark own out${mark.edge ? " edge" : ""}" style="left:${mark.x}px;top:${mark.y}px"><b></b><span>${mark.edge ? "▲ " : ""}FIRES HERE</span></div>`;
         if (key === "own" && !mark.blocked && (marks.impact || Math.hypot(mark.x - (window.innerWidth || 0) / 2, mark.y - (window.innerHeight || 0) / 2) < 6)) return "";
         return `<div class="aim-mark ${key}${mark.blocked ? " blocked" : ""}" style="left:${mark.x}px;top:${mark.y}px"><b></b><span>${mark.label}</span></div>`;
       }).join("");
@@ -327,12 +339,14 @@ export function createHUD(root) {
           return `<span title="${row.name}"><em class="${hot}" style="width:${Math.max(0, Math.min(100, row.heat))}%"></em></span>`;
         }).join("");
         const BAND_LABEL = { ideal: "IDEAL", long: "LONG", extreme: "EXTREME", short: "SHORT", out: "OUT OF RANGE" };
-        const rangeLabel = weapon.band
+        const rangeLabel = weapon.arcOut
+          ? "OUT OF ARC"
+          : weapon.band
           ? BAND_LABEL[weapon.band]
           : weapon.maxRange
             ? (weapon.far ? "OUT OF RANGE" : `${weapon.maxRange} m`)
             : "";
-        return `<div class="wep ${klass} ${far}${weapon.selected ? " sel" : ""}${weapon.melee ? " melee" : ""}" data-group="${weapon.group}" data-selected="${weapon.selected ? 1 : 0}" data-mount="${weapon.mount || ""}" data-state="${state}" data-heat="${Math.round(weapon.heat || 0)}" data-range="${weapon.maxRange || ""}" data-delivery="${weapon.delivery || ""}" data-band="${weapon.band || ""}">
+        return `<div class="wep ${klass} ${far}${weapon.selected ? " sel" : ""}${weapon.melee ? " melee" : ""}" data-group="${weapon.group}" data-selected="${weapon.selected ? 1 : 0}" data-mount="${weapon.mount || ""}" data-state="${state}" data-heat="${Math.round(weapon.heat || 0)}" data-range="${weapon.maxRange || ""}" data-delivery="${weapon.delivery || ""}" data-band="${weapon.band || ""}" data-arc="${weapon.arcOut ? "out" : ""}">
           <b>${weapon.group}</b>
           <span>${weapon.name}</span>
           <small>${state}</small>

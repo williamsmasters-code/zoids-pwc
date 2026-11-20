@@ -700,7 +700,7 @@ export const ZOIDS = {
       { id: "headWeapon", name: "Jaw", size: "S" },
       { id: "leftWeapon", name: "Left Missile Pod", size: "M" },
       { id: "rightWeapon", name: "Right Missile Pod", size: "M" },
-      { id: "backMount", name: "Tail Rifle", size: "L", turret: { arc: Math.PI * 0.5, speed: 1.9 } },
+      { id: "backMount", name: "Tail Rifle", size: "L", turret: { arc: Math.PI, speed: 1.9 } },
     ],
   },
   elephander: {

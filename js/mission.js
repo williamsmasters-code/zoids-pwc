@@ -75,6 +75,7 @@ import { SENSOR, stealthMul, updateTrack, trackState } from "./sensors.js";
 import { buildHitBoxes, centerOfMass, rayHitBoxes, toLocal, dirToLocal, toWorld, assistAim, assistRadii, boundsOf } from "./targeting.js";
 import { buildUnitModel, tagOwner, refreshPartColors, disposeTree, setTurretYaw, meleeState } from "./models.js";
 import { turretSpecFor, relativeBearing, stepTurret, turretTrigger } from "./turret.js";
+import { weaponArc, clampToArc } from "./arcs.js";
 import { createInput } from "./input.js";
 import { createHUD, headingOf } from "./hud.js";
 import { createBrain, updateBrain } from "./ai.js";
@@ -156,7 +157,6 @@ import {
   aimPointAlongRay,
   directionToPoint,
   selectAimHit,
-  clampAimYawPitch,
 } from "./aim.js";
 
 const UP = new Vector3(0, 1, 0);
@@ -282,6 +282,10 @@ export function startMission(state, contract, hooks) {
   if (window.__ZOIDS__) window.__ZOIDS__.pacifyOnStart = false;
   let helpOn = false;
   let cameraMode = "tps";
+  // View elevation limits (radians): about +69 deg up, -52 deg down.
+  const PITCH_UP = 1.2;
+  const PITCH_DOWN = -0.9;
+  const DEFAULT_PITCH = -0.14;
   // Sniper scope (hold RMB with a sniper weapon selected): 4x, a second click 8x.
   const BASE_FOV = 60;
   const SCOPE_STEPS = [4, 8];
@@ -328,7 +332,7 @@ export function startMission(state, contract, hooks) {
     const bx = best.model.root.position.x;
     const bz = best.model.root.position.z;
     player.lookYaw = yawToFace(bx - px, bz - pz);
-    player.lookPitch = -0.12;
+    player.lookPitch = DEFAULT_PITCH;
     // Stand off just inside the longest fitted gun, back-pedal and strafe when
     // a raider closes, so it fights like a cautious pilot rather than charging.
     const reach = Math.max(60, ...player.weapons.map((w) => w.optimal || 0));
@@ -378,7 +382,7 @@ export function startMission(state, contract, hooks) {
     weight: undefined,
   });
   player.lookYaw = 0;
-  player.lookPitch = -0.42;
+  player.lookPitch = DEFAULT_PITCH;
 
   const beacons = [];
   let trucks = [];
@@ -498,6 +502,7 @@ export function startMission(state, contract, hooks) {
     return {
       ...spec,
       turret,
+      arc: weaponArc(def, { ...spec, mount: w.mount, turret }),
       turretState: turret ? { yaw: turret.rest } : null,
       turretFired: 0,
       uid: w.uid,
@@ -520,6 +525,7 @@ export function startMission(state, contract, hooks) {
     return {
       ...standardMeleeFor(def),
       turret: null,
+      arc: weaponArc(def, { innate: true, mount: "headWeapon" }),
       turretState: null,
       turretFired: 0,
       uid: `melee-${def.id}`,
@@ -570,7 +576,7 @@ export function startMission(state, contract, hooks) {
       speed: 0,
       strafeVel: 0,
       lookYaw: opts.yaw || 0,
-      lookPitch: -0.42,
+      lookPitch: DEFAULT_PITCH,
       alive: true,
       heat: 0,
       shutdown: 0,
@@ -1086,7 +1092,7 @@ export function startMission(state, contract, hooks) {
     const sens = 1 / Math.pow(scopeZoom(), 0.8);
     player.lookYaw -= input.dx * 0.0023 * sens;
     player.lookYaw -= input.turn * Math.max(0.85, perf.turn) * dt;
-    player.lookPitch = clamp(player.lookPitch - input.dy * 0.002 * sens, -1.05, 0.5);
+    player.lookPitch = clamp(player.lookPitch - input.dy * 0.002 * sens, PITCH_DOWN, PITCH_UP);
     const maxTwist = 0.82;
     let diff = wrapAngle(player.lookYaw - player.model.root.rotation.y);
     player.model.root.rotation.y = wrapAngle(
@@ -1151,13 +1157,8 @@ export function startMission(state, contract, hooks) {
     object.quaternion.copy(parentQ.invert()).multiply(worldQ);
   }
 
-  // AI barrels: clamp only the horizontal swing to the chassis; elevation
-  // is free up to ~75 degrees so ground Zoids can shoot up at flyers and
-  // flyers can shoot down.
-  function clampAimYaw(forward, dir, maxYaw) {
-    const r = clampAimYawPitch(forward, dir, maxYaw);
-    return new Vector3(r.x, r.y, r.z);
-  }
+  // (The old AI-only clamp, +/-0.6 rad yaw and ~75 deg elevation for every
+  // mount, is replaced by the per-mount arcs in js/arcs.js for everyone.)
 
   function clampAim(forward, dir, maxAngle) {
     const f = forward.clone().normalize();
@@ -1250,6 +1251,32 @@ export function startMission(state, contract, hooks) {
   // "on" (default) or "off" (test probe: the pre-overhaul crosshair rule).
   let assistMode = "on";
 
+  // The arc of the weapon on a mount (the mount's own arc if it is empty).
+  function mountArc(unit, mount) {
+    const w = unit.weapons.find((x) => x.mount === mount && !x.innate);
+    return (w && w.arc) || weaponArc(unit.def, { mount });
+  }
+  // Clamp a barrel direction to its mount arc and remember, per mount,
+  // whether the requested direction was outside it (and where it stops).
+  function arcClampDir(unit, mount, dir) {
+    const r = clampToArc(unit.model.root.rotation.y, dir, mountArc(unit, mount));
+    if (!unit.arcState) unit.arcState = {};
+    unit.arcState[mount] = { out: r.out, dir: { x: r.dir.x, y: r.dir.y, z: r.dir.z }, yawOff: r.yawOff, pitchOff: r.pitchOff };
+    return new Vector3(r.dir.x, r.dir.y, r.dir.z);
+  }
+  function outOfArc(unit, weapon) {
+    const st = unit.arcState && unit.arcState[weapon.mount];
+    return !!(st && st.out);
+  }
+  // Can this mount reach a world point at all (AI weapon choice)?
+  function arcReaches(unit, weapon, point) {
+    const anchor = unit.model.anchors[weapon.mount] || unit.model.muzzles[weapon.mount];
+    if (!anchor || !weapon.arc) return true;
+    const from = new Vector3();
+    anchor.getWorldPosition(from);
+    return !clampToArc(unit.model.root.rotation.y, { x: point.x - from.x, y: point.y - from.y, z: point.z - from.z }, weapon.arc).out;
+  }
+
   // Barrel local -Z passes through `aimPoint`. The muzzle sits on that axis,
   // so a shot from the muzzle along the returned direction hits the point.
   // Only AI fire is clamped to the chassis. Player shots follow the crosshair.
@@ -1261,10 +1288,9 @@ export function startMission(state, contract, hooks) {
     const plain = directionToPoint(from, aimPoint);
     let dir = new Vector3(plain.x, plain.y, plain.z);
     if (dir.lengthSq() < 1e-8) facingDirection(unit.model.root, dir);
-    if (unit !== player) {
-      const chassisFwd = facingDirection(unit.model.root, new Vector3());
-      dir = clampAimYaw(chassisFwd, dir, 0.6);
-    }
+    // Mount arc (js/arcs.js), player and AI alike: the barrel stops at the
+    // edge of its traverse / elevation and the mount is flagged out of arc.
+    dir = arcClampDir(unit, mount, dir);
     if (anchor) aimNegZ(anchor, dir);
     return dir;
   }
@@ -1292,10 +1318,7 @@ export function startMission(state, contract, hooks) {
     );
     let dir = new Vector3(solved.dir.x, solved.dir.y, solved.dir.z);
     if (dir.lengthSq() < 1e-8) facingDirection(unit.model.root, dir);
-    if (unit !== player) {
-      const chassisFwd = facingDirection(unit.model.root, new Vector3());
-      dir = clampAimYaw(chassisFwd, dir, 0.6);
-    }
+    dir = arcClampDir(unit, weapon.mount, dir);
     const anchor = unit.model.anchors[weapon.mount];
     if (anchor) aimNegZ(anchor, dir);
     return dir;
@@ -1372,6 +1395,15 @@ export function startMission(state, contract, hooks) {
         point = muzzle.clone().addScaledVector(fwd, 80);
       }
     }
+    // Turrets lead their locked target with travelling shots too (player and
+    // AI): without it a turret gun could not touch a circling flyer.
+    if (aimPoint && weapon.turret && !weapon.hitscan && weapon.delivery !== "rocket" && weapon.speed) {
+      const tgt = lockTargetOf(unit);
+      if (tgt && tgt.alive && tgt.vel3) {
+        const led = leadPoint(muzzle, point, tgt.vel3, weapon.speed).point;
+        point.set(led.x, led.y, led.z);
+      }
+    }
     const shotDist = muzzle.distanceTo(point);
     if (unit.brain && unit !== player) {
       // AI aim error grows with the band (ballistics most), on top of the
@@ -1446,6 +1478,7 @@ export function startMission(state, contract, hooks) {
       unit.model.anim.firePulse = true;
     }
     const dir = shotDirection(unit, weapon, muzzle, point);
+    weapon.shots = (weapon.shots || 0) + 1;
     if (weapon.turret) weapon.turretFired = (weapon.turretFired || 0) + 1;
     const mode = fireModeOf(weapon);
     if (mode === "beam") {
@@ -1496,6 +1529,8 @@ export function startMission(state, contract, hooks) {
       }
       const point = weaponAimPoint(unit, weapon, aim, muzzle);
       const dir = shotDirection(unit, weapon, muzzle, point);
+      // A held beam swept out of its arc cuts off at the edge.
+      if (!weapon.turret && outOfArc(unit, weapon)) { weapon.beamLeft = 0; continue; }
       const spread = spreadFor(unit, weapon, muzzle.distanceTo(point));
       const volley = weapon.volley || 1;
       for (let i = 0; i < volley; i++) hitscan(unit, weapon, muzzle, jitter(dir, spread * 0.5, volley > 1), frac);
@@ -2060,17 +2095,36 @@ export function startMission(state, contract, hooks) {
       const result = stepTurret(weapon.turretState, weapon.turret, bearing, dt);
       setTurretYaw(unit.model, weapon.mount, weapon.turretState.yaw);
       const anchor = unit.model.anchors[weapon.mount];
+      // Elevation: the turret barrel tilts toward the lock inside its
+      // elevation window (js/arcs.js); past it, it stops and holds fire.
+      let elevOut = false;
+      if (anchor && lock) {
+        const muzzle = new Vector3();
+        anchor.getWorldPosition(muzzle);
+        const to = lockAimPoint(lock).sub(muzzle);
+        const el = Math.asin(clamp(to.y / Math.max(1e-6, to.length()), -1, 1));
+        const arc = weapon.arc || { up: 1.2, down: 0.3 };
+        elevOut = el > arc.up + 0.026 || el < -arc.down - 0.026;
+      }
+      if (elevOut && result) result.onTarget = false;
+      if (!unit.arcState) unit.arcState = {};
+      unit.arcState[weapon.mount] = { out: !!lock && (!result.inArc || elevOut), dir: null, turret: true };
       if (anchor && anchor.visible) {
         let dir;
         if (lock && result.inArc) {
           const muzzle = new Vector3();
           anchor.getWorldPosition(muzzle);
           dir = lockAimPoint(lock).sub(muzzle);
+          const yaw = root.rotation.y + weapon.turretState.yaw;
+          const arc = weapon.arc || { up: 1.2, down: 0.3 };
+          const r = clampToArc(yaw, dir, { yaw: 0.2, up: arc.up, down: arc.down });
+          dir.set(r.dir.x, r.dir.y, r.dir.z);
         } else {
           const yaw = root.rotation.y + weapon.turretState.yaw;
           dir = new Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
         }
         if (dir.lengthSq() > 1e-8) aimNegZ(anchor, dir.normalize());
+        if (unit.arcState[weapon.mount]) unit.arcState[weapon.mount].dir = { x: dir.x, y: dir.y, z: dir.z };
       }
       weapon.turretTrigger = turretTrigger(lock ? { alive: lock.alive, dist } : null, result, weapon.range);
       weapon.turretTargetId = lock ? lock.id : null;
@@ -2184,6 +2238,21 @@ export function startMission(state, contract, hooks) {
   function viewMode() {
     return cameraMode === "fps" || scopeMix > 0.35 ? "fps" : "tps";
   }
+  // Free look. lookPitch is the view elevation itself (radians, + = up),
+  // PITCH_DOWN..PITCH_UP in third person, cockpit and scope alike. The
+  // crosshair ray follows the view, so it reaches flyers, ridges and roofs.
+  // Third person: looking down lifts the camera on its orbit; looking up
+  // keeps it behind and a little above the hull (it never drops under the
+  // Zoid, which would put the hull over the crosshair).
+  // (Before: the camera orbited a fixed point 16 m ahead at eye height and
+  // looking up only lowered the camera, so the view topped out near +1 deg
+  // in third person and +11 deg in the cockpit.)
+  function viewDirection(out) {
+    const yaw = player.lookYaw;
+    const c = Math.cos(player.lookPitch);
+    return out.set(-Math.sin(yaw) * c, Math.sin(player.lookPitch), -Math.cos(yaw) * c);
+  }
+  const camLook = new Vector3();
   function placeCamera() {
     const eye = new Vector3();
     player.model.anchors.eye.getWorldPosition(eye);
@@ -2194,25 +2263,21 @@ export function startMission(state, contract, hooks) {
     rig.updateMatrixWorld(true);
     const { fwd, right } = horizontalBasis(rig);
     const dist = 8 + player.def.scale * 5.5;
-    const offset = fwd.clone().multiplyScalar(-dist).addScaledVector(UP, 1.5);
-    // Positive lookPitch raises the view (camera drops). Negative lookPitch looks down.
-    offset.applyAxisAngle(right, player.lookPitch);
-    const lookTarget = yawRig.clone().addScaledVector(fwd, 16);
+    viewDirection(camLook);
     // A sniper scope looks from the cockpit (first person), so the player's
     // own hull never fills a zoomed third-person view.
     if (viewMode() === "fps") {
       camera.position.copy(eye);
-      const orbit = yawRig.clone().add(offset);
-      const lookDir = lookTarget.clone().sub(orbit);
-      if (lookDir.lengthSq() < 1e-6) lookDir.copy(fwd);
-      lookDir.normalize();
-      camera.lookAt(eye.clone().add(lookDir));
     } else {
+      const p = player.lookPitch;
+      const offset = fwd.clone().multiplyScalar(-dist).addScaledVector(UP, 1.5);
+      if (p < 0) offset.applyAxisAngle(right, p * 0.85);
+      else offset.multiplyScalar(1 - 0.22 * Math.sin(p)).addScaledVector(UP, dist * 0.18 * Math.sin(p));
       camera.position.copy(yawRig).add(offset);
       const minY = map.heightAt(camera.position.x, camera.position.z) + 1.5;
       if (camera.position.y < minY) camera.position.y = minY;
-      camera.lookAt(lookTarget);
     }
+    camera.lookAt(camera.position.clone().add(camLook));
     const spec = spectateId ? units.find((u) => u.id === spectateId && u.alive) : null;
     if (spec) {
       const sp = spec.model.root.position;
@@ -2515,6 +2580,9 @@ export function startMission(state, contract, hooks) {
         if (w.delivery === "rocket" && w.minRange && dist < w.minRange) return;
         score = weaponDps(w) * Math.max(0.05, rangeDamageMul(w, dist)) * (1 - Math.min(0.9, (w.heatGauge || 0) / 120))
           * aiHitChance(unit, w, target, dist);
+        // Same mount arcs as the player: a gun that cannot bear is not picked
+        // (a forward chin gun against a flyer overhead, say).
+        if (!w.turret && !arcReaches(unit, w, lockAimPoint(target))) score *= 0.02;
         if (w.chargeTime && planarSpeed(unit) >= STATIONARY_SPEED) score *= 0.2;
       }
       if (score > bestScore) { bestScore = score; best = i; }
@@ -2677,6 +2745,9 @@ export function startMission(state, contract, hooks) {
         if (weapon.delivery === "rocket") {
           trigger = trigger && rocketMayFire(unit.rocketLock || 0) && !!unit.rocketLockId;
         }
+        // Outside its mount arc the weapon holds fire (player and AI): the
+        // reticle reads OUT OF ARC and marks where the barrel stopped.
+        if (trigger && outOfArc(unit, weapon)) trigger = false;
         if (unit !== player && trigger) {
           trigger = aiDist <= weapon.range && !(weapon.delivery === "rocket" && weapon.minRange && aiDist < weapon.minRange);
         }
@@ -2843,6 +2914,41 @@ export function startMission(state, contract, hooks) {
     };
   }
 
+  // A world point on the HUD; behind the camera or off screen, pinned to
+  // the screen edge in its direction (edge: true).
+  function edgeHudPoint(x, y, z) {
+    const width = window.innerWidth || 1280;
+    const height = window.innerHeight || 720;
+    camera.updateMatrixWorld(true);
+    const v = new Vector3(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+    let nx;
+    let ny;
+    let edge = false;
+    if (v.z < -0.5) {
+      const ndc = new Vector3(x, y, z).project(camera);
+      nx = ndc.x;
+      ny = ndc.y;
+    } else {
+      // Behind the view: point the way it lies (camera space x / y).
+      nx = v.x;
+      ny = v.y;
+      const m = Math.max(Math.abs(nx), Math.abs(ny), 1e-6);
+      nx /= m;
+      ny /= m;
+      edge = true;
+    }
+    // Keep it inside the view, clear of the weapon dock along the bottom.
+    const limX = 0.85;
+    const limY = 0.6;
+    const k = Math.max(Math.abs(nx) / limX, Math.abs(ny) / limY);
+    if (k > 1) {
+      nx /= k;
+      ny /= k;
+      edge = true;
+    }
+    return { x: (nx * 0.5 + 0.5) * width, y: (-ny * 0.5 + 0.5) * height, edge };
+  }
+
   let lastAimMarkers = { impact: null, lead: null, drop: null };
   let lastReticle = null;
   let tracerCount = 0;
@@ -2873,6 +2979,21 @@ export function startMission(state, contract, hooks) {
     player.model.muzzles[w.mount].getWorldPosition(muzzle);
     const to = aimPoint.clone().sub(muzzle);
     const dist = to.length();
+    // Outside the mount arc: mark where the barrel stopped (at the edge of
+    // its traverse / elevation), pinned to the screen edge when off view.
+    const st = player.arcState && player.arcState[w.mount];
+    if (st && st.out) {
+      let p = null;
+      if (st.dir) {
+        const far = Math.max(25, Math.min(w.range || 200, dist || 100));
+        p = edgeHudPoint(muzzle.x + st.dir.x * far, muzzle.y + st.dir.y * far, muzzle.z + st.dir.z * far);
+      }
+      const why = st.turret ? (w.turretResult && !w.turretResult.inArc ? "TRAVERSE" : "ELEVATION")
+        : (st.pitchOff || 0) > (st.yawOff || 0) ? "ELEVATION" : "TRAVERSE";
+      const cx = (window.innerWidth || 1280) / 2;
+      const cy = (window.innerHeight || 720) / 2;
+      return { ...(p || { x: cx, y: cy, edge: true }), label: "OUT OF ARC", out: true, why, blocked: false, mount: w.mount, dist };
+    }
     if (dist < 1) return null;
     const hit = raycast(muzzle, to, player.id, Math.min(dist + 1, w.range || dist));
     const data = hit ? hit.object.userData || {} : {};
@@ -3008,6 +3129,8 @@ export function startMission(state, contract, hooks) {
         maxRange: w.range || 0,
         delivery: w.delivery || "",
         far,
+        arcOut: !w.innate && !!(player.arcState && player.arcState[w.mount] && player.arcState[w.mount].out),
+        arc: w.arc ? { yaw: Math.round(w.arc.yaw * 57.2958), up: Math.round(w.arc.up * 57.2958), down: Math.round(w.arc.down * 57.2958), kind: w.arc.kind } : null,
         melee: !!w.innate,
         band: dist == null ? null : w.innate ? (mc ? (mc.ok ? "ideal" : "out") : null) : bestBand([w], dist),
       };
@@ -3492,7 +3615,7 @@ export function startMission(state, contract, hooks) {
       player.model.root.position.set(0, map.heightAt(0, 0), 0);
       player.model.root.rotation.set(0, yaw, 0);
       player.lookYaw = yaw;
-      player.lookPitch = -0.42;
+      player.lookPitch = DEFAULT_PITCH;
       player.speed = 0;
       player.strafeVel = 0;
       player.model.root.updateMatrixWorld(true);
@@ -4114,7 +4237,7 @@ export function startMission(state, contract, hooks) {
       goal.y += (best.radius || 2) * 0.5;
       let bestPitch = player.lookPitch;
       let bestErr = Infinity;
-      for (let attempt = -0.75; attempt <= 0.4; attempt += 0.02) {
+      for (let attempt = -0.8; attempt <= 1.0; attempt += 0.02) {
         player.lookPitch = attempt;
         placeCamera();
         const view = new Vector3();
@@ -4156,6 +4279,32 @@ export function startMission(state, contract, hooks) {
     if (u.brain) { u.brain.alerted = true; u.brain.react = 0; }
     rebuildHits();
     return u.id;
+  };
+  window.__ZOIDS__.camInfo = () => { camera.updateMatrixWorld(true); const d = new Vector3(); camera.getWorldDirection(d);
+    return { pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z }, dir: { x: d.x, y: d.y, z: d.z }, elevDeg: Math.asin(d.y) * 180 / Math.PI, lookPitch: player.lookPitch, mode: cameraMode, view: viewMode(),
+      limits: { upDeg: PITCH_UP * 180 / Math.PI, downDeg: PITCH_DOWN * 180 / Math.PI } }; };
+  // Mount arcs: per weapon its arc (degrees), whether the current aim is
+  // outside it, and where its barrel (anchor -Z) points in the world.
+  window.__ZOIDS__.arcInfo = (id) => {
+    const u = id ? units.find((k) => k.id === id) : player;
+    if (!u) return null;
+    const q = new Quaternion();
+    return { id: u.id, zoid: u.def.id, chassisYaw: u.model.root.rotation.y, weapons: u.weapons.filter((w) => !w.innate).map((w) => {
+      const a = u.model.anchors[w.mount];
+      let barrel = null;
+      if (a) { a.getWorldQuaternion(q); const d = new Vector3(0, 0, -1).applyQuaternion(q); barrel = { x: d.x, y: d.y, z: d.z, elevDeg: Math.asin(clamp(d.y, -1, 1)) * 180 / Math.PI, yawDeg: wrapAngle(Math.atan2(-d.x, -d.z) - u.model.root.rotation.y) * 180 / Math.PI }; }
+      const st = u.arcState && u.arcState[w.mount];
+      return { id: w.id, mount: w.mount, turret: !!w.turret, arc: w.arc ? { yaw: w.arc.yaw * 180 / Math.PI, up: w.arc.up * 180 / Math.PI, down: w.arc.down * 180 / Math.PI, kind: w.arc.kind } : null,
+        out: !!(st && st.out), barrel, pivotYaw: u.model.turrets && u.model.turrets[w.mount] ? u.model.turrets[w.mount].rotation.y : null, fired: w.turretFired || 0, shots: w.shots || 0, selected: selectedWeapon(u) === w };
+    }) };
+  };
+  window.__ZOIDS__.arcHud = () => {
+    const aw = document.querySelector("#arc-warn");
+    const ret = document.querySelector(".reticle");
+    const mark = document.querySelector(".aim-mark.own.out");
+    return { warn: aw && !aw.classList.contains("hidden") ? aw.textContent : null, reticleOut: !!(ret && ret.classList.contains("arc-out")),
+      mark: mark ? { x: parseFloat(mark.style.left), y: parseFloat(mark.style.top), edge: mark.classList.contains("edge") } : null,
+      dock: [...document.querySelectorAll(".wep")].map((r) => ({ mount: r.dataset.mount, arc: r.dataset.arc, sel: r.dataset.selected === "1" })) };
   };
   window.__ZOIDS__.viewState = () => ({ fov: camera.fov, lookYaw: player.lookYaw, lookPitch: player.lookPitch, scope: scopeMix, zoom: scopeZoom(), held: scopeHeld,
     overlay: !!document.querySelector("#scope") && !document.querySelector("#scope").classList.contains("hidden"),
@@ -4209,7 +4358,7 @@ export function startMission(state, contract, hooks) {
       player.lookYaw += yawErr;
       player.model.root.rotation.y = player.lookYaw;
       player.model.root.updateMatrixWorld(true);
-      player.lookPitch = clamp(player.lookPitch + pitchErr, -1.2, 0.9);
+      player.lookPitch = clamp(player.lookPitch + pitchErr, PITCH_DOWN, PITCH_UP);
     }
     placeCamera();
     const aim = cameraAimPoint();

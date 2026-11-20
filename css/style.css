@@ -578,3 +578,12 @@ button:disabled { opacity: 0.45; cursor: default; }
 .aim-mark.own.blocked b { border-color: #ff5566; width: 14px; height: 14px; background: rgba(255,85,102,0.25); }
 .wep.sel { outline: 2px solid var(--amber, #ffd35a); background: rgba(255, 211, 90, 0.12); }
 .wep.melee span::before { content: "\2694  "; }
+
+/* Mount arcs (js/arcs.js): the selected weapon cannot bear on the crosshair. */
+.reticle.arc-out { border-color: #ff5566 !important; border-style: dashed; opacity: 0.55; }
+.arc-warn { position: absolute; left: 50%; transform: translateX(-50%); font-size: 12px; font-weight: 700; padding: 1px 6px; color: #ff5566; border: 1px solid currentColor; background: rgba(40,0,8,0.45); pointer-events: none; white-space: nowrap; text-shadow: 0 0 3px #000; }
+.arc-warn.hidden { display: none; }
+.aim-mark.own.out { color: #ff5566; }
+.aim-mark.own.out b { width: 16px; height: 16px; border: 2px solid #ff5566; border-radius: 50%; background: rgba(255,85,102,0.2); transform: none; }
+.aim-mark.own.out.edge b { border-style: dashed; }
+.wep[data-arc="out"] .rng { color: #ff5566; }
